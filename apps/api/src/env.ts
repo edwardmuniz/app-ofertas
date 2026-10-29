@@ -6,6 +6,7 @@ const Env = z.object({
   REDIS_URL: z.string().min(1),
   API_PORT: z.coerce.number().int().default(3001),
   API_PUBLIC_URL: z.string().default("http://localhost:3001"),
+  REDIRECT_PUBLIC_URL: z.string().default("http://localhost:3002"),
   ALLOW_SIGNUP: z
     .enum(["true", "false"])
     .default("false")

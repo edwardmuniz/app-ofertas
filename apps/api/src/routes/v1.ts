@@ -30,33 +30,9 @@ import {
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
 import { z } from "zod";
 import { requireActor, SESSION_COOKIE, setSessionCookie } from "../auth";
+import { errors, MutationHeaders, MutationQuery, MutationResult } from "./common";
 
 export type V1Options = { deps: Deps; allowSignup: boolean; secureCookies: boolean };
-
-const errors = { 400: ErrorResponse, 401: ErrorResponse, 403: ErrorResponse, 404: ErrorResponse };
-
-/** Opções de mutação na REST: ?dry_run=true, header Idempotency-Key e X-Audit-Reason. */
-const MutationQuery = z.object({
-  dry_run: z
-    .enum(["true", "false"])
-    .optional()
-    .transform((v) => v === "true"),
-});
-const MutationHeaders = z.object({
-  "idempotency-key": z.string().min(8).max(200).optional(),
-  "x-audit-reason": z.string().max(500).optional(),
-});
-
-const MutationResult = <T extends z.ZodType>(result: T) =>
-  z.discriminatedUnion("status", [
-    z.object({ status: z.literal("done"), result }),
-    z.object({ status: z.literal("dry_run"), preview: z.unknown() }),
-    z.object({
-      status: z.literal("pending_approval"),
-      approval_id: z.string(),
-      preview: z.unknown(),
-    }),
-  ]);
 
 export const v1Routes: FastifyPluginAsyncZod<V1Options> = async (app, opts) => {
   const { deps } = opts;

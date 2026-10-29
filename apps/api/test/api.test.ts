@@ -1,6 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { MemoryCounterStore } from "@ofertas/core";
+import { MemoryCache, MemoryCounterStore } from "@ofertas/core";
 import { createDb, limits, runMigrations } from "@ofertas/db";
 import { resetDb } from "@ofertas/db/testing";
 import type { FastifyInstance } from "fastify";
@@ -49,7 +49,12 @@ beforeAll(async () => {
   await resetDb(db);
 
   app = await buildApp({
-    deps: { db, counters: new MemoryCounterStore() },
+    deps: {
+      db,
+      counters: new MemoryCounterStore(),
+      cache: new MemoryCache(),
+      redirectBaseUrl: "http://go.test",
+    },
     allowSignup: false,
     publicUrl: "http://localhost",
   });
@@ -190,12 +195,17 @@ describe("MCP", () => {
     const client = await mcpClient(await createAgentToken("full"));
     expect(client.getInstructions()).toContain("dry_run");
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual([
-      "get_audit_log",
-      "get_preferences",
-      "get_workspace_overview",
-      "update_preferences",
-    ]);
+    expect(tools.map((t) => t.name)).toEqual(
+      expect.arrayContaining([
+        "get_audit_log",
+        "get_preferences",
+        "get_workspace_overview",
+        "update_preferences",
+        "create_tracked_link",
+        "get_link_stats",
+        "create_invite_link",
+      ]),
+    );
     const res = parse(await client.callTool({ name: "get_workspace_overview", arguments: {} }));
     expect(res.isError).toBe(false);
     expect(res.body.workspace.name).toBe("Loja");
@@ -244,5 +254,103 @@ describe("MCP", () => {
     const first = r.contents[0] as { text?: string } | undefined;
     expect(JSON.parse(first?.text ?? "{}")).toHaveProperty("niches");
     await client.close();
+  });
+});
+
+describe("Fase 1: links e convites", () => {
+  it("agente monta segmento, grupo, convite e link pelo MCP", async () => {
+    const client = await mcpClient(await createAgentToken("full_no_spend"));
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const r = parse(await client.callTool({ name, arguments: args }));
+      if (r.isError) throw new Error(JSON.stringify(r.body));
+      return r.body;
+    };
+
+    const seg = await call("upsert_segment", { name: "achadinhos" });
+    const ch = await call("upsert_channel", {
+      name: "Achadinhos #1",
+      invite_url: "https://chat.whatsapp.com/XYZ",
+      segment_ids: [seg.result.id],
+    });
+    expect(ch.result.segment_ids).toEqual([seg.result.id]);
+
+    const inv = await call("create_invite_link", {
+      segment_id: seg.result.id,
+      name: "Bio Instagram",
+      slug: "achadinhos",
+    });
+    expect(inv.result.url).toBe("http://go.test/entrar/achadinhos");
+    expect(inv.result.capacity.current_channel.name).toBe("Achadinhos #1");
+
+    const dry = await call("create_tracked_link", {
+      destination_url: "https://shopee.com.br/produto",
+      source: "wa",
+      dry_run: true,
+    });
+    expect(dry.status).toBe("dry_run");
+
+    const link = await call("create_tracked_link", {
+      destination_url: "https://shopee.com.br/produto",
+      source: "wa",
+      channel_id: ch.result.id,
+      reason: "oferta do dia",
+    });
+    expect(link.result.short_url).toMatch(/^http:\/\/go\.test\/\w{7}$/);
+
+    const updated = await call("update_tracked_link", {
+      id: link.result.id,
+      destination_url: "https://shopee.com.br/outro",
+    });
+    expect(updated.result.slug).toBe(link.result.slug);
+
+    const stats = await call("get_link_stats", { group_by: "none" });
+    expect(stats.totals).toEqual({ human: 0, unique: 0, bot: 0 });
+    await client.close();
+  });
+
+  it("token só leitura não cria link pelo MCP", async () => {
+    const client = await mcpClient(await createAgentToken("read_only"));
+    const r = parse(
+      await client.callTool({
+        name: "create_tracked_link",
+        arguments: { destination_url: "https://x.com" },
+      }),
+    );
+    expect(r.body.error.code).toBe("FORBIDDEN_SCOPE");
+    await client.close();
+  });
+
+  it("REST: cria e edita link, valida URL e lista", async () => {
+    const bad = await app.inject({
+      method: "POST",
+      url: "/v1/links",
+      headers: { cookie },
+      payload: { destination_url: "javascript:alert(1)" },
+    });
+    expect(bad.statusCode).toBe(400);
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/links",
+      headers: { cookie, "x-audit-reason": "teste rest" },
+      payload: { destination_url: "https://a.com", title: "Air fryer" },
+    });
+    expect(created.statusCode).toBe(200);
+    const id = created.json().result.id;
+
+    const patched = await app.inject({
+      method: "PATCH",
+      url: `/v1/links/${id}`,
+      headers: { cookie },
+      payload: { active: false },
+    });
+    expect(patched.json().result.active).toBe(false);
+
+    const list = await app.inject({ url: "/v1/links?q=air", headers: { cookie } });
+    expect(list.json().items).toHaveLength(1);
+
+    const stats = await app.inject({ url: "/v1/stats/clicks?group_by=day", headers: { cookie } });
+    expect(stats.statusCode).toBe(200);
+    expect(stats.json().rows.length).toBeGreaterThanOrEqual(7);
   });
 });

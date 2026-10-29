@@ -22,7 +22,7 @@ Legenda de status: ⬜ não iniciado · 🟨 em andamento · ✅ concluído
 
 **Entregue (28/10/2026):** tudo acima, mais tools `get_preferences`/`update_preferences`, resource `workspace://preferences` e tela de preferências. Desvios: CI ainda não configurado (repo sem git/remote); MinIO removido do compose (imagem saiu do Docker Hub) — storage será escolhido na Fase 4; `apps/web` usa client fetch simples em vez de client gerado do OpenAPI.
 
-## Fase 1 — Links e rastreamento ⬜
+## Fase 1 — Links e rastreamento ✅
 
 **Specs:** [11](11-links-e-rastreamento.md)
 
@@ -31,6 +31,9 @@ Legenda de status: ⬜ não iniciado · 🟨 em andamento · ✅ concluído
 - Tools: `create_tracked_link`, `get_link_stats`, `create_invite_link`.
 
 **Aceite:** p95 < 50 ms local; cliques humanos vs bot separados; convite rotativo alternando entre 2 grupos.
+
+**Entregue (28/10/2026):** serviço `apps/redirect` (porta 3002) com cache Redis e cliques gravados em lote; p95 medido de 0,9 ms com Redis real. Canais e segmentos com cadastro manual (`upsert_channel`, `upsert_segment`), links (`create/update/list_tracked_link(s)`), convites (`create/update/list_invite_link(s)`) e `get_link_stats` com quebra por dia, link, convite, canal e origem. Painel: Grupos, Links e Convites. Eventos `segment.full`, `link.created` e `link.destination_changed` gravados na tabela `events`.
+Desvios: cliques ficam em buffer de memória por até 1 s antes de gravar (queda do processo perde esse intervalo; trocar por fila no Redis se virar problema). Contagem de membros é manual até a Fase 3.
 
 ## Fase 2 — Shopee e ofertas ⬜
 

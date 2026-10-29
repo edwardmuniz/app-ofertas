@@ -9,7 +9,7 @@ export const MODULES = [
     status: "available",
     phase: 0,
   },
-  { key: "links", name: "Links e rastreamento", status: "planned", phase: 1 },
+  { key: "links", name: "Links e rastreamento", status: "available", phase: 1 },
   { key: "offers", name: "Ofertas (Shopee)", status: "planned", phase: 2 },
   { key: "publishing", name: "WhatsApp e publicação", status: "planned", phase: 3 },
   { key: "creatives_image", name: "Criativos de imagem", status: "planned", phase: 4 },

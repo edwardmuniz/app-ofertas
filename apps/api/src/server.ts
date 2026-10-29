@@ -1,4 +1,4 @@
-import { RedisCounterStore } from "@ofertas/core";
+import { RedisCache, RedisCounterStore } from "@ofertas/core";
 import { createDb } from "@ofertas/db";
 import { Redis } from "ioredis";
 import { buildApp } from "./app";
@@ -9,7 +9,12 @@ const { db, close } = createDb(env.DATABASE_URL);
 const redis = new Redis(env.REDIS_URL, { maxRetriesPerRequest: 2 });
 
 const app = await buildApp({
-  deps: { db, counters: new RedisCounterStore(redis) },
+  deps: {
+    db,
+    counters: new RedisCounterStore(redis),
+    cache: new RedisCache(redis),
+    redirectBaseUrl: env.REDIRECT_PUBLIC_URL,
+  },
   allowSignup: env.ALLOW_SIGNUP,
   publicUrl: env.API_PUBLIC_URL,
   secureCookies: env.NODE_ENV === "production",

@@ -27,6 +27,8 @@ export async function mcpRoutes(app: FastifyInstance, opts: { deps: Deps; public
     });
     await server.connect(transport);
     await transport.handleRequest(req.raw, reply.raw, req.body);
+    // Sem sessão e com resposta JSON: a resposta deve estar encerrada aqui.
+    if (!reply.raw.writableEnded) reply.raw.end();
   });
 
   const notAllowed = async (

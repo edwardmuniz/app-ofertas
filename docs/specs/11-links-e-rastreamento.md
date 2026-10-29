@@ -10,6 +10,7 @@ Base do produto: sem isso não há métrica de grupo, criativo, anúncio ou grow
 - Link inativo/expirado → `fallback_url` (ex.: página "oferta encerrada, veja outras" ou o próprio grupo).
 - Destino pode ser **trocado** sem mudar o slug (ex.: oferta expirou → substituta).
 - Detecção básica de bots/preview (WhatsApp/Instagram fazem prefetch para gerar preview): marcar `is_bot` por user-agent e não contar como clique humano.
+- **Implementado** em `apps/redirect`: cache do slug no Redis (5 min; slug inexistente 1 min), cliques em buffer gravados em lote a cada 1 s, IP salvo só como hash com `IP_HASH_SALT`, parâmetros `src`, `ref`, `ad` e `utm_*` guardados no clique. `HEAD` conta como robô. Slugs personalizados são gravados em minúsculas; `entrar`, `bio`, `l`, `api` etc. são reservados.
 
 ## Granularidade
 

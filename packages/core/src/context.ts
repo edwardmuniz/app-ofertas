@@ -1,5 +1,6 @@
 import type { ActorType, Origin, Role, Scope } from "@ofertas/contracts";
 import type { Db, DbOrTx } from "@ofertas/db";
+import type { KeyValueCache } from "./cache";
 import type { CounterStore } from "./limits";
 
 export type Actor = {
@@ -19,6 +20,9 @@ export type Actor = {
 export type Deps = {
   db: Db;
   counters: CounterStore;
+  cache: KeyValueCache;
+  /** URL pública do redirecionador, ex.: https://go.seudominio.com */
+  redirectBaseUrl: string;
   now?: () => Date;
 };
 

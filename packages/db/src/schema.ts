@@ -1,4 +1,5 @@
 import {
+  boolean,
   index,
   integer,
   jsonb,
@@ -181,4 +182,144 @@ export const approvals = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index().on(t.workspaceId, t.status)],
+);
+
+// ── Canais (cadastro manual na Fase 1; importação do WhatsApp na Fase 3) ──
+
+export const channels = pgTable(
+  "channels",
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    type: text({ enum: ["wa_group", "wa_community", "wa_channel", "ig_account", "telegram"] })
+      .notNull()
+      .default("wa_group"),
+    name: text().notNull(),
+    externalId: text(),
+    inviteUrl: text(),
+    memberCount: integer().notNull().default(0),
+    memberLimit: integer().notNull().default(1024),
+    status: text({ enum: ["active", "paused", "archived"] })
+      .notNull()
+      .default("active"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index().on(t.workspaceId)],
+);
+
+export const segments = pgTable(
+  "segments",
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    name: text().notNull(),
+    description: text(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex().on(t.workspaceId, t.name)],
+);
+
+export const channelSegments = pgTable(
+  "channel_segments",
+  {
+    channelId: uuid()
+      .notNull()
+      .references(() => channels.id, { onDelete: "cascade" }),
+    segmentId: uuid()
+      .notNull()
+      .references(() => segments.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.channelId, t.segmentId] }), index().on(t.segmentId)],
+);
+
+// ── Links e rastreamento ────────────────────────────────────────────
+
+export const trackedLinks = pgTable(
+  "tracked_links",
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    slug: text().notNull().unique(),
+    destinationUrl: text().notNull(),
+    fallbackUrl: text(),
+    active: boolean().notNull().default(true),
+    expiresAt: timestamp({ withTimezone: true }),
+    title: text(),
+    /** origem: wa, ig, ads, bio, story... */
+    source: text(),
+    campaign: text(),
+    channelId: uuid().references(() => channels.id, { onDelete: "set null" }),
+    // Ligações com entidades das próximas fases (FK adicionada quando as tabelas existirem)
+    offerId: uuid(),
+    postId: uuid(),
+    creativeId: uuid(),
+    subIds: jsonb().$type<Record<string, string>>().notNull().default({}),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index().on(t.workspaceId, t.createdAt)],
+);
+
+export const inviteLinks = pgTable(
+  "invite_links",
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    slug: text().notNull().unique(),
+    name: text().notNull(),
+    segmentId: uuid()
+      .notNull()
+      .references(() => segments.id, { onDelete: "restrict" }),
+    strategy: text({ enum: ["fill_first", "round_robin"] })
+      .notNull()
+      .default("fill_first"),
+    /** Vagas mantidas livres em cada grupo antes de considerá-lo cheio */
+    reserve: integer().notNull().default(10),
+    fallbackUrl: text(),
+    active: boolean().notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index().on(t.workspaceId)],
+);
+
+/** Cliques em links rastreados e convites. Volume alto: particionar por mês quando crescer. */
+export const clicks = pgTable(
+  "clicks",
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    kind: text({ enum: ["link", "invite"] }).notNull(),
+    trackedLinkId: uuid().references(() => trackedLinks.id, { onDelete: "cascade" }),
+    inviteLinkId: uuid().references(() => inviteLinks.id, { onDelete: "cascade" }),
+    channelId: uuid().references(() => channels.id, { onDelete: "set null" }),
+    ts: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    ipHash: text(),
+    userAgent: text(),
+    referrer: text(),
+    params: jsonb().$type<Record<string, string>>(),
+    isBot: boolean().notNull().default(false),
+    outcome: text({ enum: ["redirect", "fallback", "gone", "full"] }).notNull(),
+  },
+  (t) => [
+    index().on(t.workspaceId, t.ts),
+    index().on(t.trackedLinkId, t.ts),
+    index().on(t.inviteLinkId, t.ts),
+  ],
+);
+
+// ── Eventos (outbox) ────────────────────────────────────────────────
+
+export const events = pgTable(
+  "events",
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    type: text().notNull(),
+    payload: jsonb().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index().on(t.workspaceId, t.createdAt)],
 );

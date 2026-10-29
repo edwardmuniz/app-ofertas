@@ -1,6 +1,6 @@
 import { createDb, runMigrations } from "@ofertas/db";
 import { resetDb } from "@ofertas/db/testing";
-import { type Deps, MemoryCounterStore, signup } from "../src";
+import { type Deps, MemoryCache, MemoryCounterStore, signup } from "../src";
 
 /** Conecta no banco de teste, aplica migrations e limpa os dados. */
 export async function setupTestDeps(): Promise<Deps & { close: () => Promise<void> }> {
@@ -9,7 +9,13 @@ export async function setupTestDeps(): Promise<Deps & { close: () => Promise<voi
   await runMigrations(url);
   const { db, close } = createDb(url, { max: 5 });
   await resetDb(db);
-  return { db, counters: new MemoryCounterStore(), close };
+  return {
+    db,
+    counters: new MemoryCounterStore(),
+    cache: new MemoryCache(),
+    redirectBaseUrl: "http://go.test",
+    close,
+  };
 }
 
 let n = 0;

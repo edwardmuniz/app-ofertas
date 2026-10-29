@@ -8,6 +8,9 @@ import { api } from "@/lib/api";
 
 const NAV = [
   { href: "/", label: "Visão geral" },
+  { href: "/grupos", label: "Grupos" },
+  { href: "/links", label: "Links" },
+  { href: "/convites", label: "Convites" },
   { href: "/agentes", label: "Conectar agente" },
   { href: "/preferencias", label: "Preferências" },
   { href: "/auditoria", label: "Auditoria" },

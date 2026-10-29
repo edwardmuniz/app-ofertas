@@ -11,7 +11,7 @@ pnpm install
 cp .env.example .env
 pnpm infra:up        # Postgres (5433) e Redis (6380)
 pnpm db:migrate
-pnpm dev             # API em :3001 e painel em :3000
+pnpm dev             # API :3001, painel :3000, redirecionador :3002
 ```
 
 Abra http://localhost:3000, crie a conta (o primeiro cadastro vira dono do workspace) e vá em **Conectar agente** para gerar um token. A tela mostra o comando pronto para Claude Code, Codex e Gemini CLI.
@@ -37,6 +37,7 @@ claude mcp add --transport http ofertas http://localhost:3001/mcp --header "Auth
 
 ```
 apps/api        REST /v1 (OpenAPI em /v1/openapi.json) + MCP em /mcp
+apps/redirect   Links curtos (/<slug>) e convites rotativos (/entrar/<slug>)
 apps/web        Painel Next.js (chama a API via proxy /api)
 packages/core   Regras de negócio (escopos, dry-run, idempotência, auditoria, limites)
 packages/db     Schema Drizzle e migrations
