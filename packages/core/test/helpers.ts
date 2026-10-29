@@ -1,0 +1,28 @@
+import { createDb, runMigrations } from "@ofertas/db";
+import { resetDb } from "@ofertas/db/testing";
+import { type Deps, MemoryCounterStore, signup } from "../src";
+
+/** Conecta no banco de teste, aplica migrations e limpa os dados. */
+export async function setupTestDeps(): Promise<Deps & { close: () => Promise<void> }> {
+  const url = process.env.DATABASE_URL_TEST;
+  if (!url) throw new Error("DATABASE_URL_TEST não definida");
+  await runMigrations(url);
+  const { db, close } = createDb(url, { max: 5 });
+  await resetDb(db);
+  return { db, counters: new MemoryCounterStore(), close };
+}
+
+let n = 0;
+export async function createOwner(deps: Deps) {
+  n++;
+  return signup(
+    deps,
+    {
+      name: `Dono ${n}`,
+      email: `dono${n}-${Date.now()}@teste.com`,
+      password: "senha-forte-123",
+      workspace_name: `Loja ${n}`,
+    },
+    { allowSignup: true },
+  );
+}

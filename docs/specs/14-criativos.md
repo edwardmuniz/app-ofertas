@@ -1,0 +1,83 @@
+# 14 — Criativos (imagem e vídeo)
+
+Dois caminhos, ambos disponíveis para humano (painel) e agente (MCP/CLI):
+
+- **A) Gerar no servidor por template** — `generate_creative(offer_id, template, formats, variations)`.
+- **B) Criar fora e subir** — o agente gera na máquina do usuário (modelos de imagem, ffmpeg, Remotion, editor) e envia via upload.
+
+## Brand kit
+
+Logo, paleta, fontes, marca d'água, tom de voz, selos padrão. Lido por templates e exposto ao agente (`get_brand_kit`, resource `workspace://brand-kit`) para que criativos externos sigam a mesma identidade.
+
+## Formatos
+
+| Formato      | Dimensão  | Uso                              |
+| ------------ | --------- | -------------------------------- |
+| `wa_image`   | 1080×1080 | Imagem no grupo                  |
+| `feed_4x5`   | 1080×1350 | Feed IG / anúncio                |
+| `square_1x1` | 1080×1080 | Feed / anúncio                   |
+| `story_9x16` | 1080×1920 | Story / Reels / anúncio vertical |
+
+Vídeo: MP4 H.264 + AAC, 30 fps, 6–60 s (reels/anúncios), ≤ 100 MB no upload inicial. Conversão automática para os formatos pedidos (resize/crop com área segura).
+
+## Templates
+
+### Imagem (Satori → PNG)
+
+- `card_preco`: foto do produto, título curto, preço "de/por", % OFF, selo (menor preço/cupom), logo.
+- `cupom_destaque`: foco no cupom.
+- `comparativo`: produto + histórico ("menor preço em 90 dias").
+- `colagem_achadinhos`: 3–4 produtos.
+
+### Vídeo (Remotion)
+
+- `slideshow_oferta`: fotos do produto com zoom/pan, preço animado, CTA final ("link no grupo/DM").
+- `top5_achadinhos`: sequência de 5 ofertas.
+- `contagem_regressiva`: oferta relâmpago com timer.
+- Trilha de áudio de biblioteca livre de direitos; legenda queimada opcional.
+
+Cada template declara `params_schema` (Zod/JSON Schema) → o agente descobre via `list_creative_templates` o que pode customizar (cores, textos, ordem, duração…).
+
+Render roda no worker (`render-image`, `render-video`); vídeo é assíncrono: `generate_creative` retorna `creative_id` com status `rendering` e o agente consulta `get_creative`.
+
+## Upload
+
+```
+request_upload(filename, mime, size_bytes)           → { upload_id, put_url, expires_at, headers }
+PUT direto no storage (curl / CLI / navegador)
+complete_upload(upload_id, offer_id?, title?, tags?, ai_generated?)
+   → valida, extrai metadados (dimensão, duração), gera variantes/prévias
+   → { creative_id, variants[], preview_url, validation }
+```
+
+Alternativas: `import_media_from_url(url, ...)`, CLI `ofertas upload <arquivo> --offer <id>`, base64 inline ≤ 2 MB.
+
+## Validação por destino
+
+`validate_creative(creative_id, destination)` checa: proporção, resolução mínima, duração, tamanho, codec, área segura (texto fora das bordas de UI do story), proporção de texto (recomendação para anúncios). Retorna lista de problemas com `hint` de correção. Corrigível automaticamente quando possível (`auto_fix: true` → crop/resize/transcode).
+
+## Prévia para agentes multimodais
+
+- Imagem: PNG reduzido (≤ 512 px).
+- Vídeo: **contact sheet** (grade com 6–9 frames) + primeiro frame + duração.
+- URLs assinadas com validade curta, retornadas em `generate_creative`, `complete_upload`, `get_creative`.
+
+Permite o ciclo: gerar → ver → ajustar parâmetros → gerar de novo.
+
+## Biblioteca
+
+- Busca por oferta, tags, formato, origem, status.
+- Versões e variantes (para A/B).
+- Desempenho por criativo (`creative_stats_daily`): uso em posts/anúncios, cliques, CTR, conversões.
+- **Fadiga**: CTR em queda > X% vs. primeiros dias → recomendação "gerar variações".
+
+## Conformidade
+
+- Campo `ai_generated`; quando `true` e destino Meta, aplicar rótulo de IA quando exigido.
+- Imagens de produto vêm do marketplace (uso para divulgação de afiliado); não usar marcas/pessoas de forma enganosa.
+- Nunca exibir preço diferente do validado (preço no criativo é re-checado antes da publicação; se mudou, o criativo é regenerado ou o post é bloqueado).
+
+## Critérios de aceite
+
+- Fase imagem: brand kit, 2 templates de imagem, geração por oferta, upload por URL pré-assinada, prévia, uso em post de WhatsApp.
+- Fase vídeo: 1–2 templates Remotion, render assíncrono, contact sheet, upload de vídeo com transcode, uso em Reels.
