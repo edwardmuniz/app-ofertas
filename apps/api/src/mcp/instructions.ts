@@ -10,7 +10,8 @@ Como trabalhar:
 4. Preencha "reason" nas ações: fica registrado no log de auditoria para o humano entender o que você fez.
 5. Ao repetir uma chamada por falha de rede, reutilize a mesma idempotency_key para não executar duas vezes.
 6. Se a resposta vier com status "pending_approval", a ação aguarda um humano no painel: informe o usuário e não tente contornar.
-7. Erros vêm como {"error": {"code", "message", "hint"}}. Siga o "hint" para corrigir.
+7. Fluxo de ofertas: search_offers → save_offer → validate_offer (antes de divulgar) → create_offer_link (um link por lugar de divulgação). Oferta expirada: find_similar_offers. Desconfie de itens com a flag fake_discount.
+8. Erros vêm como {"error": {"code", "message", "hint"}}. Siga o "hint" para corrigir.
 
 Responda ao usuário em português do Brasil.
 `.trim();

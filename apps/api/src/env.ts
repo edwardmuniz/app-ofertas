@@ -7,6 +7,7 @@ const Env = z.object({
   API_PORT: z.coerce.number().int().default(3001),
   API_PUBLIC_URL: z.string().default("http://localhost:3001"),
   REDIRECT_PUBLIC_URL: z.string().default("http://localhost:3002"),
+  ENCRYPTION_KEY: z.string().min(40, "ENCRYPTION_KEY ausente (veja .env.example)"),
   ALLOW_SIGNUP: z
     .enum(["true", "false"])
     .default("false")

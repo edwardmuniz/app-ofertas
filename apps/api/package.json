@@ -13,6 +13,7 @@
     "@fastify/cookie": "11.1.5",
     "@fastify/swagger": "9.9.2",
     "@modelcontextprotocol/sdk": "1.32.2",
+    "@ofertas/connectors": "workspace:^",
     "@ofertas/contracts": "workspace:^",
     "@ofertas/core": "workspace:^",
     "@ofertas/db": "workspace:^",

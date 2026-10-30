@@ -15,6 +15,13 @@
       "when": 1793240242501,
       "tag": "0001_fase1_links",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793382801281,
+      "tag": "0002_fase2_ofertas",
+      "breakpoints": true
     }
   ]
 }

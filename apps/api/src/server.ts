@@ -1,20 +1,17 @@
-import { RedisCache, RedisCounterStore } from "@ofertas/core";
-import { createDb } from "@ofertas/db";
-import { Redis } from "ioredis";
+import { createRuntimeDeps } from "@ofertas/core";
 import { buildApp } from "./app";
 import { loadEnv } from "./env";
 
 const env = loadEnv();
-const { db, close } = createDb(env.DATABASE_URL);
-const redis = new Redis(env.REDIS_URL, { maxRetriesPerRequest: 2 });
+const { deps, close } = createRuntimeDeps({
+  databaseUrl: env.DATABASE_URL,
+  redisUrl: env.REDIS_URL,
+  redirectBaseUrl: env.REDIRECT_PUBLIC_URL,
+  encryptionKey: env.ENCRYPTION_KEY,
+});
 
 const app = await buildApp({
-  deps: {
-    db,
-    counters: new RedisCounterStore(redis),
-    cache: new RedisCache(redis),
-    redirectBaseUrl: env.REDIRECT_PUBLIC_URL,
-  },
+  deps,
   allowSignup: env.ALLOW_SIGNUP,
   publicUrl: env.API_PUBLIC_URL,
   secureCookies: env.NODE_ENV === "production",
@@ -24,7 +21,6 @@ const app = await buildApp({
 const shutdown = async () => {
   await app.close();
   await close();
-  redis.disconnect();
   process.exit(0);
 };
 process.on("SIGINT", shutdown);

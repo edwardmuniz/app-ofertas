@@ -3,36 +3,55 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import {
   AuditQuery,
   CreateInviteLinkInput,
+  CreateOfferLinkInput,
   CreateTrackedLinkInput,
+  FindSimilarInput,
   LinkStatsQuery,
+  ListOffersQuery,
   ListTrackedLinksQuery,
   MutationOptions,
   Preferences,
+  SaveOfferInput,
+  SearchOffersInput,
   UpdateInviteLinkInput,
+  UpdateOfferStatusInput,
   UpdateTrackedLinkInput,
   UpsertChannelInput,
+  UpsertSavedSearchInput,
   UpsertSegmentInput,
 } from "@ofertas/contracts";
 import {
   type MutationOptions as CoreMutationOptions,
   type Ctx,
   createInviteLink,
+  createOfferLink,
   createTrackedLink,
+  findSimilarOffers,
   getLinkStats,
+  getOffer,
   getOverview,
   getPreferences,
   isAppError,
+  listAffiliateAccounts,
   listAudit,
   listChannels,
   listInviteLinks,
+  listOffers,
+  listSavedSearches,
   listSegments,
   listTrackedLinks,
+  saveOffer,
+  searchOffers,
+  setOfferStatus,
   updateInviteLink,
   updatePreferences,
   updateTrackedLink,
   upsertChannel,
+  upsertSavedSearch,
   upsertSegment,
+  validateOffer,
 } from "@ofertas/core";
+import { z } from "zod";
 import { INSTRUCTIONS } from "./instructions";
 
 export const MCP_SERVER_NAME = "ofertas";
@@ -277,6 +296,165 @@ export function createMcpServer(ctx: Ctx): McpServer {
       annotations: READ,
     },
     safe(async () => listInviteLinks(ctx)),
+  );
+
+  // ── Afiliados e ofertas ────────────────────────────────────────
+  server.registerTool(
+    "list_affiliate_accounts",
+    {
+      title: "Contas de afiliado",
+      description:
+        "Contas conectadas (Shopee etc.), modo real ou simulado, status e o que cada uma suporta. Conectar contas é feito só pelo humano no painel.",
+      annotations: READ,
+    },
+    safe(async () => listAffiliateAccounts(ctx)),
+  );
+
+  server.registerTool(
+    "search_offers",
+    {
+      title: "Buscar ofertas",
+      description:
+        "Busca produtos nas plataformas conectadas e devolve com nota 0–100 (desconto real, comissão, avaliação, vendas, nicho) e sinais de qualidade (fake_discount, lowest_30d, low_rating...). Não salva nada na curadoria: use save_offer para isso.",
+      inputSchema: SearchOffersInput.shape,
+      annotations: READ,
+    },
+    safe(async (args) => searchOffers(ctx, args)),
+  );
+
+  server.registerTool(
+    "save_offer",
+    {
+      title: "Salvar oferta",
+      description:
+        "Salva um produto (product_id de search_offers) como oferta aprovada, ou status=new para revisão humana. Consulta o preço atual antes e recusa produto sem estoque.",
+      inputSchema: { ...SaveOfferInput.shape, ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async (args) => saveOffer(ctx, ...splitOpts(args))),
+  );
+
+  server.registerTool(
+    "approve_offer",
+    {
+      title: "Aprovar oferta",
+      description: "Aprova uma oferta da curadoria (status new) para publicação.",
+      inputSchema: { offer_id: UpdateOfferStatusInput.shape.offer_id, ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async (args) => {
+      const [rest, opts] = splitOpts(args);
+      return setOfferStatus(ctx, { offer_id: rest.offer_id, status: "approved" }, opts);
+    }),
+  );
+
+  server.registerTool(
+    "reject_offer",
+    {
+      title: "Rejeitar oferta",
+      description:
+        "Rejeita uma oferta com motivo. Produtos rejeitados não voltam pela busca automática.",
+      inputSchema: {
+        offer_id: UpdateOfferStatusInput.shape.offer_id,
+        reason: UpdateOfferStatusInput.shape.reason,
+        dry_run: MutationOptions.shape.dry_run,
+        idempotency_key: MutationOptions.shape.idempotency_key,
+      },
+      annotations: WRITE,
+    },
+    safe(async (args) =>
+      setOfferStatus(
+        ctx,
+        { offer_id: args.offer_id, status: "rejected", reason: args.reason },
+        { dryRun: args.dry_run, idempotencyKey: args.idempotency_key, reason: args.reason },
+      ),
+    ),
+  );
+
+  server.registerTool(
+    "list_offers",
+    {
+      title: "Listar ofertas",
+      description:
+        "Ofertas da curadoria por status (new = aguardando revisão, approved, rejected, expired), nota mínima e busca.",
+      inputSchema: ListOffersQuery.shape,
+      annotations: READ,
+    },
+    safe(async (args) => listOffers(ctx, args)),
+  );
+
+  server.registerTool(
+    "get_offer",
+    {
+      title: "Detalhe da oferta",
+      description:
+        "Oferta com histórico de preço (mín./mediana 30 dias, mín. 90 dias, série diária) e últimas validações.",
+      inputSchema: { offer_id: z.uuid() },
+      annotations: READ,
+    },
+    safe(async ({ offer_id }) => getOffer(ctx, offer_id)),
+  );
+
+  server.registerTool(
+    "validate_offer",
+    {
+      title: "Validar oferta agora",
+      description:
+        "Confere preço, estoque e prazo na plataforma. Se o preço subiu mais de 5% ou acabou o estoque, a oferta vira expired. Rode antes de divulgar.",
+      inputSchema: { offer_id: z.uuid(), ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async (args) => {
+      const [rest, opts] = splitOpts(args);
+      return validateOffer(ctx, rest.offer_id, opts);
+    }),
+  );
+
+  server.registerTool(
+    "find_similar_offers",
+    {
+      title: "Ofertas parecidas",
+      description:
+        "Alternativas para uma oferta expirada ou fraca: mesma categoria, preço na faixa de 50% a 150%, ordenadas pela nota.",
+      inputSchema: FindSimilarInput.shape,
+      annotations: READ,
+    },
+    safe(async (args) => findSimilarOffers(ctx, args)),
+  );
+
+  server.registerTool(
+    "create_offer_link",
+    {
+      title: "Gerar link da oferta",
+      description:
+        "Gera o link de afiliado com sub-ids e o envolve num link curto rastreado. Use um link por lugar de divulgação (source: wa, ig, story, bio, ads; channel_id para o grupo). É o link que deve ser publicado.",
+      inputSchema: { ...CreateOfferLinkInput.shape, ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async (args) => createOfferLink(ctx, ...splitOpts(args))),
+  );
+
+  server.registerTool(
+    "list_saved_searches",
+    {
+      title: "Buscas salvas",
+      description:
+        "Buscas que rodam sozinhas no servidor e colocam ofertas boas na curadoria (status new). Mostra o resultado da última execução.",
+      annotations: READ,
+    },
+    safe(async () => listSavedSearches(ctx)),
+  );
+
+  server.registerTool(
+    "upsert_saved_search",
+    {
+      title: "Criar ou editar busca salva",
+      description:
+        "Sem id cria (name e query obrigatórios). query aceita os mesmos filtros de search_offers. Ofertas com nota >= min_score entram na curadoria a cada interval_minutes.",
+      inputSchema: { ...UpsertSavedSearchInput.shape, ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async (args) => upsertSavedSearch(ctx, ...splitOpts(args))),
   );
 
   return server;

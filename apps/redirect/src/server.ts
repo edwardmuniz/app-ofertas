@@ -1,6 +1,4 @@
-import { ClickBuffer, RedisCache, RedisCounterStore } from "@ofertas/core";
-import { createDb } from "@ofertas/db";
-import { Redis } from "ioredis";
+import { ClickBuffer, createRuntimeDeps } from "@ofertas/core";
 import { z } from "zod";
 import { buildRedirectApp } from "./app";
 
@@ -10,6 +8,7 @@ const env = z
     REDIS_URL: z.string().min(1),
     REDIRECT_PORT: z.coerce.number().int().default(3002),
     REDIRECT_PUBLIC_URL: z.string().default("http://localhost:3002"),
+    ENCRYPTION_KEY: z.string().min(40),
     IP_HASH_SALT: z.string().min(16, "IP_HASH_SALT precisa de pelo menos 16 caracteres"),
     TRUST_PROXY: z
       .enum(["true", "false"])
@@ -18,17 +17,16 @@ const env = z
   })
   .parse(process.env);
 
-const { db, close } = createDb(env.DATABASE_URL);
-const redis = new Redis(env.REDIS_URL, { maxRetriesPerRequest: 2 });
-const clicks = new ClickBuffer(db);
+const { deps, close } = createRuntimeDeps({
+  databaseUrl: env.DATABASE_URL,
+  redisUrl: env.REDIS_URL,
+  redirectBaseUrl: env.REDIRECT_PUBLIC_URL,
+  encryptionKey: env.ENCRYPTION_KEY,
+});
+const clicks = new ClickBuffer(deps.db);
 
 const app = await buildRedirectApp({
-  deps: {
-    db,
-    counters: new RedisCounterStore(redis),
-    cache: new RedisCache(redis),
-    redirectBaseUrl: env.REDIRECT_PUBLIC_URL,
-  },
+  deps,
   clicks,
   ipSalt: env.IP_HASH_SALT,
   trustProxy: env.TRUST_PROXY,
@@ -39,7 +37,6 @@ const shutdown = async () => {
   await app.close();
   await clicks.close();
   await close();
-  redis.disconnect();
   process.exit(0);
 };
 process.on("SIGINT", shutdown);

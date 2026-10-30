@@ -1,3 +1,4 @@
+import { defaultAffiliateConnectorFactory } from "@ofertas/connectors";
 import {
   ClickBuffer,
   createInviteLink,
@@ -7,6 +8,7 @@ import {
   MemoryCache,
   MemoryCounterStore,
   resolveSession,
+  SecretBox,
   signup,
   updateTrackedLink,
   upsertChannel,
@@ -43,6 +45,8 @@ beforeAll(async () => {
     counters: new MemoryCounterStore(),
     cache: new MemoryCache(),
     redirectBaseUrl: "http://go.test",
+    secrets: new SecretBox(Buffer.alloc(32, 1).toString("base64")),
+    affiliateConnectors: defaultAffiliateConnectorFactory,
   };
   clicks = new ClickBuffer(conn.db, { flushMs: 60_000 });
   app = await buildRedirectApp({ deps, clicks, ipSalt: "salt-de-teste-123456" });

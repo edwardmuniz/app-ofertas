@@ -35,7 +35,7 @@ Legenda de status: ⬜ não iniciado · 🟨 em andamento · ✅ concluído
 **Entregue (28/10/2026):** serviço `apps/redirect` (porta 3002) com cache Redis e cliques gravados em lote; p95 medido de 0,9 ms com Redis real. Canais e segmentos com cadastro manual (`upsert_channel`, `upsert_segment`), links (`create/update/list_tracked_link(s)`), convites (`create/update/list_invite_link(s)`) e `get_link_stats` com quebra por dia, link, convite, canal e origem. Painel: Grupos, Links e Convites. Eventos `segment.full`, `link.created` e `link.destination_changed` gravados na tabela `events`.
 Desvios: cliques ficam em buffer de memória por até 1 s antes de gravar (queda do processo perde esse intervalo; trocar por fila no Redis se virar problema). Contagem de membros é manual até a Fase 3.
 
-## Fase 2 — Shopee e ofertas ⬜
+## Fase 2 — Shopee e ofertas 🟨
 
 **Specs:** [10](10-afiliados-e-ofertas.md)
 
@@ -45,6 +45,9 @@ Desvios: cliques ficam em buffer de memória por até 1 s antes de gravar (queda
 - Painel: curadoria (lista com score/flags, aprovar/rejeitar).
 
 **Aceite:** buscar, salvar e validar ofertas reais da Shopee; link de afiliado com sub-ids.
+
+**Entregue (30/10/2026), falta só a Shopee real:** pacote `packages/connectors` com interface de afiliados, Shopee simulada (catálogo de ~240 produtos, controles de preço/estoque/falha) e conector real da Shopee (assinatura SHA256, busca, consulta por item, link curto com 5 sub-ids) testado contra respostas simuladas. Contas de afiliado com credenciais cifradas (AES-256-GCM, `ENCRYPTION_KEY`), conectadas só por humanos. Busca com nota 0–100 e sinais (`fake_discount`, `lowest_30d/90d`, `low_rating`, `unavailable`, `coupon_required`), histórico de preço, curadoria (new/approved/rejected/expired), validação com tolerância de 5%, similares e `create_offer_link` (link de afiliado com sub-ids `[origem, slug do link, campanha]` dentro de link rastreado). Buscas salvas rodadas pelo novo `apps/worker` (a cada 60 s, com trava no Redis), que também expira ofertas vencidas. 13 tools MCP novas; telas Ofertas e Afiliados.
+**Pendente:** testar o conector real com as credenciais da Shopee (pedidas em 30/10) e ajustar campos/códigos marcados [VERIFICAR] em `shopee.ts`.
 
 ## Fase 3 — WhatsApp e publicação ⬜
 

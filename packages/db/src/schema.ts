@@ -3,6 +3,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgTable,
   primaryKey,
   text,
@@ -322,4 +323,143 @@ export const events = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index().on(t.workspaceId, t.createdAt)],
+);
+
+// ── Afiliados e ofertas (Fase 2) ────────────────────────────────────
+
+const money = () => numeric({ precision: 12, scale: 2, mode: "number" });
+const platform = () => text({ enum: ["shopee", "amazon", "mercadolivre", "magalu"] }).notNull();
+
+export const affiliateAccounts = pgTable(
+  "affiliate_accounts",
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    platform: platform(),
+    label: text().notNull(),
+    /** live = API real; fake = catálogo simulado (desenvolvimento e sandbox) */
+    mode: text({ enum: ["live", "fake"] })
+      .notNull()
+      .default("live"),
+    /** JSON das credenciais cifrado com AES-256-GCM */
+    credentials: text(),
+    status: text({ enum: ["active", "error", "disabled"] })
+      .notNull()
+      .default("active"),
+    lastError: text(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index().on(t.workspaceId)],
+);
+
+export const products = pgTable(
+  "products",
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    platform: platform(),
+    externalId: text().notNull(),
+    title: text().notNull(),
+    url: text().notNull(),
+    imageUrls: text().array().notNull().default([]),
+    shopName: text(),
+    categoryIds: text().array().notNull().default([]),
+    categoryName: text(),
+    rating: numeric({ precision: 3, scale: 2, mode: "number" }),
+    soldCount: integer(),
+    lastPrice: money(),
+    lastSeenAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex().on(t.workspaceId, t.platform, t.externalId)],
+);
+
+/** Série de preços observados: base do histórico e da detecção de desconto falso. */
+export const pricePoints = pgTable(
+  "price_points",
+  {
+    id: id(),
+    productId: uuid()
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    price: money().notNull(),
+    originalPrice: money(),
+    source: text({ enum: ["search", "lookup", "validation"] }).notNull(),
+    capturedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index().on(t.productId, t.capturedAt)],
+);
+
+export const offers = pgTable(
+  "offers",
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    productId: uuid()
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    affiliateAccountId: uuid()
+      .notNull()
+      .references(() => affiliateAccounts.id, { onDelete: "cascade" }),
+    status: text({ enum: ["new", "approved", "rejected", "expired"] })
+      .notNull()
+      .default("new"),
+    price: money().notNull(),
+    originalPrice: money(),
+    discountPct: integer(),
+    couponCode: text(),
+    couponDescription: text(),
+    commissionRate: numeric({ precision: 6, scale: 4, mode: "number" }),
+    commissionValue: money(),
+    affiliateUrl: text(),
+    score: integer().notNull().default(0),
+    qualityFlags: text().array().notNull().default([]),
+    notes: text(),
+    rejectReason: text(),
+    validUntil: timestamp({ withTimezone: true }),
+    lastValidatedAt: timestamp({ withTimezone: true }),
+    /** Busca salva que encontrou a oferta (curadoria automática) */
+    savedSearchId: uuid(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index().on(t.workspaceId, t.status, t.createdAt), index().on(t.productId)],
+);
+
+export const offerValidations = pgTable(
+  "offer_validations",
+  {
+    id: id(),
+    offerId: uuid()
+      .notNull()
+      .references(() => offers.id, { onDelete: "cascade" }),
+    ok: boolean().notNull(),
+    priceWas: money().notNull(),
+    priceNow: money(),
+    available: boolean(),
+    reason: text(),
+    checkedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index().on(t.offerId, t.checkedAt)],
+);
+
+export const savedSearches = pgTable(
+  "saved_searches",
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    name: text().notNull(),
+    query: jsonb().$type<Record<string, unknown>>().notNull(),
+    intervalMinutes: integer().notNull().default(60),
+    /** Ofertas com score >= este valor entram na curadoria */
+    minScore: integer().notNull().default(60),
+    active: boolean().notNull().default(true),
+    lastRunAt: timestamp({ withTimezone: true }),
+    lastResult: jsonb().$type<Record<string, unknown>>(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index().on(t.workspaceId)],
 );

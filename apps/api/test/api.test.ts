@@ -1,6 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { MemoryCache, MemoryCounterStore } from "@ofertas/core";
+import { defaultAffiliateConnectorFactory } from "@ofertas/connectors";
+import { MemoryCache, MemoryCounterStore, SecretBox } from "@ofertas/core";
 import { createDb, limits, runMigrations } from "@ofertas/db";
 import { resetDb } from "@ofertas/db/testing";
 import type { FastifyInstance } from "fastify";
@@ -54,6 +55,8 @@ beforeAll(async () => {
       counters: new MemoryCounterStore(),
       cache: new MemoryCache(),
       redirectBaseUrl: "http://go.test",
+      secrets: new SecretBox(Buffer.alloc(32, 1).toString("base64")),
+      affiliateConnectors: defaultAffiliateConnectorFactory,
     },
     allowSignup: false,
     publicUrl: "http://localhost",
@@ -352,5 +355,100 @@ describe("Fase 1: links e convites", () => {
     const stats = await app.inject({ url: "/v1/stats/clicks?group_by=day", headers: { cookie } });
     expect(stats.statusCode).toBe(200);
     expect(stats.json().rows.length).toBeGreaterThanOrEqual(7);
+  });
+});
+
+describe("Fase 2: ofertas", () => {
+  it("humano conecta a Shopee simulada; agente não consegue conectar conta", async () => {
+    const token = await createAgentToken("full");
+    const byAgent = await app.inject({
+      method: "POST",
+      url: "/v1/affiliate-accounts",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { platform: "shopee", label: "x", mode: "fake" },
+    });
+    expect(byAgent.statusCode).toBe(403);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/affiliate-accounts",
+      headers: { cookie },
+      payload: { platform: "shopee", label: "Shopee (simulado)", mode: "fake" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().result).toMatchObject({ mode: "fake", status: "active" });
+  });
+
+  it("agente busca, salva, valida e gera link pelo MCP", async () => {
+    const client = await mcpClient(await createAgentToken("full_no_spend"));
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const r = parse(await client.callTool({ name, arguments: args }));
+      if (r.isError) throw new Error(JSON.stringify(r.body));
+      return r.body;
+    };
+
+    const found = await call("search_offers", { keyword: "air fryer", min_discount: 20, limit: 5 });
+    expect(found.items.length).toBeGreaterThan(0);
+    const pick = found.items[0];
+    expect(pick.score).toBeGreaterThanOrEqual(0);
+
+    const saved = await call("save_offer", { product_id: pick.product_id, reason: "boa nota" });
+    expect(saved.result.status).toBe("approved");
+
+    const valid = await call("validate_offer", { offer_id: saved.result.id });
+    expect(valid.result.ok).toBe(true);
+
+    const link = await call("create_offer_link", {
+      offer_id: saved.result.id,
+      source: "wa",
+      campaign: "bf",
+    });
+    expect(link.result.short_url).toMatch(/^http:\/\/go\.test\//);
+    expect(link.result.sub_ids[0]).toBe("wa");
+
+    const detail = await call("get_offer", { offer_id: saved.result.id });
+    expect(detail.price_history.points).toBeGreaterThanOrEqual(1);
+
+    const saved2 = await call("upsert_saved_search", {
+      name: "Air fryers",
+      query: { keyword: "air fryer", min_discount: 30 },
+      interval_minutes: 60,
+    });
+    expect(saved2.result.active).toBe(true);
+    await client.close();
+  });
+
+  it("REST: busca, lista e rejeita com motivo", async () => {
+    const search = await app.inject({
+      method: "POST",
+      url: "/v1/offers/search",
+      headers: { cookie },
+      payload: { keyword: "fone", limit: 3 },
+    });
+    expect(search.statusCode).toBe(200);
+    const productId = search.json().items[0].product_id;
+
+    const saved = await app.inject({
+      method: "POST",
+      url: "/v1/offers",
+      headers: { cookie },
+      payload: { product_id: productId, status: "new" },
+    });
+    const offerId = saved.json().result.id;
+    expect(saved.json().result.status).toBe("new");
+
+    const rejected = await app.inject({
+      method: "POST",
+      url: `/v1/offers/${offerId}/status`,
+      headers: { cookie },
+      payload: { status: "rejected", reason: "fora do nicho" },
+    });
+    expect(rejected.json().result).toMatchObject({
+      status: "rejected",
+      reject_reason: "fora do nicho",
+    });
+
+    const list = await app.inject({ url: "/v1/offers?status=rejected", headers: { cookie } });
+    expect(list.json().items).toHaveLength(1);
   });
 });

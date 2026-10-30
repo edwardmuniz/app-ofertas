@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@ofertas/connectors": "workspace:^",
     "@ofertas/contracts": "workspace:^",
     "@ofertas/db": "workspace:^",
     "drizzle-orm": "0.45.4",

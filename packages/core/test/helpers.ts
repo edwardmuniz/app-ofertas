@@ -1,6 +1,9 @@
+import { defaultAffiliateConnectorFactory } from "@ofertas/connectors";
 import { createDb, runMigrations } from "@ofertas/db";
 import { resetDb } from "@ofertas/db/testing";
-import { type Deps, MemoryCache, MemoryCounterStore, signup } from "../src";
+import { type Deps, MemoryCache, MemoryCounterStore, SecretBox, signup } from "../src";
+
+export const TEST_KEY = Buffer.alloc(32, 7).toString("base64");
 
 /** Conecta no banco de teste, aplica migrations e limpa os dados. */
 export async function setupTestDeps(): Promise<Deps & { close: () => Promise<void> }> {
@@ -14,6 +17,8 @@ export async function setupTestDeps(): Promise<Deps & { close: () => Promise<voi
     counters: new MemoryCounterStore(),
     cache: new MemoryCache(),
     redirectBaseUrl: "http://go.test",
+    secrets: new SecretBox(TEST_KEY),
+    affiliateConnectors: defaultAffiliateConnectorFactory,
     close,
   };
 }

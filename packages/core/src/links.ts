@@ -47,6 +47,24 @@ async function slugTaken(db: DbOrTx, slug: string) {
   return Boolean(row);
 }
 
+/** Gera um slug aleatório ainda não usado. */
+export async function freeSlug(db: DbOrTx) {
+  let slug: string;
+  do slug = generateSlug();
+  while (await slugTaken(db, slug));
+  return slug;
+}
+
+/** Insere o link e emite link.created. Usado por createTrackedLink e pelo link de oferta. */
+export async function insertTrackedLink(db: DbOrTx, values: typeof trackedLinks.$inferInsert) {
+  const [row] = await db.insert(trackedLinks).values(values).returning();
+  if (!row) throw new Error("Falha ao criar link");
+  await emitEvent(db, row.workspaceId, "link.created", { link_id: row.id, slug: row.slug });
+  return row;
+}
+
+export const toTrackedLinkOut = toTrackedLink;
+
 async function getLinkRow(db: DbOrTx, workspaceId: string, id: string) {
   const [row] = await db
     .select()
@@ -79,29 +97,23 @@ export async function createTrackedLink(
           });
         }
       } else {
-        do slug = generateSlug();
-        while (await slugTaken(c.db, slug));
+        slug = await freeSlug(c.db);
       }
       return { slug, short_url: shortUrl(c, slug), destination_url: i.destination_url };
     },
     execute: async (tx, i, p) => {
-      const [row] = await tx.db
-        .insert(trackedLinks)
-        .values({
-          workspaceId: wsId,
-          slug: p.slug,
-          destinationUrl: i.destination_url,
-          fallbackUrl: i.fallback_url ?? null,
-          expiresAt: i.expires_at ? new Date(i.expires_at) : null,
-          title: i.title ?? null,
-          source: i.source ?? null,
-          campaign: i.campaign ?? null,
-          channelId: i.channel_id ?? null,
-          subIds: i.sub_ids ?? {},
-        })
-        .returning();
-      if (!row) throw new Error("Falha ao criar link");
-      await emitEvent(tx.db, wsId, "link.created", { link_id: row.id, slug: row.slug });
+      const row = await insertTrackedLink(tx.db, {
+        workspaceId: wsId,
+        slug: p.slug,
+        destinationUrl: i.destination_url,
+        fallbackUrl: i.fallback_url ?? null,
+        expiresAt: i.expires_at ? new Date(i.expires_at) : null,
+        title: i.title ?? null,
+        source: i.source ?? null,
+        campaign: i.campaign ?? null,
+        channelId: i.channel_id ?? null,
+        subIds: i.sub_ids ?? {},
+      });
       return toTrackedLink(ctx, row);
     },
   });

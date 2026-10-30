@@ -66,6 +66,15 @@ Flags calculadas em `offer.quality_flags`:
 - Endpoint/tool `get_offer` retorna mínimo, mediana e máximo em 30/90 dias + série resumida.
 - Alertas: produtos "observados" (watchlist) geram `offer.price_dropped` quando caem abaixo de um alvo.
 
+## Implementação (Fase 2)
+
+- **Nota:** desconto real 40 pts (comparado à mediana de 30 dias quando há 3+ observações; senão o desconto informado), comissão 20 (escala log, R$ 50 = máximo), avaliação 15, vendas 10 (log, 10 mil = máximo), nicho do workspace 10 (sem nichos definidos: 5), menor preço 90d +5 / 30d +3, desconto suspeito −15, avaliação baixa −10, sem estoque = 0. Pesos em `packages/core/src/scoring.ts` (configuráveis por workspace numa fase futura).
+- **Desconto suspeito** exige 3+ observações em 3+ dias; **menor preço 30d** exige 7+ dias de histórico e **90d**, 30+ dias. Sem histórico, nenhum desses sinais aparece.
+- O preço só é gravado de novo se mudou ou se passou 1 h desde o último registro do produto.
+- A Shopee não devolve o preço "de": ele é derivado de `priceDiscountRate`.
+- `save_offer` sempre consulta o preço atual antes de salvar; produtos recusados não voltam pela busca automática.
+- Credenciais só entram pelo painel (nunca por agentes) e nunca vão para o log de auditoria.
+
 ## Critérios de aceite (fase Shopee)
 
 - Conectar conta Shopee com credenciais da Open API; credenciais cifradas.

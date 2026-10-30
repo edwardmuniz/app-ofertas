@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@ofertas/connectors": "workspace:^",
     "@ofertas/core": "workspace:^",
     "@ofertas/db": "workspace:^",
     "fastify": "5.12.7",
