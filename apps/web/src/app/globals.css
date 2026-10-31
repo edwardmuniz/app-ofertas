@@ -1,29 +1,364 @@
 @import "tailwindcss";
 
+/* Tema escuro escolhido pelo usuário (data-theme no <html>), não pelo sistema. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/*
+ * Design system OfertaHub: cinza frio + tangerina. As escalas do Tailwind usadas nas telas
+ * (neutral, emerald, red, amber, sky) apontam para as cores do design.
+ */
+@theme {
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  --color-neutral-50: #f4f5f7;
+  --color-neutral-100: #eceef1;
+  --color-neutral-200: #dfe2e7;
+  --color-neutral-300: #c9ced6;
+  --color-neutral-400: #9aa1ad;
+  --color-neutral-500: #6b7280;
+  --color-neutral-600: #4b5260;
+  --color-neutral-700: #343a46;
+  --color-neutral-800: #1f242d;
+  --color-neutral-900: #12161c;
+  --color-neutral-950: #0b0e13;
+
+  --color-brand-50: #fff4ed;
+  --color-brand-100: #ffe6d5;
+  --color-brand-200: #ffc9a8;
+  --color-brand-300: #ffa470;
+  --color-brand-400: #ff7a38;
+  --color-brand-500: #f25c12;
+  --color-brand-600: #d94a08;
+  --color-brand-700: #b33a0a;
+  --color-brand-800: #8f3010;
+  --color-brand-900: #742a11;
+  --color-brand-950: #3d1608;
+
+  /* Verde = positivo / status ok */
+  --color-emerald-50: #ecfdf3;
+  --color-emerald-100: #d1fadf;
+  --color-emerald-200: #a6f0c0;
+  --color-emerald-300: #6ee09a;
+  --color-emerald-400: #3dd17f;
+  --color-emerald-500: #12a150;
+  --color-emerald-600: #0e8a44;
+  --color-emerald-700: #0b6e37;
+  --color-emerald-800: #0a5a2e;
+  --color-emerald-900: #0c3d22;
+  --color-emerald-950: #072615;
+
+  --color-red-50: #fef1f1;
+  --color-red-100: #fddcdc;
+  --color-red-200: #fbb9ba;
+  --color-red-300: #f78a8c;
+  --color-red-400: #ff6b6e;
+  --color-red-500: #e5383b;
+  --color-red-600: #c62b2e;
+  --color-red-700: #a11f22;
+  --color-red-800: #7f1a1d;
+  --color-red-900: #561416;
+  --color-red-950: #2e0b0c;
+
+  --color-amber-50: #fff8e6;
+  --color-amber-100: #feedc2;
+  --color-amber-200: #fbdb8a;
+  --color-amber-300: #f5c04a;
+  --color-amber-400: #eeae1f;
+  --color-amber-500: #e5a000;
+  --color-amber-600: #b87f00;
+  --color-amber-700: #8f5f00;
+  --color-amber-800: #6b4700;
+  --color-amber-900: #4a3100;
+  --color-amber-950: #2b1c00;
+
+  --color-sky-50: #eef4ff;
+  --color-sky-100: #dae6ff;
+  --color-sky-200: #b7ccff;
+  --color-sky-300: #7aa5ff;
+  --color-sky-400: #5b8ff5;
+  --color-sky-500: #2f6fed;
+  --color-sky-600: #2559cc;
+  --color-sky-700: #1e4fb8;
+  --color-sky-800: #1a3f8f;
+  --color-sky-900: #152f66;
+  --color-sky-950: #0c1a3a;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+}
+
+/* Tokens semânticos (mesmos nomes do design) */
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
+  --bg-app: #fafafb;
+  --surface-card: #ffffff;
+  --surface-sunken: #f4f5f7;
+  --surface-hover: #f4f5f7;
+  --surface-selected: #fff4ed;
+  --border-subtle: #eceef1;
+  --border-default: #dfe2e7;
+  --border-strong: #c9ced6;
+  --text-primary: #12161c;
+  --text-secondary: #4b5260;
+  --text-tertiary: #6b7280;
+  --text-link: #b33a0a;
+  --action-primary-bg: #12161c;
+  --action-primary-bg-hover: #1f242d;
+  --action-primary-fg: #ffffff;
+  --action-accent-bg: #d94a08;
+  --action-accent-bg-hover: #b33a0a;
+  --action-secondary-bg: #ffffff;
+  --action-secondary-bg-hover: #f4f5f7;
+  --accent: #f25c12;
+  --accent-subtle: #fff4ed;
+  --accent-text: #b33a0a;
+  --positive: #0e8a44;
+  --negative: #c62b2e;
+  --focus-ring: rgba(242, 92, 18, 0.28);
+  --shadow-xs: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-sm: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-lg: 0 16px 40px -8px rgba(16, 24, 40, 0.18), 0 4px 8px -4px rgba(16, 24, 40, 0.06);
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --channel-whatsapp: #25d366;
+  --channel-telegram: #229ed9;
+  --platform-shopee: #ee4d2d;
+  --platform-amazon: #ff9900;
+  --platform-mercadolivre: #ffe600;
+  --platform-magalu: #0086ff;
+  --chart-1: #f25c12;
 }
 
-body {
-  @apply bg-neutral-50 text-neutral-900 antialiased dark:bg-neutral-950 dark:text-neutral-100;
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-app: #0b0e13;
+  --surface-card: #12161c;
+  --surface-sunken: #0e1217;
+  --surface-hover: #1a1f27;
+  --surface-selected: rgba(255, 122, 56, 0.12);
+  --border-subtle: #1c222b;
+  --border-default: #262d38;
+  --border-strong: #343c49;
+  --text-primary: #f1f3f6;
+  --text-secondary: #a9b0bc;
+  --text-tertiary: #7f8794;
+  --text-link: #ffa470;
+  --action-primary-bg: #f1f3f6;
+  --action-primary-bg-hover: #d9dde3;
+  --action-primary-fg: #0b0e13;
+  --action-accent-bg: #d94a08;
+  --action-accent-bg-hover: #f25c12;
+  --action-secondary-bg: #12161c;
+  --action-secondary-bg-hover: #1a1f27;
+  --accent: #ff7a38;
+  --accent-subtle: rgba(255, 122, 56, 0.12);
+  --accent-text: #ffa470;
+  --positive: #3dd17f;
+  --negative: #ff6b6e;
+  --focus-ring: rgba(255, 122, 56, 0.36);
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 20px 48px -8px rgba(0, 0, 0, 0.7);
 }
 
-.card {
-  @apply rounded-xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-900;
+@layer base {
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 20px;
+    background: var(--bg-app);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a {
+    color: inherit;
+  }
+
+  h1 {
+    letter-spacing: -0.015em;
+  }
 }
 
-.input {
-  @apply w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500 dark:border-neutral-700 dark:bg-neutral-900;
-}
+@layer components {
+  .card {
+    background: var(--surface-card);
+    border: 1px solid var(--border-default);
+    border-radius: 12px;
+    box-shadow: var(--shadow-xs);
+    padding: 20px;
+    min-width: 0;
+  }
 
-.btn {
-  @apply inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50;
-}
+  .label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 13px;
+    line-height: 18px;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
 
-.btn-ghost {
-  @apply inline-flex items-center justify-center rounded-lg border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800;
-}
+  .eyebrow {
+    font-size: 11px;
+    line-height: 16px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
 
-.label {
-  @apply mb-1 block text-sm font-medium;
+  .input {
+    width: 100%;
+    min-height: 36px;
+    padding: 7px 12px;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--text-primary);
+    background: var(--surface-card);
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    box-shadow: var(--shadow-xs);
+    outline: none;
+    transition:
+      border-color 120ms var(--ease-out),
+      box-shadow 120ms var(--ease-out);
+  }
+  .input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--focus-ring);
+  }
+  .input:disabled {
+    background: var(--surface-sunken);
+  }
+  .input::placeholder {
+    color: var(--text-tertiary);
+  }
+
+  /* Botões: .btn = primária (tinta escura), .btn-accent = criar/disparar (tangerina, 1 por tela),
+   .btn-ghost = secundária com borda. */
+  .btn,
+  .btn-accent,
+  .btn-ghost,
+  .btn-danger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 36px;
+    padding: 0 14px;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    box-shadow: var(--shadow-xs);
+    cursor: pointer;
+    transition:
+      background 120ms var(--ease-out),
+      transform 120ms var(--ease-out),
+      box-shadow 120ms;
+  }
+  .btn:active,
+  .btn-accent:active,
+  .btn-ghost:active,
+  .btn-danger:active {
+    transform: scale(0.98);
+  }
+  .btn:focus-visible,
+  .btn-accent:focus-visible,
+  .btn-ghost:focus-visible,
+  .btn-danger:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--focus-ring);
+  }
+  .btn:disabled,
+  .btn-accent:disabled,
+  .btn-ghost:disabled,
+  .btn-danger:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none;
+  }
+  .btn {
+    background: var(--action-primary-bg);
+    color: var(--action-primary-fg);
+  }
+  .btn:hover:not(:disabled) {
+    background: var(--action-primary-bg-hover);
+  }
+  .btn-accent {
+    background: var(--action-accent-bg);
+    color: #fff;
+  }
+  .btn-accent:hover:not(:disabled) {
+    background: var(--action-accent-bg-hover);
+  }
+  .btn-ghost {
+    min-height: 32px;
+    padding: 0 12px;
+    font-size: 13px;
+    background: var(--action-secondary-bg);
+    color: var(--text-primary);
+    border-color: var(--border-default);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--action-secondary-bg-hover);
+  }
+  .btn-danger {
+    background: #c62b2e;
+    color: #fff;
+  }
+  .btn-danger:hover:not(:disabled) {
+    background: #a11f22;
+  }
+
+  /* Tabelas no padrão do design: cabeçalho rebaixado, linhas com borda sutil e hover. */
+  .table {
+    width: 100%;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+  }
+  .table th {
+    padding: 10px 16px;
+    text-align: left;
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 500;
+    color: var(--text-tertiary);
+    background: var(--surface-sunken);
+    white-space: nowrap;
+  }
+  .table td {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border-subtle);
+  }
+  .table tbody tr:hover {
+    background: var(--surface-hover);
+  }
+
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: var(--accent);
+  }
+
+  .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    color: var(--text-secondary);
+    transition: background 120ms var(--ease-out);
+  }
+  .icon-btn:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+  }
 }

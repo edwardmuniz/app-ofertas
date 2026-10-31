@@ -2,6 +2,7 @@
 
 import type { Preferences } from "@ofertas/contracts";
 import { useEffect, useState } from "react";
+import { PageHeader } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 
 const toList = (s: string) =>
@@ -44,13 +45,11 @@ export default function PreferenciasPage() {
   if (!prefs) return <p className="text-sm text-neutral-500">Carregando…</p>;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Preferências do negócio</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          Agentes conectados leem estas orientações antes de agir.
-        </p>
-      </div>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Preferências do negócio"
+        subtitle={<>Agentes conectados leem estas orientações antes de agir.</>}
+      />
       <form onSubmit={save} className="card space-y-4">
         <div>
           <label className="label" htmlFor="tone_of_voice">

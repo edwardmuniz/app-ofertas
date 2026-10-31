@@ -9,7 +9,7 @@ import type {
   ValidateOfferResult,
 } from "@ofertas/contracts";
 import { useCallback, useEffect, useState } from "react";
-import { CopyButton, ErrorText, Field } from "@/components/ui";
+import { CopyButton, ErrorText, Field, PageHeader } from "@/components/ui";
 import { ApiError, api, fmtDate } from "@/lib/api";
 import { FLAG_LABELS, money, scoreClass, TONE_CLASS } from "@/lib/format";
 
@@ -92,8 +92,11 @@ export default function OfertasPage() {
   ];
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Ofertas</h1>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Ofertas"
+        subtitle="Busque, aprove e acompanhe ofertas das lojas conectadas"
+      />
       <div className="flex gap-1 overflow-x-auto border-b border-neutral-200 dark:border-neutral-800">
         {tabs.map((t) => (
           <button
@@ -102,7 +105,7 @@ export default function OfertasPage() {
             onClick={() => setTab(t.key)}
             className={`border-b-2 px-3 py-2 text-sm whitespace-nowrap ${
               tab === t.key
-                ? "border-emerald-600 font-medium"
+                ? "border-brand-500 font-medium text-neutral-900 dark:text-neutral-50"
                 : "border-transparent text-neutral-500"
             }`}
           >

@@ -2,25 +2,25 @@
 
 import type { ConnectionState, MessagingAccount } from "@ofertas/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ErrorText, Field } from "@/components/ui";
+import { ErrorText, Field, PageHeader } from "@/components/ui";
 import { ApiError, api, fmtDate } from "@/lib/api";
 
 const STATUS: Record<string, { label: string; cls: string }> = {
   connected: {
     label: "Conectado",
-    cls: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200",
+    cls: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400",
   },
   pending: {
     label: "Aguardando conexão",
-    cls: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
+    cls: "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
   },
   disconnected: {
     label: "Desconectado",
-    cls: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+    cls: "bg-red-50 text-red-600 dark:bg-red-500/15 dark:text-red-400",
   },
   logged_out: {
     label: "Deslogado",
-    cls: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+    cls: "bg-red-50 text-red-600 dark:bg-red-500/15 dark:text-red-400",
   },
 };
 
@@ -172,13 +172,13 @@ export default function WhatsAppPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">WhatsApp</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          Use um número dedicado às ofertas. Aqueça o número antes de enviar muito volume.
-        </p>
-      </div>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="WhatsApp"
+        subtitle={
+          <>Use um número dedicado às ofertas. Aqueça o número antes de enviar muito volume.</>
+        }
+      />
 
       <form onSubmit={create} className="card grid gap-3 md:grid-cols-[2fr_1fr_auto] md:items-end">
         <Field label="Nome do número" htmlFor="label">

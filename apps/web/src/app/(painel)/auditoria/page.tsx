@@ -2,6 +2,7 @@
 
 import type { AuditEntry, AuditPage } from "@ofertas/contracts";
 import { useCallback, useEffect, useState } from "react";
+import { PageHeader } from "@/components/ui";
 import { api, fmtDate } from "@/lib/api";
 
 const ORIGIN_LABEL: Record<string, string> = {
@@ -13,9 +14,9 @@ const ORIGIN_LABEL: Record<string, string> = {
 };
 
 const RESULT_STYLE: Record<string, string> = {
-  ok: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200",
-  error: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
-  pending_approval: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
+  ok: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400",
+  error: "bg-red-50 text-red-600 dark:bg-red-500/15 dark:text-red-400",
+  pending_approval: "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
 };
 
 export default function AuditoriaPage() {
@@ -40,18 +41,25 @@ export default function AuditoriaPage() {
   }, [load]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <h1 className="text-2xl font-semibold">Auditoria</h1>
-        <select className="input w-auto" value={origin} onChange={(e) => setOrigin(e.target.value)}>
-          <option value="">Todas as origens</option>
-          {Object.entries(ORIGIN_LABEL).map(([k, v]) => (
-            <option key={k} value={k}>
-              {v}
-            </option>
-          ))}
-        </select>
-      </div>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Auditoria"
+        subtitle="Tudo o que pessoas, agentes e o sistema fizeram no workspace"
+        actions={
+          <select
+            className="input w-auto"
+            value={origin}
+            onChange={(e) => setOrigin(e.target.value)}
+          >
+            <option value="">Todas as origens</option>
+            {Object.entries(ORIGIN_LABEL).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </select>
+        }
+      />
 
       <section className="card overflow-x-auto">
         {items.length === 0 ? (

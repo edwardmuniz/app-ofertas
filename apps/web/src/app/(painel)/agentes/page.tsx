@@ -7,6 +7,7 @@ import {
   type ScopePreset,
 } from "@ofertas/contracts";
 import { useCallback, useEffect, useState } from "react";
+import { PageHeader } from "@/components/ui";
 import { ApiError, api, fmtDate } from "@/lib/api";
 
 const MCP_URL = process.env.MCP_URL ?? "http://localhost:3001/mcp";
@@ -104,14 +105,16 @@ export default function AgentesPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Conectar agente</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          Gere um token para Claude, Codex, Gemini ou outro agente operar a plataforma pelo MCP em{" "}
-          <code className="rounded bg-neutral-100 px-1 dark:bg-neutral-800">{MCP_URL}</code>.
-        </p>
-      </div>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Conectar agente"
+        subtitle={
+          <>
+            Gere um token para Claude, Codex, Gemini ou outro agente operar a plataforma pelo MCP em{" "}
+            <code className="rounded bg-neutral-100 px-1 dark:bg-neutral-800">{MCP_URL}</code>.
+          </>
+        }
+      />
 
       <form onSubmit={create} className="card grid gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
         <div>
@@ -150,7 +153,7 @@ export default function AgentesPage() {
       </form>
 
       {created && (
-        <section className="card space-y-4 border-emerald-400 dark:border-emerald-700">
+        <section className="card space-y-4 border-brand-300 dark:border-brand-700">
           <div>
             <h2 className="font-medium">Token criado: {created.name}</h2>
             <p className="text-sm text-amber-700 dark:text-amber-300">

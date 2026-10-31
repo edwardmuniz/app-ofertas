@@ -36,3 +36,4 @@ Plataforma de ofertas de afiliados (grupos de WhatsApp + Instagram), operável p
 - Erros: `{ error: { code, message, hint, details } }` com `code` estável.
 - Testes com Vitest; todo caso de uso do `core` tem teste; adapters testados contra o fake.
 - Fuso padrão `America/Sao_Paulo`; armazenar datas em UTC.
+- Painel segue o design system **OfertaHub** (Claude Design): tokens em `apps/web/src/app/globals.css` (cinza frio + tangerina, Geist, tema claro/escuro por `data-theme`), componentes em `apps/web/src/components/ui.tsx` (`PageHeader`, `Panel`, `StatCard`, `Tag`, `PlatformBadge`, `Segmented`) e ícones `lucide-react`. Botão tangerina (`.btn-accent`) só para criar/disparar, no máximo um por tela.

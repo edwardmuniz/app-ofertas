@@ -2,7 +2,7 @@
 
 import type { Channel, LinkStats, TrackedLink } from "@ofertas/contracts";
 import { useCallback, useEffect, useState } from "react";
-import { Badge, CopyButton, ErrorText, Field, Stat } from "@/components/ui";
+import { Badge, CopyButton, ErrorText, Field, PageHeader, Stat } from "@/components/ui";
 import { ApiError, api, fmtDate } from "@/lib/api";
 
 const SOURCES = [
@@ -80,14 +80,16 @@ export default function LinksPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Links rastreados</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          Todo link divulgado passa pelo seu domínio: assim você mede cliques e troca o destino sem
-          quebrar o link.
-        </p>
-      </div>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Links rastreados"
+        subtitle={
+          <>
+            Todo link divulgado passa pelo seu domínio: assim você mede cliques e troca o destino
+            sem quebrar o link.
+          </>
+        }
+      />
 
       {totals && (
         <div className="grid grid-cols-3 gap-3">

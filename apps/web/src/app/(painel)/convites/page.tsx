@@ -2,7 +2,7 @@
 
 import type { InviteLink, LinkStats, Segment } from "@ofertas/contracts";
 import { useCallback, useEffect, useState } from "react";
-import { Badge, CopyButton, ErrorText, Field } from "@/components/ui";
+import { Badge, CopyButton, ErrorText, Field, PageHeader } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 
 export default function ConvitesPage() {
@@ -57,14 +57,16 @@ export default function ConvitesPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Convites rotativos</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          Um link fixo para a bio, anúncios e stories. Cada pessoa cai num grupo do segmento que
-          ainda tem vaga.
-        </p>
-      </div>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Convites rotativos"
+        subtitle={
+          <>
+            Um link fixo para a bio, anúncios e stories. Cada pessoa cai num grupo do segmento que
+            ainda tem vaga.
+          </>
+        }
+      />
 
       {segments.length === 0 ? (
         <p className="card text-sm text-neutral-500">

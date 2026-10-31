@@ -13,13 +13,13 @@ export const FLAG_LABELS: Record<string, { label: string; tone: "bad" | "good" |
 };
 
 export const TONE_CLASS = {
-  bad: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200",
-  good: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200",
-  info: "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-200",
+  bad: "bg-red-50 text-red-600 dark:bg-red-500/15 dark:text-red-400",
+  good: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400",
+  info: "bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300",
 };
 
 export function scoreClass(score: number) {
-  if (score >= 70) return "bg-emerald-600 text-white";
+  if (score >= 70) return "bg-emerald-600 text-white dark:bg-emerald-500";
   if (score >= 45) return "bg-amber-500 text-white";
   return "bg-neutral-400 text-white dark:bg-neutral-600";
 }

@@ -3,6 +3,7 @@
 import type { MetricsBreakdown } from "@ofertas/contracts";
 import { useEffect, useState } from "react";
 import { type PeriodKey, PeriodPicker, WEEKDAYS } from "@/components/metrics";
+import { PageHeader } from "@/components/ui";
 import { api } from "@/lib/api";
 import { money } from "@/lib/format";
 
@@ -25,11 +26,12 @@ export default function MetricasPage() {
   const maxCpp = Math.max(0, ...(hours?.hours ?? []).map((c) => c.clicks_per_post ?? 0));
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">Métricas</h1>
-        <PeriodPicker value={period} onChange={setPeriod} />
-      </div>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Métricas"
+        subtitle="Grupos, ofertas e horários que trazem mais cliques"
+        actions={<PeriodPicker value={period} onChange={setPeriod} />}
+      />
 
       <section className="card overflow-x-auto">
         <h2 className="mb-1 font-medium">Cliques por envio, por horário</h2>
@@ -67,7 +69,7 @@ export default function MetricasPage() {
                       style={
                         c
                           ? {
-                              backgroundColor: `color-mix(in oklab, #047857 ${Math.round(15 + t * 85)}%, transparent)`,
+                              backgroundColor: `color-mix(in oklab, var(--accent) ${Math.round(15 + t * 85)}%, transparent)`,
                             }
                           : undefined
                       }
@@ -82,7 +84,7 @@ export default function MetricasPage() {
 
       <section className="card overflow-x-auto">
         <h2 className="mb-3 font-medium">Grupos</h2>
-        <table className="w-full text-sm">
+        <table className="table text-sm">
           <thead className="text-left text-neutral-500">
             <tr>
               <th className="py-1 font-normal">Grupo</th>
@@ -130,7 +132,7 @@ export default function MetricasPage() {
 
       <section className="card overflow-x-auto">
         <h2 className="mb-3 font-medium">Ofertas</h2>
-        <table className="w-full text-sm">
+        <table className="table text-sm">
           <thead className="text-left text-neutral-500">
             <tr>
               <th className="py-1 font-normal">Oferta</th>

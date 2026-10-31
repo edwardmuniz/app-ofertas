@@ -2,7 +2,7 @@
 
 import type { Channel, Segment } from "@ofertas/contracts";
 import { useCallback, useEffect, useState } from "react";
-import { Badge, ErrorText, Field } from "@/components/ui";
+import { Badge, ErrorText, Field, PageHeader } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 
 export default function GruposPage() {
@@ -80,13 +80,11 @@ export default function GruposPage() {
   const segName = (id: string) => segments.find((s) => s.id === id)?.name ?? "?";
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Grupos</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          Importe os grupos do seu número em WhatsApp, ou cadastre manualmente.
-        </p>
-      </div>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Grupos"
+        subtitle={<>Importe os grupos do seu número em WhatsApp, ou cadastre manualmente.</>}
+      />
       <ErrorText error={error} />
 
       <section className="card space-y-3">

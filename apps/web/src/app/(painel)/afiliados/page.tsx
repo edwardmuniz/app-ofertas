@@ -2,7 +2,7 @@
 
 import type { AffiliateAccount } from "@ofertas/contracts";
 import { useCallback, useEffect, useState } from "react";
-import { Badge, ErrorText, Field } from "@/components/ui";
+import { Badge, ErrorText, Field, PageHeader } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 
 type Platforms = { credential_fields: Record<string, { key: string; label: string }[]> };
@@ -71,13 +71,11 @@ export default function AfiliadosPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Contas de afiliado</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          As credenciais ficam cifradas no servidor e nunca são mostradas a agentes.
-        </p>
-      </div>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Contas de afiliado"
+        subtitle={<>As credenciais ficam cifradas no servidor e nunca são mostradas a agentes.</>}
+      />
 
       <form onSubmit={connect} className="card grid gap-4 md:grid-cols-2">
         <h2 className="font-medium md:col-span-2">Conectar conta</h2>

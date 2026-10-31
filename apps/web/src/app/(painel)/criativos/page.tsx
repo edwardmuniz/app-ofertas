@@ -2,7 +2,7 @@
 
 import type { BrandKit, Creative, Offer, UploadTicket } from "@ofertas/contracts";
 import { useCallback, useEffect, useState } from "react";
-import { ErrorText, Field } from "@/components/ui";
+import { ErrorText, Field, PageHeader } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 
 type Mutation<T> = { status: string; result?: T };
@@ -113,8 +113,11 @@ export default function CriativosPage() {
   if (!kit) return <p className="text-sm text-neutral-500">Carregando…</p>;
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Criativos</h1>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Criativos"
+        subtitle="Cards de oferta com a sua identidade visual e imagens próprias"
+      />
       <ErrorText error={error} />
 
       <form onSubmit={saveKit} className="card grid gap-3 md:grid-cols-5 md:items-end">

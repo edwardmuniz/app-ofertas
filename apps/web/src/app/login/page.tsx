@@ -41,9 +41,21 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-4">
-      <form onSubmit={onSubmit} className="card w-full max-w-sm space-y-4">
-        <h1 className="text-xl font-semibold">{mode === "login" ? "Entrar" : "Criar conta"}</h1>
+    <main className="flex min-h-screen flex-col items-center justify-center gap-6 p-4">
+      <span className="text-2xl font-bold tracking-[-0.03em]">
+        Oferta<span className="text-brand-500 dark:text-brand-400">Hub</span>
+      </span>
+      <form onSubmit={onSubmit} className="card w-full max-w-sm space-y-4 !p-6">
+        <div>
+          <h1 className="text-xl font-semibold tracking-[-0.015em]">
+            {mode === "login" ? "Entrar" : "Criar conta"}
+          </h1>
+          <p className="mt-1 text-sm text-neutral-500">
+            {mode === "login"
+              ? "Acesse o painel dos seus grupos de ofertas."
+              : "Configure o seu negócio para começar."}
+          </p>
+        </div>
         {mode === "signup" && (
           <>
             <div>
