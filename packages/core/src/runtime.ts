@@ -1,4 +1,7 @@
-import { defaultAffiliateConnectorFactory } from "@ofertas/connectors";
+import {
+  createMessagingProviderFactory,
+  defaultAffiliateConnectorFactory,
+} from "@ofertas/connectors";
 import { createDb } from "@ofertas/db";
 import { Redis } from "ioredis";
 import { RedisCache } from "./cache";
@@ -11,6 +14,8 @@ export type RuntimeConfig = {
   redisUrl: string;
   redirectBaseUrl: string;
   encryptionKey: string;
+  evolutionGo?: { baseUrl: string; globalKey: string } | null;
+  messagingWebhookUrl?: string | null;
   dbPoolSize?: number;
 };
 
@@ -25,6 +30,8 @@ export function createRuntimeDeps(cfg: RuntimeConfig) {
     redirectBaseUrl: cfg.redirectBaseUrl,
     secrets: new SecretBox(cfg.encryptionKey),
     affiliateConnectors: defaultAffiliateConnectorFactory,
+    messaging: createMessagingProviderFactory({ evolutionGo: cfg.evolutionGo }),
+    messagingWebhookUrl: cfg.messagingWebhookUrl ?? null,
   };
   const close = async () => {
     await closeDb();

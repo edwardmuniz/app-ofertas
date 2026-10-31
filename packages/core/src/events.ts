@@ -9,7 +9,11 @@ export type EventType =
   | "link.created"
   | "link.destination_changed"
   | "offer.expired"
-  | "affiliate.auth_failed";
+  | "affiliate.auth_failed"
+  | "whatsapp.connected"
+  | "whatsapp.logged_out"
+  | "post.failed"
+  | "post.skipped";
 
 export async function emitEvent(
   db: DbOrTx,

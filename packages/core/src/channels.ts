@@ -22,8 +22,14 @@ const toChannel = (r: ChannelRow, segmentIds: string[]): Channel => ({
   member_limit: r.memberLimit,
   status: r.status,
   segment_ids: segmentIds,
+  external_id: r.externalId,
+  messaging_account_id: r.messagingAccountId,
+  admin_only: r.adminOnly,
+  last_synced_at: r.lastSyncedAt?.toISOString() ?? null,
   created_at: r.createdAt.toISOString(),
 });
+
+export { segmentIdsFor, toChannel };
 
 async function segmentIdsFor(db: DbOrTx, channelIds: string[]) {
   const map = new Map<string, string[]>();

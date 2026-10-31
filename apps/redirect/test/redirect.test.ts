@@ -1,4 +1,7 @@
-import { defaultAffiliateConnectorFactory } from "@ofertas/connectors";
+import {
+  createMessagingProviderFactory,
+  defaultAffiliateConnectorFactory,
+} from "@ofertas/connectors";
 import {
   ClickBuffer,
   createInviteLink,
@@ -47,6 +50,8 @@ beforeAll(async () => {
     redirectBaseUrl: "http://go.test",
     secrets: new SecretBox(Buffer.alloc(32, 1).toString("base64")),
     affiliateConnectors: defaultAffiliateConnectorFactory,
+    messaging: createMessagingProviderFactory({}),
+    messagingWebhookUrl: "http://api.test/webhooks/whatsapp",
   };
   clicks = new ClickBuffer(conn.db, { flushMs: 60_000 });
   app = await buildRedirectApp({ deps, clicks, ipSalt: "salt-de-teste-123456" });

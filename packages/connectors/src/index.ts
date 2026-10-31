@@ -2,3 +2,7 @@ export * from "./affiliate/fake";
 export * from "./affiliate/registry";
 export * from "./affiliate/shopee";
 export * from "./affiliate/types";
+export * from "./messaging/evolution-go";
+export * from "./messaging/fake";
+export * from "./messaging/registry";
+export * from "./messaging/types";

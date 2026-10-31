@@ -1,4 +1,7 @@
-import { defaultAffiliateConnectorFactory } from "@ofertas/connectors";
+import {
+  createMessagingProviderFactory,
+  defaultAffiliateConnectorFactory,
+} from "@ofertas/connectors";
 import { createDb, runMigrations } from "@ofertas/db";
 import { resetDb } from "@ofertas/db/testing";
 import { type Deps, MemoryCache, MemoryCounterStore, SecretBox, signup } from "../src";
@@ -19,6 +22,8 @@ export async function setupTestDeps(): Promise<Deps & { close: () => Promise<voi
     redirectBaseUrl: "http://go.test",
     secrets: new SecretBox(TEST_KEY),
     affiliateConnectors: defaultAffiliateConnectorFactory,
+    messaging: createMessagingProviderFactory({}),
+    messagingWebhookUrl: "http://api.test/webhooks/whatsapp",
     close,
   };
 }

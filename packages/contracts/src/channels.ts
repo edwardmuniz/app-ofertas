@@ -20,6 +20,10 @@ export const Channel = z.object({
   member_limit: z.number(),
   status: z.enum(CHANNEL_STATUS),
   segment_ids: z.array(z.string()),
+  external_id: z.string().nullable().describe("JID do grupo no WhatsApp"),
+  messaging_account_id: z.string().nullable(),
+  admin_only: z.boolean().nullable(),
+  last_synced_at: z.string().nullable(),
   created_at: z.string(),
 });
 export type Channel = z.infer<typeof Channel>;

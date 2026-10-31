@@ -1,4 +1,4 @@
-import type { AffiliateConnectorFactory } from "@ofertas/connectors";
+import type { AffiliateConnectorFactory, MessagingProviderFactory } from "@ofertas/connectors";
 import { type ActorType, type Origin, type Role, SCOPES, type Scope } from "@ofertas/contracts";
 import type { Db, DbOrTx } from "@ofertas/db";
 import type { KeyValueCache } from "./cache";
@@ -29,6 +29,10 @@ export type Deps = {
   secrets: SecretBox;
   /** Cria o conector de afiliado de uma conta (real ou simulado) */
   affiliateConnectors: AffiliateConnectorFactory;
+  /** Provedores de WhatsApp (Evolution Go e simulado) */
+  messaging: MessagingProviderFactory;
+  /** URL pública base dos webhooks de WhatsApp, ex.: https://app.x/webhooks/whatsapp */
+  messagingWebhookUrl: string | null;
   now?: () => Date;
 };
 

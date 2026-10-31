@@ -95,6 +95,16 @@ Regras podem ser criadas/editadas por agente (`upsert_automation_rule`) e respei
 - Política de privacidade e termos no link de entrada.
 - Retenção de eventos de participantes: 12 meses (configurável).
 
+## Implementação (Fase 3)
+
+- **Evolution Go:** header `apikey`; chave global só para criar/apagar instâncias, token da instância (cifrado no banco) para o resto. Eventos assinados: `GROUP`, `CONNECTION`, `QRCODE`. Respostas lidas de forma tolerante (a documentação e os exemplos divergem).
+- **Webhook:** `POST /webhooks/whatsapp/evolution_go`. Validado pelo `instanceToken` do corpo (comparação em tempo constante). Configure `MESSAGING_WEBHOOK_URL` com a URL pública base (a plataforma acrescenta `/evolution_go` ao registrar a instância).
+- **Fila:** tabela `posts`; o worker reivindica a cada 5 s com `FOR UPDATE SKIP LOCKED` (vários workers não enviam em dobro) e recupera envios travados após 5 min. Pausa de 2 s entre envios da mesma rodada.
+- **Limites padrão** (tabela `limits` sobrescreve): intervalo de 3 min no mesmo grupo, 60 mensagens/hora por número, até 45 s de atraso aleatório.
+- **Envio de oferta:** revalida preço/estoque; se inválida, o post vira `skipped`. Gera link rastreado por post (`source=wa`, canal, post) e envia a foto do produto com a legenda (ou texto, se `with_image=false`).
+- **Regras:** a cada minuto, dentro das janelas, agendam no máximo 1 oferta pendente por grupo, respeitando `max_per_day` e `min_interval_minutes`.
+- **LGPD:** só contagens de entradas/saídas são guardadas (`channel_stats_daily`), nunca os números dos membros.
+
 ## Critérios de aceite (fase WhatsApp)
 
 - Conectar número via QR, listar/importar grupos, ver saúde.

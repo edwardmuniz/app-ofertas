@@ -8,6 +8,11 @@ const { deps, close } = createRuntimeDeps({
   redisUrl: env.REDIS_URL,
   redirectBaseUrl: env.REDIRECT_PUBLIC_URL,
   encryptionKey: env.ENCRYPTION_KEY,
+  evolutionGo:
+    env.EVOLUTION_GO_URL && env.EVOLUTION_GO_API_KEY
+      ? { baseUrl: env.EVOLUTION_GO_URL, globalKey: env.EVOLUTION_GO_API_KEY }
+      : null,
+  messagingWebhookUrl: env.MESSAGING_WEBHOOK_URL ?? `${env.API_PUBLIC_URL}/webhooks/whatsapp`,
 });
 
 const app = await buildApp({

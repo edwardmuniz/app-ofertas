@@ -11,7 +11,8 @@ Como trabalhar:
 5. Ao repetir uma chamada por falha de rede, reutilize a mesma idempotency_key para não executar duas vezes.
 6. Se a resposta vier com status "pending_approval", a ação aguarda um humano no painel: informe o usuário e não tente contornar.
 7. Fluxo de ofertas: search_offers → save_offer → validate_offer (antes de divulgar) → create_offer_link (um link por lugar de divulgação). Oferta expirada: find_similar_offers. Desconfie de itens com a flag fake_discount.
-8. Erros vêm como {"error": {"code", "message", "hint"}}. Siga o "hint" para corrigir.
+8. Publicação: preview_post → schedule_posts (dry_run primeiro) → list_posts para acompanhar. A plataforma cuida de horários, intervalos, duplicadas e da revalidação na hora do envio. Para publicar continuamente, prefira upsert_automation_rule.
+9. Erros vêm como {"error": {"code", "message", "hint"}}. Siga o "hint" para corrigir.
 
 Responda ao usuário em português do Brasil.
 `.trim();

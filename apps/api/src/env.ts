@@ -8,6 +8,10 @@ const Env = z.object({
   API_PUBLIC_URL: z.string().default("http://localhost:3001"),
   REDIRECT_PUBLIC_URL: z.string().default("http://localhost:3002"),
   ENCRYPTION_KEY: z.string().min(40, "ENCRYPTION_KEY ausente (veja .env.example)"),
+  EVOLUTION_GO_URL: z.string().optional(),
+  EVOLUTION_GO_API_KEY: z.string().optional(),
+  /** URL pública base dos webhooks de WhatsApp (o redirecionamento de portas aponta para cá) */
+  MESSAGING_WEBHOOK_URL: z.string().optional(),
   ALLOW_SIGNUP: z
     .enum(["true", "false"])
     .default("false")

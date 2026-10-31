@@ -8,24 +8,31 @@ import {
   FindSimilarInput,
   LinkStatsQuery,
   ListOffersQuery,
+  ListPostsQuery,
   ListTrackedLinksQuery,
   MutationOptions,
   Preferences,
+  PreviewPostInput,
   SaveOfferInput,
+  SchedulePostsInput,
   SearchOffersInput,
   UpdateInviteLinkInput,
   UpdateOfferStatusInput,
   UpdateTrackedLinkInput,
+  UpsertAutomationRuleInput,
   UpsertChannelInput,
+  UpsertMessageTemplateInput,
   UpsertSavedSearchInput,
   UpsertSegmentInput,
 } from "@ofertas/contracts";
 import {
   type MutationOptions as CoreMutationOptions,
   type Ctx,
+  cancelPost,
   createInviteLink,
   createOfferLink,
   createTrackedLink,
+  deleteSentPost,
   findSimilarOffers,
   getLinkStats,
   getOffer,
@@ -34,19 +41,29 @@ import {
   isAppError,
   listAffiliateAccounts,
   listAudit,
+  listAutomationRules,
   listChannels,
   listInviteLinks,
+  listMessageTemplates,
+  listMessagingAccounts,
   listOffers,
+  listPosts,
   listSavedSearches,
   listSegments,
   listTrackedLinks,
+  previewPost,
   saveOffer,
+  schedulePosts,
   searchOffers,
+  setChannelAdminOnly,
   setOfferStatus,
+  syncGroups,
   updateInviteLink,
   updatePreferences,
   updateTrackedLink,
+  upsertAutomationRule,
   upsertChannel,
+  upsertMessageTemplate,
   upsertSavedSearch,
   upsertSegment,
   validateOffer,
@@ -455,6 +472,155 @@ export function createMcpServer(ctx: Ctx): McpServer {
       annotations: WRITE,
     },
     safe(async (args) => upsertSavedSearch(ctx, ...splitOpts(args))),
+  );
+
+  // ── WhatsApp e publicação ──────────────────────────────────────
+  server.registerTool(
+    "list_whatsapp_accounts",
+    {
+      title: "Números de WhatsApp",
+      description:
+        "Números conectados à plataforma, status (connected, disconnected, logged_out) e quantos grupos cada um tem. Conectar/desconectar número é feito pelo humano no painel (QR ou código).",
+      annotations: READ,
+    },
+    safe(async () => listMessagingAccounts(ctx)),
+  );
+
+  server.registerTool(
+    "sync_whatsapp_groups",
+    {
+      title: "Importar grupos do número",
+      description:
+        "Importa/atualiza os grupos do número como canais (nome, membros, link de convite). Rode depois de criar grupos novos no celular.",
+      inputSchema: { account_id: z.uuid(), ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async (args) => {
+      const [rest, opts] = splitOpts(args);
+      return syncGroups(ctx, rest.account_id, opts);
+    }),
+  );
+
+  server.registerTool(
+    "set_group_admin_only",
+    {
+      title: "Só admins enviam",
+      description:
+        "Liga/desliga 'só administradores enviam mensagens' no grupo. Recomendado ligado em grupos de ofertas (reduz spam e risco de banimento).",
+      inputSchema: { channel_id: z.uuid(), admin_only: z.boolean(), ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async (args) => {
+      const [rest, opts] = splitOpts(args);
+      return setChannelAdminOnly(ctx, rest.channel_id, rest.admin_only, opts);
+    }),
+  );
+
+  server.registerTool(
+    "list_message_templates",
+    {
+      title: "Modelos de mensagem",
+      description: "Modelos do workspace e o modelo embutido padrão, com as variáveis disponíveis.",
+      annotations: READ,
+    },
+    safe(async () => listMessageTemplates(ctx)),
+  );
+
+  server.registerTool(
+    "upsert_message_template",
+    {
+      title: "Criar ou editar modelo de mensagem",
+      description:
+        "Modelo do texto das ofertas. Use variações separadas por --- para não repetir a mesma mensagem. A prévia (dry_run) mostra um exemplo renderizado.",
+      inputSchema: { ...UpsertMessageTemplateInput.shape, ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async (args) => upsertMessageTemplate(ctx, ...splitOpts(args))),
+  );
+
+  server.registerTool(
+    "preview_post",
+    {
+      title: "Prévia da mensagem",
+      description: "Mostra o texto exato (e a imagem) que uma oferta vai gerar, sem enviar nada.",
+      inputSchema: PreviewPostInput.shape,
+      annotations: READ,
+    },
+    safe(async (args) => previewPost(ctx, args)),
+  );
+
+  server.registerTool(
+    "schedule_posts",
+    {
+      title: "Agendar publicações",
+      description:
+        "Agenda ofertas aprovadas (ou um texto) em grupos ou segmentos. A plataforma respeita janelas de envio, intervalo entre posts e não repete o mesmo produto no mesmo grupo por 7 dias. Na hora do envio a oferta é revalidada e o link rastreado é gerado. Rode antes com dry_run=true.",
+      inputSchema: { ...SchedulePostsInput.shape, ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async (args) => schedulePosts(ctx, ...splitOpts(args))),
+  );
+
+  server.registerTool(
+    "list_posts",
+    {
+      title: "Fila e histórico de publicações",
+      description:
+        "Publicações por status: scheduled (na fila), sent, failed, skipped (oferta inválida no envio), canceled, deleted.",
+      inputSchema: ListPostsQuery.shape,
+      annotations: READ,
+    },
+    safe(async (args) => listPosts(ctx, args)),
+  );
+
+  server.registerTool(
+    "cancel_post",
+    {
+      title: "Cancelar publicação agendada",
+      description: "Tira da fila uma publicação que ainda não foi enviada.",
+      inputSchema: { post_id: z.uuid(), ...MutationOptions.shape },
+      annotations: { readOnlyHint: false, destructiveHint: true },
+    },
+    safe(async (args) => {
+      const [rest, opts] = splitOpts(args);
+      return cancelPost(ctx, rest.post_id, opts);
+    }),
+  );
+
+  server.registerTool(
+    "delete_sent_post",
+    {
+      title: "Apagar mensagem enviada",
+      description: "Apaga para todos, no grupo, uma mensagem já enviada (ex.: oferta acabou).",
+      inputSchema: { post_id: z.uuid(), ...MutationOptions.shape },
+      annotations: { readOnlyHint: false, destructiveHint: true },
+    },
+    safe(async (args) => {
+      const [rest, opts] = splitOpts(args);
+      return deleteSentPost(ctx, rest.post_id, opts);
+    }),
+  );
+
+  server.registerTool(
+    "list_automation_rules",
+    {
+      title: "Regras de publicação automática",
+      description: "Regras que publicam sozinhas as ofertas aprovadas nos grupos.",
+      annotations: READ,
+    },
+    safe(async () => listAutomationRules(ctx)),
+  );
+
+  server.registerTool(
+    "upsert_automation_rule",
+    {
+      title: "Criar ou editar regra automática",
+      description:
+        "A cada minuto, dentro das janelas, a regra agenda a melhor oferta aprovada (filtros: nota, desconto, palavras-chave, plataforma) em cada grupo dos segmentos, até max_per_day por grupo e com intervalo mínimo entre posts.",
+      inputSchema: { ...UpsertAutomationRuleInput.shape, ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async (args) => upsertAutomationRule(ctx, ...splitOpts(args))),
   );
 
   return server;

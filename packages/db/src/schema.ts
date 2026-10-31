@@ -203,10 +203,15 @@ export const channels = pgTable(
     status: text({ enum: ["active", "paused", "archived"] })
       .notNull()
       .default("active"),
+    /** Número de WhatsApp que publica neste canal */
+    messagingAccountId: uuid().references(() => messagingAccounts.id, { onDelete: "set null" }),
+    /** Só administradores enviam mensagens (recomendado para grupos de ofertas) */
+    adminOnly: boolean(),
+    lastSyncedAt: timestamp({ withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [index().on(t.workspaceId)],
+  (t) => [index().on(t.workspaceId), uniqueIndex().on(t.workspaceId, t.externalId)],
 );
 
 export const segments = pgTable(
@@ -462,4 +467,121 @@ export const savedSearches = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [index().on(t.workspaceId)],
+);
+
+// ── WhatsApp e publicação (Fase 3) ──────────────────────────────────
+
+export const messagingAccounts = pgTable(
+  "messaging_accounts",
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    provider: text({ enum: ["evolution_go", "fake"] }).notNull(),
+    label: text().notNull(),
+    /** id da instância no provedor */
+    instanceId: text().notNull(),
+    /** token da instância, cifrado */
+    token: text().notNull(),
+    phone: text(),
+    /** JID do próprio número depois de conectado */
+    ownJid: text(),
+    status: text({ enum: ["pending", "connected", "disconnected", "logged_out"] })
+      .notNull()
+      .default("pending"),
+    lastEventAt: timestamp({ withTimezone: true }),
+    lastError: text(),
+    connectedAt: timestamp({ withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index().on(t.workspaceId), uniqueIndex().on(t.provider, t.instanceId)],
+);
+
+export const messageTemplates = pgTable(
+  "message_templates",
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    name: text().notNull(),
+    /** Texto com variáveis {{titulo}} etc. Variações separadas por uma linha com --- */
+    body: text().notNull(),
+    isDefault: boolean().notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex().on(t.workspaceId, t.name)],
+);
+
+export const automationRules = pgTable(
+  "automation_rules",
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    name: text().notNull(),
+    active: boolean().notNull().default(true),
+    /** { min_score, min_discount, keywords[], platforms[] } */
+    filters: jsonb().$type<Record<string, unknown>>().notNull().default({}),
+    segmentIds: uuid().array().notNull(),
+    /** Janelas HH:MM-HH:MM no fuso do workspace; vazio = usa as preferências */
+    windows: text().array().notNull().default([]),
+    maxPerDay: integer().notNull().default(10),
+    minIntervalMinutes: integer().notNull().default(30),
+    templateId: uuid().references(() => messageTemplates.id, { onDelete: "set null" }),
+    lastRunAt: timestamp({ withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index().on(t.workspaceId)],
+);
+
+export const posts = pgTable(
+  "posts",
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    channelId: uuid()
+      .notNull()
+      .references(() => channels.id, { onDelete: "cascade" }),
+    offerId: uuid().references(() => offers.id, { onDelete: "set null" }),
+    /** Texto livre (posts sem oferta) */
+    customText: text(),
+    templateId: uuid().references(() => messageTemplates.id, { onDelete: "set null" }),
+    withImage: boolean().notNull().default(true),
+    ruleId: uuid().references(() => automationRules.id, { onDelete: "set null" }),
+    status: text({
+      enum: ["scheduled", "sending", "sent", "failed", "skipped", "canceled", "deleted"],
+    })
+      .notNull()
+      .default("scheduled"),
+    scheduledAt: timestamp({ withTimezone: true }).notNull(),
+    sentAt: timestamp({ withTimezone: true }),
+    /** Mensagem final enviada */
+    body: text(),
+    trackedLinkId: uuid().references(() => trackedLinks.id, { onDelete: "set null" }),
+    externalMessageId: text(),
+    attempts: integer().notNull().default(0),
+    error: text(),
+    createdBy: text().notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index().on(t.status, t.scheduledAt),
+    index().on(t.channelId, t.scheduledAt),
+    index().on(t.workspaceId, t.createdAt),
+  ],
+);
+
+export const channelStatsDaily = pgTable(
+  "channel_stats_daily",
+  {
+    channelId: uuid()
+      .notNull()
+      .references(() => channels.id, { onDelete: "cascade" }),
+    date: text().notNull(),
+    joins: integer().notNull().default(0),
+    leaves: integer().notNull().default(0),
+    messagesSent: integer().notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.channelId, t.date] })],
 );

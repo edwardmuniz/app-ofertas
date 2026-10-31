@@ -13,6 +13,7 @@ import { enforceRateLimit, resolveActor } from "./auth";
 import { mcpRoutes } from "./mcp/route";
 import { linkRoutes } from "./routes/links";
 import { offerRoutes } from "./routes/offers";
+import { publishingRoutes, webhookRoutes } from "./routes/publishing";
 import { v1Routes } from "./routes/v1";
 
 export type AppOptions = {
@@ -98,6 +99,8 @@ export async function buildApp(opts: AppOptions) {
   });
   await app.register(linkRoutes, { prefix: "/v1", deps: opts.deps });
   await app.register(offerRoutes, { prefix: "/v1", deps: opts.deps });
+  await app.register(publishingRoutes, { prefix: "/v1", deps: opts.deps });
+  await app.register(webhookRoutes, { deps: opts.deps });
   await app.register(mcpRoutes, { deps: opts.deps, publicUrl: opts.publicUrl });
 
   app.get("/v1/openapi.json", { schema: { hide: true } }, async () => app.swagger());

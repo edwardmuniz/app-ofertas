@@ -22,6 +22,16 @@ Exemplo com Claude Code:
 claude mcp add --transport http ofertas http://localhost:3001/mcp --header "Authorization: Bearer ofk_..."
 ```
 
+## WhatsApp (Evolution Go)
+
+Configure no `.env`: `EVOLUTION_GO_URL`, `EVOLUTION_GO_API_KEY` e `MESSAGING_WEBHOOK_URL` (URL pública que chega na API, ex.: `https://seu-ip:porta/webhooks/whatsapp`; a plataforma acrescenta `/evolution_go`). Depois, em **WhatsApp** no painel: conectar número → QR ou código → importar grupos.
+
+Teste rápido do adaptador contra a sua Evolution Go (cria e apaga uma instância temporária, não envia mensagens):
+
+```bash
+pnpm --filter @ofertas/connectors exec tsx --env-file=../../.env scripts/evolution-smoke.ts
+```
+
 ## Comandos
 
 | Comando            | O que faz                                              |

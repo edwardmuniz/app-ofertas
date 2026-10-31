@@ -1,6 +1,9 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { defaultAffiliateConnectorFactory } from "@ofertas/connectors";
+import {
+  createMessagingProviderFactory,
+  defaultAffiliateConnectorFactory,
+} from "@ofertas/connectors";
 import { MemoryCache, MemoryCounterStore, SecretBox } from "@ofertas/core";
 import { createDb, limits, runMigrations } from "@ofertas/db";
 import { resetDb } from "@ofertas/db/testing";
@@ -57,6 +60,8 @@ beforeAll(async () => {
       redirectBaseUrl: "http://go.test",
       secrets: new SecretBox(Buffer.alloc(32, 1).toString("base64")),
       affiliateConnectors: defaultAffiliateConnectorFactory,
+      messaging: createMessagingProviderFactory({}),
+      messagingWebhookUrl: "http://api.test/webhooks/whatsapp",
     },
     allowSignup: false,
     publicUrl: "http://localhost",
@@ -450,5 +455,96 @@ describe("Fase 2: ofertas", () => {
 
     const list = await app.inject({ url: "/v1/offers?status=rejected", headers: { cookie } });
     expect(list.json().items).toHaveLength(1);
+  });
+});
+
+describe("Fase 3: WhatsApp e publicação", () => {
+  it("humano conecta número simulado; agente importa grupos e agenda pelo MCP; webhook atualiza membros", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/whatsapp/accounts",
+      headers: { cookie },
+      payload: { label: "Número de ofertas", provider: "fake" },
+    });
+    expect(created.statusCode).toBe(200);
+    const accountId = created.json().result.id;
+
+    const conn = await app.inject({
+      url: `/v1/whatsapp/accounts/${accountId}/connection`,
+      headers: { cookie },
+    });
+    expect(conn.json().account.status).toBe("connected");
+
+    const token = await createAgentToken("full_no_spend");
+    // Agente não vê o QR (só humanos conectam números).
+    const qrByAgent = await app.inject({
+      url: `/v1/whatsapp/accounts/${accountId}/connection`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(qrByAgent.statusCode).toBe(403);
+
+    const client = await mcpClient(token);
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const r = parse(await client.callTool({ name, arguments: args }));
+      if (r.isError) throw new Error(JSON.stringify(r.body));
+      return r.body;
+    };
+    const synced = await call("sync_whatsapp_groups", { account_id: accountId });
+    expect(synced.result.channels).toHaveLength(3);
+    const group = synced.result.channels[0];
+
+    const offers = await call("list_offers", { status: "approved", limit: 1 });
+    const offerId = offers.items[0].id;
+    const preview = await call("preview_post", { offer_id: offerId });
+    expect(preview.body.length).toBeGreaterThan(10);
+
+    const dry = await call("schedule_posts", {
+      offer_ids: [offerId],
+      channel_ids: [group.id],
+      dry_run: true,
+    });
+    expect(dry.preview.posts).toHaveLength(1);
+    const real = await call("schedule_posts", {
+      offer_ids: [offerId],
+      channel_ids: [group.id],
+      reason: "teste",
+    });
+    expect(real.result.scheduled).toHaveLength(1);
+    const queue = await call("list_posts", { status: "scheduled" });
+    expect(queue.items.length).toBeGreaterThanOrEqual(1);
+    await client.close();
+
+    // Webhook: token errado é recusado; certo atualiza membros.
+    const { messagingAccounts } = await import("@ofertas/db");
+    const { eq } = await import("drizzle-orm");
+    const [acc] = await db
+      .select()
+      .from(messagingAccounts)
+      .where(eq(messagingAccounts.id, accountId));
+    const { SecretBox } = await import("@ofertas/core");
+    const instanceToken = new SecretBox(Buffer.alloc(32, 1).toString("base64")).decrypt(
+      acc?.token ?? "",
+    );
+    const payload = (t: string) => ({
+      event: "GroupInfo",
+      instanceId: acc?.instanceId,
+      instanceToken: t,
+      data: { JID: group.external_id, Join: ["x@s"], Leave: [] },
+    });
+    const bad = await app.inject({
+      method: "POST",
+      url: "/webhooks/whatsapp/fake",
+      payload: payload("nope"),
+    });
+    expect(bad.statusCode).toBe(401);
+    const good = await app.inject({
+      method: "POST",
+      url: "/webhooks/whatsapp/fake",
+      payload: payload(instanceToken),
+    });
+    expect(good.statusCode).toBe(200);
+    const channels = await app.inject({ url: "/v1/channels", headers: { cookie } });
+    const updated = channels.json().find((c: { id: string }) => c.id === group.id);
+    expect(updated.member_count).toBe(group.member_count + 1);
   });
 });

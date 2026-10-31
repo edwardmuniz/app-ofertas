@@ -38,6 +38,12 @@ export class RedisCounterStore implements CounterStore {
 /** Limites padrão. Cada workspace pode sobrescrever na tabela `limits`. */
 export const DEFAULT_LIMITS = {
   "api.requests_per_minute": 120,
+  /** Intervalo mínimo entre mensagens no mesmo grupo */
+  "posts.min_interval_minutes": 3,
+  /** Máximo de mensagens por hora em um mesmo número */
+  "posts.per_hour.account": 60,
+  /** Atraso aleatório máximo somado a cada envio (parece mais humano) */
+  "posts.jitter_seconds": 45,
 } as const satisfies Record<string, number>;
 
 export type LimitKey = keyof typeof DEFAULT_LIMITS;

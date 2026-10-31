@@ -63,6 +63,15 @@ export default function GruposPage() {
     run(() => api(`/channels/${ch.id}`, { method: "PATCH", body: { member_count: Number(v) } }));
   }
 
+  function toggleAdminOnly(ch: Channel) {
+    run(() =>
+      api(`/channels/${ch.id}/admin-only`, {
+        method: "POST",
+        body: { admin_only: !ch.admin_only },
+      }),
+    );
+  }
+
   function toggleStatus(ch: Channel) {
     const status = ch.status === "active" ? "paused" : "active";
     run(() => api(`/channels/${ch.id}`, { method: "PATCH", body: { status } }));
@@ -75,7 +84,7 @@ export default function GruposPage() {
       <div>
         <h1 className="text-2xl font-semibold">Grupos</h1>
         <p className="mt-1 text-sm text-neutral-500">
-          Cadastro manual nesta fase. A importação automática do WhatsApp chega na Fase 3.
+          Importe os grupos do seu número em WhatsApp, ou cadastre manualmente.
         </p>
       </div>
       <ErrorText error={error} />
@@ -177,7 +186,14 @@ export default function GruposPage() {
                 const pct = Math.min(100, Math.round((c.member_count / c.member_limit) * 100));
                 return (
                   <tr key={c.id}>
-                    <td className="py-2">{c.name}</td>
+                    <td className="py-2">
+                      {c.name}
+                      {c.messaging_account_id && (
+                        <div className="text-xs text-neutral-500">
+                          WhatsApp{c.admin_only ? " · só admins" : " · todos enviam"}
+                        </div>
+                      )}
+                    </td>
                     <td className="py-2">{c.segment_ids.map(segName).join(", ") || "—"}</td>
                     <td className="py-2">
                       <div className="flex items-center gap-2">
@@ -206,6 +222,15 @@ export default function GruposPage() {
                       <button type="button" className="btn-ghost" onClick={() => editMembers(c)}>
                         Membros
                       </button>
+                      {c.messaging_account_id && (
+                        <button
+                          type="button"
+                          className="btn-ghost"
+                          onClick={() => toggleAdminOnly(c)}
+                        >
+                          {c.admin_only ? "Liberar envio" : "Só admins"}
+                        </button>
+                      )}
                       <button type="button" className="btn-ghost" onClick={() => toggleStatus(c)}>
                         {c.status === "active" ? "Pausar" : "Ativar"}
                       </button>

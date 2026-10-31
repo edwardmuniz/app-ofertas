@@ -396,7 +396,10 @@ function OfferList({
               </>
             ) : (
               <>
-                <button type="button" className="btn" onClick={() => makeLink(o)}>
+                <a className="btn" href={`/publicacoes?offer=${o.id}`}>
+                  Publicar
+                </a>
+                <button type="button" className="btn-ghost" onClick={() => makeLink(o)}>
                   Gerar link
                 </button>
                 <button type="button" className="btn-ghost" onClick={() => validate(o)}>

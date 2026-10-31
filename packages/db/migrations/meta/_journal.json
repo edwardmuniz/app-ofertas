@@ -22,6 +22,13 @@
       "when": 1793382801281,
       "tag": "0002_fase2_ofertas",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793407800282,
+      "tag": "0003_fase3_whatsapp",
+      "breakpoints": true
     }
   ]
 }

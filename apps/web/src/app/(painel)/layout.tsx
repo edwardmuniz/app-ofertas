@@ -9,9 +9,11 @@ import { api } from "@/lib/api";
 const NAV = [
   { href: "/", label: "Visão geral" },
   { href: "/ofertas", label: "Ofertas" },
+  { href: "/publicacoes", label: "Publicações" },
   { href: "/grupos", label: "Grupos" },
   { href: "/links", label: "Links" },
   { href: "/convites", label: "Convites" },
+  { href: "/whatsapp", label: "WhatsApp" },
   { href: "/afiliados", label: "Afiliados" },
   { href: "/agentes", label: "Conectar agente" },
   { href: "/preferencias", label: "Preferências" },

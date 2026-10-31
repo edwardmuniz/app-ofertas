@@ -49,7 +49,7 @@ Desvios: cliques ficam em buffer de memória por até 1 s antes de gravar (queda
 **Entregue (30/10/2026), falta só a Shopee real:** pacote `packages/connectors` com interface de afiliados, Shopee simulada (catálogo de ~240 produtos, controles de preço/estoque/falha) e conector real da Shopee (assinatura SHA256, busca, consulta por item, link curto com 5 sub-ids) testado contra respostas simuladas. Contas de afiliado com credenciais cifradas (AES-256-GCM, `ENCRYPTION_KEY`), conectadas só por humanos. Busca com nota 0–100 e sinais (`fake_discount`, `lowest_30d/90d`, `low_rating`, `unavailable`, `coupon_required`), histórico de preço, curadoria (new/approved/rejected/expired), validação com tolerância de 5%, similares e `create_offer_link` (link de afiliado com sub-ids `[origem, slug do link, campanha]` dentro de link rastreado). Buscas salvas rodadas pelo novo `apps/worker` (a cada 60 s, com trava no Redis), que também expira ofertas vencidas. 13 tools MCP novas; telas Ofertas e Afiliados.
 **Pendente:** testar o conector real com as credenciais da Shopee (pedidas em 30/10) e ajustar campos/códigos marcados [VERIFICAR] em `shopee.ts`.
 
-## Fase 3 — WhatsApp e publicação ⬜
+## Fase 3 — WhatsApp e publicação ✅
 
 **Specs:** [12](12-grupos-e-publicacao.md)
 
@@ -60,6 +60,9 @@ Desvios: cliques ficam em buffer de memória por até 1 s antes de gravar (queda
 - Tools: canais, segmentos, `preview_post`, `schedule_posts`, `list_posts`, `cancel_post`, `delete_sent_post`, regras.
 
 **Aceite:** regra "Shopee ≥ 40% → segmento X às 20–23h" publicando sozinha em grupo de teste com link rastreado; `dry_run` mostra prévia exata.
+
+**Entregue (30/10/2026):** adaptador Evolution Go (testado contra a instância real: criar, conectar, status, QR, apagar) e WhatsApp simulado. Conexão do número por QR ou código de pareamento (só humanos). Importação de grupos com link de convite, "só admins enviam", contagem de membros por webhook (`GroupInfo` Join/Leave, autenticado pelo token da instância). Modelos de mensagem com variações e remoção de linhas vazias. Fila de publicação no Postgres (`FOR UPDATE SKIP LOCKED`, sem BullMQ): janelas de envio, intervalo mínimo por grupo, teto por hora por número, atraso aleatório, sem repetir produto no grupo por 7 dias, revalidação da oferta e link rastreado gerado na hora do envio, retentativas, cancelar e apagar mensagem enviada. Regras automáticas (1 oferta por grupo por vez, filtros de nota/desconto/palavra-chave). 12 tools MCP novas; telas WhatsApp e Publicações.
+**Pendente:** conectar o número real e apontar o redirecionamento de portas para `MESSAGING_WEBHOOK_URL/evolution_go`; conferir o formato real dos eventos `GroupInfo` e do id da mensagem enviada.
 
 ## Fase 4 — Criativos de imagem ⬜
 
