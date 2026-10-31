@@ -1,6 +1,7 @@
 import { Preferences, type WorkspaceOverview } from "@ofertas/contracts";
 import { apiTokens, approvals, auditLogs, type DbOrTx, memberships, workspaces } from "@ofertas/db";
 import { and, eq, gt, isNull, or, sql } from "drizzle-orm";
+import { overviewAlerts } from "./alerts";
 import { requireScope } from "./authz";
 import { type Actor, type Ctx, now } from "./context";
 import { AppError } from "./errors";
@@ -47,7 +48,7 @@ export async function getOverview(ctx: Ctx): Promise<WorkspaceOverview> {
       .where(and(eq(auditLogs.workspaceId, wsId), gt(auditLogs.createdAt, dayAgo))),
   ]);
 
-  const alerts: WorkspaceOverview["alerts"] = [];
+  const alerts: WorkspaceOverview["alerts"] = await overviewAlerts(ctx);
   if ((pending?.n ?? 0) > 0) {
     alerts.push({ level: "warning", message: `${pending?.n} aprovação(ões) aguardando decisão.` });
   }

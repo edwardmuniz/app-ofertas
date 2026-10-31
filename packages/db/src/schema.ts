@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   index,
@@ -673,4 +674,51 @@ export const uploads = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index().on(t.workspaceId)],
+);
+
+// ── Métricas e alertas (Fase 5) ─────────────────────────────────────
+
+/** Cliques consolidados por hora (UTC). Recalculado pelo worker para as últimas horas. */
+export const clickStatsHourly = pgTable(
+  "click_stats_hourly",
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    hour: timestamp({ withTimezone: true }).notNull(),
+    kind: text({ enum: ["link", "invite"] }).notNull(),
+    channelId: uuid(),
+    offerId: uuid(),
+    postId: uuid(),
+    trackedLinkId: uuid(),
+    inviteLinkId: uuid(),
+    human: integer().notNull().default(0),
+    bot: integer().notNull().default(0),
+  },
+  (t) => [index().on(t.workspaceId, t.hour), index().on(t.hour), index().on(t.postId)],
+);
+
+/** Alertas operacionais (número caiu, fila parada, envios falhando). */
+export const alerts = pgTable(
+  "alerts",
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    kind: text({ enum: ["messaging_down", "queue_stalled", "posts_failing"] }).notNull(),
+    /** Objeto afetado (ex.: id do número); vazio quando é do workspace todo */
+    subject: text().notNull().default(""),
+    severity: text({ enum: ["warning", "critical"] }).notNull(),
+    status: text({ enum: ["open", "resolved"] })
+      .notNull()
+      .default("open"),
+    message: text().notNull(),
+    details: jsonb().$type<Record<string, unknown>>().notNull().default({}),
+    openedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp({ withTimezone: true }),
+    notifiedAt: timestamp({ withTimezone: true }),
+  },
+  (t) => [
+    index().on(t.workspaceId, t.status),
+    uniqueIndex().on(t.workspaceId, t.kind, t.subject).where(sql`status = 'open'`),
+  ],
 );

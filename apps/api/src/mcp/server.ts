@@ -10,10 +10,13 @@ import {
   GenerateCreativeInput,
   ImportMediaInput,
   LinkStatsQuery,
+  ListAlertsQuery,
   ListCreativesQuery,
   ListOffersQuery,
   ListPostsQuery,
   ListTrackedLinksQuery,
+  MetricsBreakdownQuery,
+  MetricsPeriodQuery,
   MutationOptions,
   Preferences,
   PreviewPostInput,
@@ -21,6 +24,7 @@ import {
   SaveOfferInput,
   SchedulePostsInput,
   SearchOffersInput,
+  SeasonalCalendarQuery,
   UpdateBrandKitInput,
   UpdateInviteLinkInput,
   UpdateOfferStatusInput,
@@ -45,13 +49,19 @@ import {
   generateCreative,
   getBrandKit,
   getCreative,
+  getFunnel,
   getLinkStats,
+  getMetricsBreakdown,
   getOffer,
   getOverview,
+  getPerformanceSummary,
   getPreferences,
+  getSeasonalCalendar,
+  getSystemStatus,
   importMediaFromUrl,
   isAppError,
   listAffiliateAccounts,
+  listAlerts,
   listAudit,
   listAutomationRules,
   listChannels,
@@ -756,5 +766,127 @@ export function createMcpServer(ctx: Ctx): McpServer {
     safe(async (args) => validateCreative(ctx, args)),
   );
 
+  // ── Métricas, alertas e calendário (Fase 5) ────────────────────
+  server.registerTool(
+    "get_performance_summary",
+    {
+      title: "Resumo de desempenho",
+      description:
+        "Membros, entradas/saídas, envios, cliques (humanos e robôs), top grupos e ofertas, melhores horários, alertas e insights do período, com comparação ao período anterior. Comissões ainda não (módulo Financeiro).",
+      inputSchema: MetricsPeriodQuery.shape,
+      annotations: READ,
+    },
+    safe(async (args) => getPerformanceSummary(ctx, args)),
+  );
+
+  server.registerTool(
+    "get_funnel",
+    {
+      title: "Funil",
+      description:
+        "Cliques no convite → entradas → ficaram → cliques em ofertas (pedidos virão no Financeiro), com taxas, referência e a etapa gargalo com dica de ação.",
+      inputSchema: MetricsPeriodQuery.shape,
+      annotations: READ,
+    },
+    safe(async (args) => getFunnel(ctx, args)),
+  );
+
+  server.registerTool(
+    "get_metrics_breakdown",
+    {
+      title: "Métricas detalhadas",
+      description:
+        "view=channels: por grupo (membros, saídas, cliques por envio, cliques por 100 membros). view=offers: por oferta. view=hours: cliques por envio por dia da semana × hora (para escolher horários).",
+      inputSchema: MetricsBreakdownQuery.shape,
+      annotations: READ,
+    },
+    safe(async (args) => getMetricsBreakdown(ctx, args)),
+  );
+
+  server.registerTool(
+    "get_system_status",
+    {
+      title: "Saúde da operação",
+      description:
+        "Worker rodando?, fila de envio (agendados, atrasados, falhas na última hora), status dos números de WhatsApp e alertas abertos.",
+      annotations: READ,
+    },
+    safe(async () => getSystemStatus(ctx)),
+  );
+
+  server.registerTool(
+    "list_alerts",
+    {
+      title: "Alertas",
+      description:
+        "Alertas operacionais (número caiu, fila parada, envios falhando). Abrem e se resolvem sozinhos conforme o estado.",
+      inputSchema: ListAlertsQuery.shape,
+      annotations: READ,
+    },
+    safe(async (args) => listAlerts(ctx, args)),
+  );
+
+  server.registerTool(
+    "get_seasonal_calendar",
+    {
+      title: "Calendário sazonal",
+      description:
+        "Próximas datas do varejo (Black Friday, 11.11, Natal, Dia das Mães...) com dias até a data, quando começar a preparar, categorias foco e checklist.",
+      inputSchema: SeasonalCalendarQuery.shape,
+      annotations: READ,
+    },
+    safe(async (args) => getSeasonalCalendar(ctx, args)),
+  );
+
+  server.registerPrompt(
+    "planejar_campanha_sazonal",
+    {
+      title: "Planejar campanha sazonal",
+      description:
+        "Roteiro para o agente montar o plano de uma data sazonal (ex.: Black Friday) com base nos dados do workspace.",
+      argsSchema: {
+        evento: z
+          .string()
+          .optional()
+          .describe("Chave ou nome da data (ex.: black_friday). Vazio = a próxima importante."),
+        objetivo: z
+          .string()
+          .optional()
+          .describe("Meta do negócio, ex.: dobrar cliques ou chegar a 5 mil membros."),
+      },
+    },
+    ({ evento, objetivo }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: seasonalPrompt(evento, objetivo),
+          },
+        },
+      ],
+    }),
+  );
+
   return server;
+}
+
+function seasonalPrompt(evento?: string, objetivo?: string) {
+  return `Monte um plano de campanha para ${evento ? `a data "${evento}"` : "a próxima data sazonal importante"}${objetivo ? ` com o objetivo: ${objetivo}` : ""}.
+
+Passos:
+1. get_seasonal_calendar: ache a data, os dias que faltam, as categorias foco e o checklist.
+2. get_preferences: respeite nichos, tom de voz, janelas de envio e proibições.
+3. get_performance_summary (period=30d) e get_funnel: entenda a base atual e o gargalo.
+4. get_metrics_breakdown view=hours e view=channels: melhores horários e grupos perto de lotar.
+5. search_offers nas categorias foco (desconto mínimo 30%) e desconfie da flag fake_discount.
+
+Entregue:
+- Linha do tempo (esquenta, dia D, pós-data) com quantidade de posts por dia e por grupo, dentro dos limites anti-banimento.
+- Regras automáticas sugeridas (upsert_automation_rule) e buscas salvas (upsert_saved_search).
+- Criativos: template e headline (generate_creative).
+- Captação: grupos extras e convites rotativos, se algum grupo estiver acima de 80%.
+- Riscos e o que monitorar (get_system_status) no dia.
+
+Não execute nada ainda: mostre o plano, depois aplique com dry_run=true e só confirme com o aval do usuário.`;
 }

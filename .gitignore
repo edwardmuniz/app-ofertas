@@ -11,3 +11,6 @@ coverage
 *.tsbuildinfo
 next-env.d.ts
 data/
+
+# Produção (infra/prod)
+infra/prod/backups/

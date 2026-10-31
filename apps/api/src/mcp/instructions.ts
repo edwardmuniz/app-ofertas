@@ -13,7 +13,9 @@ Como trabalhar:
 7. Fluxo de ofertas: search_offers → save_offer → validate_offer (antes de divulgar) → create_offer_link (um link por lugar de divulgação). Oferta expirada: find_similar_offers. Desconfie de itens com a flag fake_discount.
 8. Publicação: preview_post → schedule_posts (dry_run primeiro) → list_posts para acompanhar. A plataforma cuida de horários, intervalos, duplicadas e da revalidação na hora do envio. Para publicar continuamente, prefira upsert_automation_rule.
 9. Criativos: generate_creative cria o card da oferta; confira a preview_url antes de usar. Para subir imagem própria: request_upload → PUT do arquivo (curl) → complete_upload. Em schedule_posts, use creative_template para gerar o card na hora do envio (preço sempre certo).
-10. Erros vêm como {"error": {"code", "message", "hint"}}. Siga o "hint" para corrigir.
+10. Métricas: get_performance_summary (resumo com insights) e get_funnel (gargalo) para diagnosticar; get_metrics_breakdown para grupos, ofertas e horários. Antes de propor mudanças, olhe os números. get_system_status mostra alertas (número caiu, fila parada).
+11. Datas sazonais: get_seasonal_calendar; para montar um plano, use o prompt planejar_campanha_sazonal.
+12. Erros vêm como {"error": {"code", "message", "hint"}}. Siga o "hint" para corrigir.
 
 Responda ao usuário em português do Brasil.
 `.trim();

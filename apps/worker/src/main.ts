@@ -1,15 +1,19 @@
 import { resolve } from "node:path";
 import {
   createRuntimeDeps,
+  recordWorkerHeartbeat,
+  refreshMessagingStatuses,
+  rollupClicks,
   runAutomationRules,
   runDueSavedSearches,
+  runHealthChecks,
   runPublisher,
 } from "@ofertas/core";
 import { z } from "zod";
 
 /**
- * Processo de tarefas contínuas. Nesta fase: buscas salvas (curadoria automática) e expiração
- * de ofertas vencidas. Também envia a fila de publicação e roda as regras automáticas.
+ * Processo de tarefas contínuas: buscas salvas e expiração de ofertas, regras automáticas,
+ * fila de publicação, consolidação de métricas e verificação de saúde (alertas).
  */
 const env = z
   .object({
@@ -61,8 +65,31 @@ async function tick() {
     if (rules.scheduled) log("regras automáticas", rules);
   } catch (err) {
     log("erro na rodada", { error: String(err) });
+  }
+  await maintenance();
+  try {
+    await recordWorkerHeartbeat(deps);
   } finally {
     running = false;
+  }
+}
+
+let lastSlow = 0;
+/** Métricas e saúde: consolida cliques, confere números (a cada 5 min) e abre/resolve alertas. */
+async function maintenance() {
+  const slow = Date.now() - lastSlow >= 5 * 60_000;
+  try {
+    if (slow) {
+      lastSlow = Date.now();
+      const r = await rollupClicks(deps);
+      if (r.rows) log("métricas consolidadas", r);
+      const st = await refreshMessagingStatuses(deps);
+      if (st.changed) log("status dos números atualizado", st);
+    }
+    const h = await runHealthChecks(deps);
+    if (h.opened || h.resolved) log("alertas", h);
+  } catch (err) {
+    log("erro na manutenção", { error: String(err) });
   }
 }
 
@@ -76,6 +103,7 @@ async function publishTick() {
   try {
     const results = await runPublisher(deps, { batch: 10, pauseMs: 2000 });
     if (results.length) log("publicação", results);
+    await recordWorkerHeartbeat(deps);
   } catch (err) {
     log("erro na publicação", { error: String(err) });
   } finally {

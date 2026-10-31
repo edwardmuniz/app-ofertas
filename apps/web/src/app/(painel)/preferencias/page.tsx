@@ -27,6 +27,7 @@ export default function PreferenciasPage() {
       posting_windows: toList(String(f.get("posting_windows") ?? "")),
       forbidden: toList(String(f.get("forbidden") ?? "")),
       notes: String(f.get("notes") ?? ""),
+      alert_webhook_url: String(f.get("alert_webhook_url") ?? "").trim() || null,
     };
     try {
       const res = await api<{ status: string; result?: Preferences }>("/workspace/preferences", {
@@ -104,6 +105,23 @@ export default function PreferenciasPage() {
             Outras orientações
           </label>
           <textarea className="input" id="notes" name="notes" rows={4} defaultValue={prefs.notes} />
+        </div>
+        <div>
+          <label className="label" htmlFor="alert_webhook_url">
+            Webhook de alertas (opcional)
+          </label>
+          <input
+            className="input"
+            id="alert_webhook_url"
+            name="alert_webhook_url"
+            type="url"
+            placeholder="https://ntfy.sh/meu-topico-secreto"
+            defaultValue={prefs.alert_webhook_url ?? ""}
+          />
+          <p className="mt-1 text-xs text-neutral-500">
+            Recebe aviso quando o número cai ou a fila para. Funciona com ntfy (notificação no
+            celular), Discord e Slack.
+          </p>
         </div>
         {msg && (
           <p className={`text-sm ${msg.ok ? "text-emerald-600" : "text-red-600"}`}>{msg.text}</p>

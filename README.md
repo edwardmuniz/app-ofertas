@@ -43,6 +43,10 @@ pnpm ofertas upload card.png --offer <offer_id>
 
 Use `--json` para saída legível por scripts e agentes.
 
+## Produção
+
+Deploy em VPS com Docker, HTTPS automático e backup diário: veja [docs/deploy.md](docs/deploy.md).
+
 ## Comandos
 
 | Comando            | O que faz                                              |

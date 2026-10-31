@@ -36,6 +36,13 @@
       "when": 1793410882780,
       "tag": "0004_fase4_criativos",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793411936394,
+      "tag": "0005_fase5_metricas",
+      "breakpoints": true
     }
   ]
 }

@@ -493,3 +493,20 @@ export async function handleMessagingWebhook(deps: Deps, provider: string, body:
   }
   return { ok: true as const, event: e.kind };
 }
+
+/**
+ * Consulta o provedor e atualiza o status dos números já conectados alguma vez. Não depende
+ * só do webhook: se ele falhar, o alerta de número caído ainda aparece.
+ */
+export async function refreshMessagingStatuses(deps: Deps) {
+  const rows = await deps.db
+    .select()
+    .from(messagingAccounts)
+    .where(inArray(messagingAccounts.status, ["connected", "disconnected"]));
+  let changed = 0;
+  for (const row of rows) {
+    const updated = await updateFromStatus(deps, row);
+    if (updated.status !== row.status) changed++;
+  }
+  return { checked: rows.length, changed };
+}

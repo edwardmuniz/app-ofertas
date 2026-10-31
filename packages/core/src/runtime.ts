@@ -7,7 +7,7 @@ import { Redis } from "ioredis";
 import { RedisCache } from "./cache";
 import type { Deps } from "./context";
 import { RedisCounterStore } from "./limits";
-import { createSafeFetcher } from "./safe-fetch";
+import { createSafeFetcher, createSafeNotifier } from "./safe-fetch";
 import { SecretBox } from "./secrets";
 import { LocalStorage } from "./storage";
 
@@ -39,6 +39,7 @@ export function createRuntimeDeps(cfg: RuntimeConfig) {
     messagingWebhookUrl: cfg.messagingWebhookUrl ?? null,
     storage: new LocalStorage(cfg.mediaDir),
     fetchMedia: createSafeFetcher(),
+    notify: createSafeNotifier(),
     publicApiUrl: cfg.publicApiUrl,
   };
   const close = async () => {

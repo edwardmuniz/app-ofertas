@@ -53,6 +53,8 @@ Ativáveis no painel/MCP; cada um cria a configuração necessária e acompanha 
 
 `season_event` pré-carregado (BR): Dia do Consumidor (15/03), Dia das Mães, 6.6, Dia dos Namorados, 7.7, Dia dos Pais, 9.9, Dia das Crianças, 10.10, **11.11**, **Black Friday (última sexta de novembro)** + Cyber Monday, 12.12, Natal. `get_seasonal_calendar` retorna próximas datas com checklist sugerido.
 
+> Implementado na Fase 5: datas calculadas em código (móveis: Dia das Mães/Pais, Black Friday = última sexta de novembro, Cyber Monday = BF + 3), com `prep_start`, fase (`future`/`prepare`/`live`), categorias foco e checklist. O prompt MCP `planejar_campanha_sazonal` guia o agente a montar o plano com os dados do workspace.
+
 ## Critérios de aceite
 
 - Fase growth 1: diagnóstico + 4 regras (horário, frequência, grupo lotando, data sazonal) + aplicar/dispensar.

@@ -78,7 +78,7 @@ Desvios: cliques ficam em buffer de memória por até 1 s antes de gravar (queda
 **Entregue (30/10/2026):** `packages/render` com templates `card_preco` e `cupom_destaque` (Satori + resvg, fonte Inter embutida) nos formatos 1:1, 4:5 e 9:16, com prévia de 480 px. Brand kit (nome, cores, chamada). Upload em duas etapas (`request_upload` → PUT na URL assinada → `complete_upload`), importação por URL com bloqueio de endereços internos, validação por formato e biblioteca. Imagens servidas por URL assinada (HMAC) em `/media/:id`. Publicações e regras aceitam `creative_template`: o card é gerado na hora do envio (preço sempre atualizado); criativo pronto com preço antigo é refeito. CLI `ofertas` (login, whoami, offers search/list, creatives generate, upload). 10 tools MCP novas; tela Criativos.
 Desvios: armazenamento local em disco (`MEDIA_DIR`) atrás da interface `ObjectStorage` (trocar por S3/R2 no deploy); renderização síncrona (~1 s por formato), sem fila.
 
-## Fase 5 — Métricas MVP + pronto para BF ⬜
+## Fase 5 — Métricas MVP + pronto para BF 🟨
 
 **Specs:** [16](16-metricas-e-financeiro.md), [17 §Calendário](17-growth.md)
 
@@ -88,6 +88,10 @@ Desvios: armazenamento local em disco (`MEDIA_DIR`) atrás da interface `ObjectS
 - Hardening: alertas (número caiu, fila parada), backups, deploy em VPS.
 
 **Aceite:** operação diária real rodando por 3 dias sem intervenção manual além de curadoria/aprovações.
+
+**Entregue (30/10/2026):** consolidação horária de cliques (`click_stats_hourly`, worker a cada 5 min, recálculo idempotente) + `channel_stats_daily` em tempo real. `get_performance_summary` (com comparação ao período anterior, top grupos/ofertas, melhores horários e insights), `get_funnel` (convite → entradas → ficaram → cliques; pedidos no Financeiro) com etapa gargalo, `get_metrics_breakdown` (grupos, ofertas, mapa dia × hora de cliques por envio). Alertas `messaging_down`, `queue_stalled`, `posts_failing` (abrem e resolvem sozinhos; aviso por webhook: ntfy/Discord/Slack); worker confere o status dos números no provedor a cada 5 min; `/v1/status` público para monitor externo. Calendário sazonal + prompt MCP `planejar_campanha_sazonal`. Painel: Visão geral com KPIs, funil e insights; tela Métricas. Deploy: `Dockerfile`, `infra/prod` (compose + Caddy com HTTPS + backup diário), [docs/deploy.md](../deploy.md); stack testada localmente.
+Desvios: calendário calculado em código (sem tabela `season_event`); taxas de referência do funil são iniciais (ajustar com dados reais).
+Pendente para ✅: deploy na VPS e 3 dias de operação real.
 
 ---
 

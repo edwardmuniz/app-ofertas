@@ -1,0 +1,19 @@
+# HTTPS automático (Let's Encrypt). Aponte os três domínios para o IP da VPS antes de subir.
+{$APP_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy web:3000
+}
+
+# API pública: MCP dos agentes, webhooks da Evolution Go, imagens e uploads.
+{$API_DOMAIN} {
+	encode zstd gzip
+	request_body {
+		max_size 20MB
+	}
+	reverse_proxy api:3001
+}
+
+# Links curtos e convites.
+{$GO_DOMAIN} {
+	reverse_proxy redirect:3002
+}

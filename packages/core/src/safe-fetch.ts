@@ -90,3 +90,18 @@ export function createSafeFetcher(
     throw new AppError("VALIDATION_ERROR", "Redirecionamentos demais.");
   };
 }
+
+/** Envia o alerta (POST JSON) para o webhook configurado, com a mesma proteção de endereços. */
+export function createSafeNotifier(opts: { timeoutMs?: number } = {}) {
+  return async (raw: string, payload: unknown) => {
+    const url = await assertPublicUrl(raw);
+    const res = await fetch(url, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(opts.timeoutMs ?? 10_000),
+    });
+    if (!res.ok) throw new Error(`webhook de alerta respondeu ${res.status}`);
+  };
+}

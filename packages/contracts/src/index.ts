@@ -6,6 +6,7 @@ export * from "./creatives";
 export * from "./errors";
 export * from "./invites";
 export * from "./links";
+export * from "./metrics";
 export * from "./offers";
 export * from "./publishing";
 export * from "./scopes";

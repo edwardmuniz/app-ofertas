@@ -45,7 +45,7 @@ export function localMinutes(date: Date, timeZone: string) {
 }
 
 /** Instante UTC correspondente à meia-noite local do dia de `date`. */
-function localMidnight(date: Date, timeZone: string) {
+export function localMidnight(date: Date, timeZone: string) {
   const p = partsOf(date, timeZone);
   const guess = Date.UTC(p.year, p.month - 1, p.day);
   return new Date(guess - tzOffsetMs(new Date(guess), timeZone));

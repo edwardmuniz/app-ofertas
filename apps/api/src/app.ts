@@ -13,6 +13,7 @@ import { enforceRateLimit, resolveActor } from "./auth";
 import { mcpRoutes } from "./mcp/route";
 import { creativeRoutes, mediaRoutes } from "./routes/creatives";
 import { linkRoutes } from "./routes/links";
+import { metricsRoutes } from "./routes/metrics";
 import { offerRoutes } from "./routes/offers";
 import { publishingRoutes, webhookRoutes } from "./routes/publishing";
 import { v1Routes } from "./routes/v1";
@@ -103,6 +104,7 @@ export async function buildApp(opts: AppOptions) {
   await app.register(publishingRoutes, { prefix: "/v1", deps: opts.deps });
   await app.register(webhookRoutes, { deps: opts.deps });
   await app.register(creativeRoutes, { prefix: "/v1", deps: opts.deps });
+  await app.register(metricsRoutes, { prefix: "/v1", deps: opts.deps });
   await app.register(mediaRoutes, { deps: opts.deps });
   await app.register(mcpRoutes, { deps: opts.deps, publicUrl: opts.publicUrl });
 

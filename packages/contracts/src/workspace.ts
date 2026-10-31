@@ -17,6 +17,14 @@ export const Preferences = z.object({
     .optional()
     .describe("O que nunca publicar (categorias, marcas, termos)."),
   notes: z.string().max(5000).optional().describe("Outras orientações livres."),
+  alert_webhook_url: z
+    .url({ protocol: /^https?$/ })
+    .max(500)
+    .nullable()
+    .optional()
+    .describe(
+      "URL que recebe os alertas (POST JSON com text/content). Funciona com Slack, Discord e ntfy.",
+    ),
 });
 export type Preferences = z.infer<typeof Preferences>;
 

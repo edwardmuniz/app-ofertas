@@ -1,0 +1,121 @@
+# Produção numa VPS: docker compose -f infra/prod/docker-compose.yml --env-file infra/prod/.env up -d --build
+name: ofertas
+
+x-app: &app
+  image: ofertas-app:latest
+  build:
+    context: ../..
+    args:
+      API_PUBLIC_URL: ${API_PUBLIC_URL}
+  env_file: .env
+  environment:
+    NODE_ENV: production
+    DATABASE_URL: postgres://ofertas:${POSTGRES_PASSWORD}@postgres:5432/ofertas
+    REDIS_URL: redis://redis:6379
+    MEDIA_DIR: /data/media
+    API_INTERNAL_URL: http://api:3001
+  restart: unless-stopped
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_started }
+  logging: &logging
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ofertas
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ofertas
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ofertas"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+    logging: *logging
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    restart: unless-stopped
+    logging: *logging
+
+  migrate:
+    <<: *app
+    command: ["pnpm", "--filter", "@ofertas/db", "migrate"]
+    restart: "no"
+
+  api:
+    <<: *app
+    command: ["pnpm", "--filter", "@ofertas/api", "start"]
+    volumes:
+      - media:/data/media
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  worker:
+    <<: *app
+    command: ["pnpm", "--filter", "@ofertas/worker", "start"]
+    volumes:
+      - media:/data/media
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  redirect:
+    <<: *app
+    command: ["pnpm", "--filter", "@ofertas/redirect", "start"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  web:
+    <<: *app
+    command: ["pnpm", "--filter", "@ofertas/web", "start"]
+    depends_on:
+      api: { condition: service_started }
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+      API_DOMAIN: ${API_DOMAIN}
+      GO_DOMAIN: ${GO_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+    restart: unless-stopped
+    logging: *logging
+
+  backup:
+    image: postgres:16-alpine
+    environment:
+      PGHOST: postgres
+      PGUSER: ofertas
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ofertas
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      BACKUP_HOUR: ${BACKUP_HOUR:-4}
+      TZ: America/Sao_Paulo
+    volumes:
+      - ./backup.sh:/backup.sh:ro
+      - ${BACKUP_DIR:-./backups}:/backups
+      - media:/media:ro
+    entrypoint: ["sh", "/backup.sh"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  pgdata:
+  redisdata:
+  media:
+  caddydata:

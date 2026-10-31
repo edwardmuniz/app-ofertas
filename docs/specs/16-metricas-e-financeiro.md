@@ -37,6 +37,14 @@ Lançamento manual ou importado: anúncios (automático via Meta), chips/número
 
 Worker `metrics-rollup` consolida diariamente (`channel_stats_daily`, `creative_stats_daily`, `ad_insights_daily`) e de hora em hora para o dia corrente. Consultas do painel e do MCP leem agregados.
 
+## Implementação (Fase 5)
+
+- **Cliques:** `click_stats_hourly` (hora UTC × canal × oferta × post × link/convite, humanos e robôs) recalculado pelo worker a cada 5 min para as últimas horas. Painel e MCP leem daí; a resposta traz `data_freshness`.
+- **Entradas/saídas e envios:** `channel_stats_daily`, atualizado em tempo real pelo webhook e pelo publicador.
+- **Mapa de horários:** cliques atribuídos ao horário local em que o post foi enviado (não ao horário do clique), para escolher quando enviar.
+- **Funil parcial:** a taxa de "cliques em ofertas" é cliques por membro por dia. Referências iniciais: entrada/clique no convite 40%, retenção 70%, 0,03 clique/membro/dia. Amostras pequenas não viram gargalo.
+- **Alertas:** tabela `alerts` (um aberto por tipo e objeto). O worker roda as verificações a cada minuto; notificação opcional por `alert_webhook_url` (preferências). Worker parado é detectado no painel e por `/v1/status` (503), já que o próprio worker não consegue avisar.
+
 ## Critérios de aceite
 
 - MVP: visão geral + cliques por canal/oferta/horário.

@@ -608,3 +608,47 @@ describe("Fase 4: criativos", () => {
     expect(forged.statusCode).toBe(404);
   });
 });
+
+describe("Fase 5: métricas e alertas", () => {
+  it("agente lê resumo, funil, horários, status e calendário pelo MCP; prompt sazonal disponível", async () => {
+    const client = await mcpClient(await createAgentToken("read_only"));
+    const call = async (name: string, args: Record<string, unknown> = {}) => {
+      const r = parse(await client.callTool({ name, arguments: args }));
+      if (r.isError) throw new Error(JSON.stringify(r.body));
+      return r.body;
+    };
+    const summary = await call("get_performance_summary", { period: "7d" });
+    expect(summary.audience.channels_active).toBeGreaterThanOrEqual(1);
+    expect(summary.revenue).toBeNull();
+    const funnel = await call("get_funnel", { period: "30d" });
+    expect(funnel.stages).toHaveLength(5);
+    const hours = await call("get_metrics_breakdown", { view: "hours", period: "7d" });
+    expect(Array.isArray(hours.hours)).toBe(true);
+    const status = await call("get_system_status");
+    expect(status.worker.ok).toBe(false);
+    const cal = await call("get_seasonal_calendar", { days: 60 });
+    expect(cal.events.some((e: { key: string }) => e.key === "black_friday")).toBe(true);
+
+    const prompts = await client.listPrompts();
+    expect(prompts.prompts.map((p) => p.name)).toContain("planejar_campanha_sazonal");
+    const p = await client.getPrompt({
+      name: "planejar_campanha_sazonal",
+      arguments: { evento: "black_friday" },
+    });
+    expect(JSON.stringify(p.messages)).toContain("get_seasonal_calendar");
+    await client.close();
+  });
+
+  it("REST: resumo com período, validação e status público para monitores", async () => {
+    const ok = await app.inject({ url: "/v1/metrics/summary?period=today", headers: { cookie } });
+    expect(ok.statusCode).toBe(200);
+    const bad = await app.inject({ url: "/v1/metrics/summary?period=custom", headers: { cookie } });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json().error.code).toBe("VALIDATION_ERROR");
+    const pub = await app.inject({ url: "/v1/status" });
+    expect(pub.statusCode).toBe(503);
+    expect(pub.json()).toMatchObject({ db: true, worker: false });
+    const alerts = await app.inject({ url: "/v1/alerts", headers: { cookie } });
+    expect(alerts.json()).toEqual({ items: [] });
+  });
+});
