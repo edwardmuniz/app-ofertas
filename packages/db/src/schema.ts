@@ -31,6 +31,7 @@ const workspaceId = () =>
 
 export type WorkspaceSettings = {
   preferences?: Record<string, unknown>;
+  brand_kit?: Record<string, string>;
 };
 
 // ── Identidade e acesso ─────────────────────────────────────────────
@@ -527,6 +528,7 @@ export const automationRules = pgTable(
     maxPerDay: integer().notNull().default(10),
     minIntervalMinutes: integer().notNull().default(30),
     templateId: uuid().references(() => messageTemplates.id, { onDelete: "set null" }),
+    creativeTemplate: text(),
     lastRunAt: timestamp({ withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -547,6 +549,10 @@ export const posts = pgTable(
     customText: text(),
     templateId: uuid().references(() => messageTemplates.id, { onDelete: "set null" }),
     withImage: boolean().notNull().default(true),
+    /** Criativo pronto a usar como imagem */
+    creativeId: uuid().references(() => creatives.id, { onDelete: "set null" }),
+    /** Template para gerar o criativo na hora do envio (preço sempre atualizado) */
+    creativeTemplate: text(),
     ruleId: uuid().references(() => automationRules.id, { onDelete: "set null" }),
     status: text({
       enum: ["scheduled", "sending", "sent", "failed", "skipped", "canceled", "deleted"],
@@ -584,4 +590,87 @@ export const channelStatsDaily = pgTable(
     messagesSent: integer().notNull().default(0),
   },
   (t) => [primaryKey({ columns: [t.channelId, t.date] })],
+);
+
+// ── Criativos (Fase 4) ──────────────────────────────────────────────
+
+export const assets = pgTable(
+  "assets",
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    storageKey: text().notNull().unique(),
+    mime: text().notNull(),
+    size: integer().notNull(),
+    width: integer(),
+    height: integer(),
+    checksum: text().notNull(),
+    source: text({ enum: ["upload", "render", "import"] }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index().on(t.workspaceId)],
+);
+
+export const creatives = pgTable(
+  "creatives",
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    offerId: uuid().references(() => offers.id, { onDelete: "set null" }),
+    title: text().notNull(),
+    origin: text({ enum: ["template", "upload", "import"] }).notNull(),
+    templateKey: text(),
+    params: jsonb().$type<Record<string, unknown>>().notNull().default({}),
+    /** Preço impresso no criativo (para saber se ficou desatualizado) */
+    renderedPrice: money(),
+    status: text({ enum: ["ready", "archived"] })
+      .notNull()
+      .default("ready"),
+    tags: text().array().notNull().default([]),
+    aiGenerated: boolean().notNull().default(false),
+    createdBy: text().notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index().on(t.workspaceId, t.createdAt), index().on(t.offerId)],
+);
+
+export const creativeVariants = pgTable(
+  "creative_variants",
+  {
+    id: id(),
+    creativeId: uuid()
+      .notNull()
+      .references(() => creatives.id, { onDelete: "cascade" }),
+    format: text().notNull(),
+    assetId: uuid()
+      .notNull()
+      .references(() => assets.id, { onDelete: "cascade" }),
+    previewAssetId: uuid().references(() => assets.id, { onDelete: "set null" }),
+    validation: jsonb()
+      .$type<{ code: string; message: string; hint: string }[]>()
+      .notNull()
+      .default([]),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex().on(t.creativeId, t.format)],
+);
+
+export const uploads = pgTable(
+  "uploads",
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    filename: text().notNull(),
+    mime: text().notNull(),
+    maxBytes: integer().notNull(),
+    status: text({ enum: ["pending", "uploaded", "completed"] })
+      .notNull()
+      .default("pending"),
+    assetId: uuid().references(() => assets.id, { onDelete: "set null" }),
+    expiresAt: timestamp({ withTimezone: true }).notNull(),
+    createdBy: text().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index().on(t.workspaceId)],
 );

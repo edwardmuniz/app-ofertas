@@ -3,7 +3,9 @@ import { type ActorType, type Origin, type Role, SCOPES, type Scope } from "@ofe
 import type { Db, DbOrTx } from "@ofertas/db";
 import type { KeyValueCache } from "./cache";
 import type { CounterStore } from "./limits";
+import type { MediaFetcher } from "./safe-fetch";
 import type { SecretBox } from "./secrets";
+import type { ObjectStorage } from "./storage";
 
 export type Actor = {
   type: ActorType;
@@ -33,6 +35,12 @@ export type Deps = {
   messaging: MessagingProviderFactory;
   /** URL pública base dos webhooks de WhatsApp, ex.: https://app.x/webhooks/whatsapp */
   messagingWebhookUrl: string | null;
+  /** Arquivos (imagens dos criativos) */
+  storage: ObjectStorage;
+  /** Baixa mídia de URLs públicas com proteção contra endereços internos */
+  fetchMedia: MediaFetcher;
+  /** URL pública da API: links de upload e de imagens (precisa ser acessível pela Evolution Go) */
+  publicApiUrl: string;
   now?: () => Date;
 };
 

@@ -4,7 +4,7 @@ import {
   createMessagingProviderFactory,
   defaultAffiliateConnectorFactory,
 } from "@ofertas/connectors";
-import { MemoryCache, MemoryCounterStore, SecretBox } from "@ofertas/core";
+import { MemoryCache, MemoryCounterStore, MemoryStorage, SecretBox } from "@ofertas/core";
 import { createDb, limits, runMigrations } from "@ofertas/db";
 import { resetDb } from "@ofertas/db/testing";
 import type { FastifyInstance } from "fastify";
@@ -62,6 +62,11 @@ beforeAll(async () => {
       affiliateConnectors: defaultAffiliateConnectorFactory,
       messaging: createMessagingProviderFactory({}),
       messagingWebhookUrl: "http://api.test/webhooks/whatsapp",
+      storage: new MemoryStorage(),
+      fetchMedia: async () => {
+        throw new Error("sem rede nos testes");
+      },
+      publicApiUrl: "http://localhost",
     },
     allowSignup: false,
     publicUrl: "http://localhost",
@@ -546,5 +551,60 @@ describe("Fase 3: WhatsApp e publicação", () => {
     const channels = await app.inject({ url: "/v1/channels", headers: { cookie } });
     const updated = channels.json().find((c: { id: string }) => c.id === group.id);
     expect(updated.member_count).toBe(group.member_count + 1);
+  });
+});
+
+describe("Fase 4: criativos", () => {
+  it("agente gera card pelo MCP, abre a prévia e sobe imagem própria com PUT", async () => {
+    const client = await mcpClient(await createAgentToken("full_no_spend"));
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const r = parse(await client.callTool({ name, arguments: args }));
+      if (r.isError) throw new Error(JSON.stringify(r.body));
+      return r.body;
+    };
+    const templates = await call("list_creative_templates", {});
+    expect(templates.map((t: { key: string }) => t.key)).toEqual(["card_preco", "cupom_destaque"]);
+
+    const offers = await call("list_offers", { status: "approved", limit: 1 });
+    const generated = await call("generate_creative", {
+      offer_id: offers.items[0].id,
+      formats: ["wa_image", "feed_4x5"],
+    });
+    expect(generated.result.variants).toHaveLength(2);
+
+    const preview = new URL(generated.result.variants[0].preview_url);
+    const img = await app.inject({ url: `${preview.pathname}${preview.search}` });
+    expect(img.statusCode).toBe(200);
+    expect(img.headers["content-type"]).toBe("image/png");
+
+    const ticket = await call("request_upload", {
+      filename: "meu-card.png",
+      mime: "image/png",
+      size_bytes: img.rawPayload.length,
+    });
+    const put = new URL(ticket.result.put_url);
+    const sent = await app.inject({
+      method: "PUT",
+      url: `${put.pathname}${put.search}`,
+      headers: { "content-type": "image/png" },
+      payload: img.rawPayload,
+    });
+    expect(sent.statusCode).toBe(200);
+    expect(sent.json()).toMatchObject({ ok: true, width: 480 });
+
+    const done = await call("complete_upload", {
+      upload_id: ticket.result.upload_id,
+      title: "Meu card",
+    });
+    expect(done.result).toMatchObject({ origin: "upload", title: "Meu card" });
+
+    const lib = await call("list_creatives", {});
+    expect(lib.items.length).toBeGreaterThanOrEqual(2);
+    await client.close();
+
+    const forged = await app.inject({
+      url: `${preview.pathname}?e=${preview.searchParams.get("e")}&s=forjada1234`,
+    });
+    expect(forged.statusCode).toBe(404);
   });
 });

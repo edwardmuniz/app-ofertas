@@ -15,7 +15,8 @@
     "infra:up": "docker compose -f infra/docker-compose.yml up -d",
     "infra:down": "docker compose -f infra/docker-compose.yml down",
     "db:generate": "pnpm --filter @ofertas/db generate",
-    "db:migrate": "pnpm --filter @ofertas/db migrate"
+    "db:migrate": "pnpm --filter @ofertas/db migrate",
+    "ofertas": "node apps/cli/bin/ofertas.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.4",

@@ -12,7 +12,7 @@ export const MODULES = [
   { key: "links", name: "Links e rastreamento", status: "available", phase: 1 },
   { key: "offers", name: "Ofertas (Shopee)", status: "available", phase: 2 },
   { key: "publishing", name: "WhatsApp e publicação", status: "available", phase: 3 },
-  { key: "creatives_image", name: "Criativos de imagem", status: "planned", phase: 4 },
+  { key: "creatives_image", name: "Criativos de imagem", status: "available", phase: 4 },
   { key: "metrics", name: "Métricas", status: "planned", phase: 5 },
   { key: "instagram", name: "Instagram", status: "planned", phase: 6 },
   { key: "affiliates_more", name: "Outros afiliados", status: "planned", phase: 7 },

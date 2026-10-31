@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { ClickBuffer, createRuntimeDeps } from "@ofertas/core";
 import { z } from "zod";
 import { buildRedirectApp } from "./app";
@@ -22,6 +23,8 @@ const { deps, close } = createRuntimeDeps({
   redisUrl: env.REDIS_URL,
   redirectBaseUrl: env.REDIRECT_PUBLIC_URL,
   encryptionKey: env.ENCRYPTION_KEY,
+  mediaDir: resolve(process.cwd(), process.env.MEDIA_DIR ?? "../../data/media"),
+  publicApiUrl: process.env.API_PUBLIC_URL ?? "http://localhost:3001",
 });
 const clicks = new ClickBuffer(deps.db);
 

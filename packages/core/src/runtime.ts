@@ -7,7 +7,9 @@ import { Redis } from "ioredis";
 import { RedisCache } from "./cache";
 import type { Deps } from "./context";
 import { RedisCounterStore } from "./limits";
+import { createSafeFetcher } from "./safe-fetch";
 import { SecretBox } from "./secrets";
+import { LocalStorage } from "./storage";
 
 export type RuntimeConfig = {
   databaseUrl: string;
@@ -16,6 +18,9 @@ export type RuntimeConfig = {
   encryptionKey: string;
   evolutionGo?: { baseUrl: string; globalKey: string } | null;
   messagingWebhookUrl?: string | null;
+  /** Pasta dos arquivos (armazenamento local) */
+  mediaDir: string;
+  publicApiUrl: string;
   dbPoolSize?: number;
 };
 
@@ -32,6 +37,9 @@ export function createRuntimeDeps(cfg: RuntimeConfig) {
     affiliateConnectors: defaultAffiliateConnectorFactory,
     messaging: createMessagingProviderFactory({ evolutionGo: cfg.evolutionGo }),
     messagingWebhookUrl: cfg.messagingWebhookUrl ?? null,
+    storage: new LocalStorage(cfg.mediaDir),
+    fetchMedia: createSafeFetcher(),
+    publicApiUrl: cfg.publicApiUrl,
   };
   const close = async () => {
     await closeDb();

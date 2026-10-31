@@ -29,6 +29,7 @@ const toRule = (r: RuleRow): AutomationRule => ({
   max_per_day: r.maxPerDay,
   min_interval_minutes: r.minIntervalMinutes,
   template_id: r.templateId,
+  creative_template: r.creativeTemplate,
   last_run_at: r.lastRunAt?.toISOString() ?? null,
   created_at: r.createdAt.toISOString(),
 });
@@ -84,6 +85,7 @@ export async function upsertAutomationRule(
         ...(i.max_per_day !== undefined && { maxPerDay: i.max_per_day }),
         ...(i.min_interval_minutes !== undefined && { minIntervalMinutes: i.min_interval_minutes }),
         ...(i.template_id !== undefined && { templateId: i.template_id }),
+        ...(i.creative_template !== undefined && { creativeTemplate: i.creative_template }),
       };
       const [row] = i.id
         ? await tx.db
@@ -209,6 +211,7 @@ export async function runAutomationRules(deps: Deps) {
         channelId: channel.id,
         offerId: best.offerId,
         templateId: rule.templateId,
+        creativeTemplate: rule.creativeTemplate,
         ruleId: rule.id,
         scheduledAt: new Date(at.getTime() + jitter),
         createdBy: `regra:${rule.name}`,

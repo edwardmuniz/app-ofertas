@@ -64,7 +64,7 @@ Desvios: cliques ficam em buffer de memória por até 1 s antes de gravar (queda
 **Entregue (30/10/2026):** adaptador Evolution Go (testado contra a instância real: criar, conectar, status, QR, apagar) e WhatsApp simulado. Conexão do número por QR ou código de pareamento (só humanos). Importação de grupos com link de convite, "só admins enviam", contagem de membros por webhook (`GroupInfo` Join/Leave, autenticado pelo token da instância). Modelos de mensagem com variações e remoção de linhas vazias. Fila de publicação no Postgres (`FOR UPDATE SKIP LOCKED`, sem BullMQ): janelas de envio, intervalo mínimo por grupo, teto por hora por número, atraso aleatório, sem repetir produto no grupo por 7 dias, revalidação da oferta e link rastreado gerado na hora do envio, retentativas, cancelar e apagar mensagem enviada. Regras automáticas (1 oferta por grupo por vez, filtros de nota/desconto/palavra-chave). 12 tools MCP novas; telas WhatsApp e Publicações.
 **Pendente:** conectar o número real e apontar o redirecionamento de portas para `MESSAGING_WEBHOOK_URL/evolution_go`; conferir o formato real dos eventos `GroupInfo` e do id da mensagem enviada.
 
-## Fase 4 — Criativos de imagem ⬜
+## Fase 4 — Criativos de imagem ✅
 
 **Specs:** [14](14-criativos.md)
 
@@ -74,6 +74,9 @@ Desvios: cliques ficam em buffer de memória por até 1 s antes de gravar (queda
 - CLI `ofertas` mínima (`login`, `upload`, `offers search`).
 
 **Aceite:** agente gera criativo, vê a prévia, ajusta e agenda post com a imagem; agente sobe imagem própria via `request_upload` + `curl`.
+
+**Entregue (30/10/2026):** `packages/render` com templates `card_preco` e `cupom_destaque` (Satori + resvg, fonte Inter embutida) nos formatos 1:1, 4:5 e 9:16, com prévia de 480 px. Brand kit (nome, cores, chamada). Upload em duas etapas (`request_upload` → PUT na URL assinada → `complete_upload`), importação por URL com bloqueio de endereços internos, validação por formato e biblioteca. Imagens servidas por URL assinada (HMAC) em `/media/:id`. Publicações e regras aceitam `creative_template`: o card é gerado na hora do envio (preço sempre atualizado); criativo pronto com preço antigo é refeito. CLI `ofertas` (login, whoami, offers search/list, creatives generate, upload). 10 tools MCP novas; tela Criativos.
+Desvios: armazenamento local em disco (`MEDIA_DIR`) atrás da interface `ObjectStorage` (trocar por S3/R2 no deploy); renderização síncrona (~1 s por formato), sem fila.
 
 ## Fase 5 — Métricas MVP + pronto para BF ⬜
 

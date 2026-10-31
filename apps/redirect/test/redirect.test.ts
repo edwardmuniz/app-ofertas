@@ -10,6 +10,7 @@ import {
   getLinkStats,
   MemoryCache,
   MemoryCounterStore,
+  MemoryStorage,
   resolveSession,
   SecretBox,
   signup,
@@ -52,6 +53,11 @@ beforeAll(async () => {
     affiliateConnectors: defaultAffiliateConnectorFactory,
     messaging: createMessagingProviderFactory({}),
     messagingWebhookUrl: "http://api.test/webhooks/whatsapp",
+    storage: new MemoryStorage(),
+    fetchMedia: async () => {
+      throw new Error("sem rede nos testes");
+    },
+    publicApiUrl: "http://localhost",
   };
   clicks = new ClickBuffer(conn.db, { flushMs: 60_000 });
   app = await buildRedirectApp({ deps, clicks, ipSalt: "salt-de-teste-123456" });

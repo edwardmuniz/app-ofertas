@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Channel } from "./channels";
+import { CREATIVE_TEMPLATES } from "./creatives";
 import { PLATFORMS } from "./offers";
 
 const hhmmRange = /^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$/;
@@ -115,7 +116,12 @@ export const SchedulePostsInput = z.object({
     .optional()
     .describe("Intervalo entre posts no mesmo grupo (padrão: 10)."),
   template_id: z.uuid().optional(),
-  with_image: z.boolean().default(true).describe("Enviar a foto do produto com a legenda."),
+  with_image: z.boolean().default(true).describe("Enviar imagem com a legenda."),
+  creative_template: z
+    .enum(CREATIVE_TEMPLATES)
+    .optional()
+    .describe("Gera o card na hora do envio (preço sempre atualizado). Sem isto: foto do produto."),
+  creative_id: z.uuid().optional().describe("Usa um criativo pronto (só com uma oferta)."),
 });
 export type SchedulePostsInput = z.input<typeof SchedulePostsInput>;
 
@@ -204,6 +210,7 @@ export const AutomationRule = z.object({
   max_per_day: z.number(),
   min_interval_minutes: z.number(),
   template_id: z.string().nullable(),
+  creative_template: z.string().nullable(),
   last_run_at: z.string().nullable(),
   created_at: z.string(),
 });
@@ -229,5 +236,10 @@ export const UpsertAutomationRuleInput = z.object({
     .optional()
     .describe("Intervalo mínimo entre posts da regra no mesmo grupo. Padrão: 30."),
   template_id: z.uuid().nullable().optional(),
+  creative_template: z
+    .enum(CREATIVE_TEMPLATES)
+    .nullable()
+    .optional()
+    .describe("Card gerado para cada envio. null = foto do produto."),
 });
 export type UpsertAutomationRuleInput = z.infer<typeof UpsertAutomationRuleInput>;

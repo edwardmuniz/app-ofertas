@@ -2,6 +2,7 @@ export * from "./audit";
 export * from "./auth";
 export * from "./channels";
 export * from "./common";
+export * from "./creatives";
 export * from "./errors";
 export * from "./invites";
 export * from "./links";

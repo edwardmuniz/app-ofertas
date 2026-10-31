@@ -7,6 +7,7 @@ import {
 import {
   channelStatsDaily,
   channels,
+  creatives,
   type DbOrTx,
   messagingAccounts,
   offers,
@@ -19,6 +20,7 @@ import { and, desc, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
 import { recordAudit } from "./audit";
 import { requireScope } from "./authz";
 import { type Ctx, type Deps, now, systemActor } from "./context";
+import { creativeImageForPost } from "./creatives";
 import { olderThan, toPage } from "./cursor";
 import { AppError } from "./errors";
 import { emitEvent } from "./events";
@@ -194,6 +196,18 @@ export async function schedulePosts(ctx: Ctx, raw: SchedulePostsInput, opts: Mut
       if (!i.offer_ids?.length && !i.text) {
         throw new AppError("VALIDATION_ERROR", "Informe offer_ids ou text.");
       }
+      if (i.creative_id) {
+        if (i.offer_ids?.length !== 1) {
+          throw new AppError("VALIDATION_ERROR", "creative_id só pode ser usado com uma oferta.", {
+            hint: "Para várias ofertas, use creative_template (gera um card por oferta).",
+          });
+        }
+        const [cr] = await c.db
+          .select({ id: creatives.id, offerId: creatives.offerId })
+          .from(creatives)
+          .where(and(eq(creatives.id, i.creative_id), eq(creatives.workspaceId, wsId)));
+        if (!cr) throw new AppError("NOT_FOUND", "Criativo não encontrado.");
+      }
       const { targets, skipped } = await resolveTargets(c.db, wsId, i.channel_ids, i.segment_ids);
       const sched = await workspaceSchedule(c.db, wsId);
       const minInterval = (await getLimit(c, wsId, "posts.min_interval_minutes")) * MINUTE;
@@ -283,6 +297,8 @@ export async function schedulePosts(ctx: Ctx, raw: SchedulePostsInput, opts: Mut
             customText: x.offer_id ? null : (i.text ?? null),
             templateId: i.template_id ?? null,
             withImage: i.with_image,
+            creativeId: i.creative_id ?? null,
+            creativeTemplate: i.creative_template ?? null,
             scheduledAt: new Date(x.scheduled_at),
             body: x.body,
             createdBy: ctx.actor.label,
@@ -568,7 +584,22 @@ export async function publishPost(deps: Deps, postId: string): Promise<PublishOu
         await resolveTemplateBody(deps.db, wsId, post.templateId),
         offerVars((fresh ?? o).offer, (fresh ?? o).product, link.result.short_url),
       );
-      imageUrl = post.withImage ? (o.product.imageUrls[0] ?? null) : null;
+      if (post.withImage) {
+        const creative = await creativeImageForPost(deps, {
+          offer: (fresh ?? o).offer,
+          product: (fresh ?? o).product,
+          creativeId: post.creativeId,
+          creativeTemplate: post.creativeTemplate,
+          createdBy: sysCtx.actor.label,
+        });
+        if (creative && creative.creativeId !== post.creativeId) {
+          await deps.db
+            .update(posts)
+            .set({ creativeId: creative.creativeId })
+            .where(eq(posts.id, post.id));
+        }
+        imageUrl = creative?.url ?? o.product.imageUrls[0] ?? null;
+      }
     }
 
     const provider = providerOf(deps, acc);

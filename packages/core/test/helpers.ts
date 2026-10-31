@@ -4,7 +4,15 @@ import {
 } from "@ofertas/connectors";
 import { createDb, runMigrations } from "@ofertas/db";
 import { resetDb } from "@ofertas/db/testing";
-import { type Deps, MemoryCache, MemoryCounterStore, SecretBox, signup } from "../src";
+import { DEFAULT_BRAND, renderCreative } from "@ofertas/render";
+import {
+  type Deps,
+  MemoryCache,
+  MemoryCounterStore,
+  MemoryStorage,
+  SecretBox,
+  signup,
+} from "../src";
 
 export const TEST_KEY = Buffer.alloc(32, 7).toString("base64");
 
@@ -24,6 +32,9 @@ export async function setupTestDeps(): Promise<Deps & { close: () => Promise<voi
     affiliateConnectors: defaultAffiliateConnectorFactory,
     messaging: createMessagingProviderFactory({}),
     messagingWebhookUrl: "http://api.test/webhooks/whatsapp",
+    storage: new MemoryStorage(),
+    fetchMedia: fakeFetchMedia,
+    publicApiUrl: "http://api.test",
     close,
   };
 }
@@ -41,4 +52,27 @@ export async function createOwner(deps: Deps) {
     },
     { allowSignup: true },
   );
+}
+
+let sampleImage: Buffer | null = null;
+/** Sem internet nos testes: toda URL de imagem devolve um PNG gerado localmente. */
+export async function fakeFetchMedia(_url: string) {
+  sampleImage ??= (
+    await renderCreative({
+      template: "card_preco",
+      format: "wa_image",
+      data: {
+        title: "Foto",
+        price: "R$ 1",
+        originalPrice: null,
+        discountPct: null,
+        coupon: null,
+        badge: null,
+        platform: "",
+        image: null,
+      },
+      brand: DEFAULT_BRAND,
+    })
+  ).preview.png;
+  return { data: sampleImage, contentType: "image/png" };
 }

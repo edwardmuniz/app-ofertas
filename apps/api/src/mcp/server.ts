@@ -2,20 +2,26 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import {
   AuditQuery,
+  CompleteUploadInput,
   CreateInviteLinkInput,
   CreateOfferLinkInput,
   CreateTrackedLinkInput,
   FindSimilarInput,
+  GenerateCreativeInput,
+  ImportMediaInput,
   LinkStatsQuery,
+  ListCreativesQuery,
   ListOffersQuery,
   ListPostsQuery,
   ListTrackedLinksQuery,
   MutationOptions,
   Preferences,
   PreviewPostInput,
+  RequestUploadInput,
   SaveOfferInput,
   SchedulePostsInput,
   SearchOffersInput,
+  UpdateBrandKitInput,
   UpdateInviteLinkInput,
   UpdateOfferStatusInput,
   UpdateTrackedLinkInput,
@@ -24,25 +30,33 @@ import {
   UpsertMessageTemplateInput,
   UpsertSavedSearchInput,
   UpsertSegmentInput,
+  ValidateCreativeInput,
 } from "@ofertas/contracts";
 import {
   type MutationOptions as CoreMutationOptions,
   type Ctx,
   cancelPost,
+  completeUpload,
   createInviteLink,
   createOfferLink,
   createTrackedLink,
   deleteSentPost,
   findSimilarOffers,
+  generateCreative,
+  getBrandKit,
+  getCreative,
   getLinkStats,
   getOffer,
   getOverview,
   getPreferences,
+  importMediaFromUrl,
   isAppError,
   listAffiliateAccounts,
   listAudit,
   listAutomationRules,
   listChannels,
+  listCreatives,
+  listCreativeTemplates,
   listInviteLinks,
   listMessageTemplates,
   listMessagingAccounts,
@@ -52,12 +66,14 @@ import {
   listSegments,
   listTrackedLinks,
   previewPost,
+  requestUpload,
   saveOffer,
   schedulePosts,
   searchOffers,
   setChannelAdminOnly,
   setOfferStatus,
   syncGroups,
+  updateBrandKit,
   updateInviteLink,
   updatePreferences,
   updateTrackedLink,
@@ -66,6 +82,7 @@ import {
   upsertMessageTemplate,
   upsertSavedSearch,
   upsertSegment,
+  validateCreative,
   validateOffer,
 } from "@ofertas/core";
 import { z } from "zod";
@@ -621,6 +638,122 @@ export function createMcpServer(ctx: Ctx): McpServer {
       annotations: WRITE,
     },
     safe(async (args) => upsertAutomationRule(ctx, ...splitOpts(args))),
+  );
+
+  // ── Criativos ──────────────────────────────────────────────────
+  server.registerTool(
+    "get_brand_kit",
+    {
+      title: "Identidade visual",
+      description:
+        "Nome, cores e chamada usados nos criativos. Siga estas cores também nas imagens que você criar fora da plataforma.",
+      annotations: READ,
+    },
+    safe(async () => getBrandKit(ctx)),
+  );
+
+  server.registerTool(
+    "update_brand_kit",
+    {
+      title: "Atualizar identidade visual",
+      description: "Atualização parcial do nome, cores (hexadecimal) e chamada dos criativos.",
+      inputSchema: { ...UpdateBrandKitInput.shape, ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async (args) => updateBrandKit(ctx, ...splitOpts(args))),
+  );
+
+  server.registerTool(
+    "list_creative_templates",
+    {
+      title: "Templates de criativo",
+      description:
+        "Templates de imagem disponíveis, formatos (1:1, 4:5, 9:16) e parâmetros aceitos.",
+      annotations: READ,
+    },
+    safe(async () => listCreativeTemplates()),
+  );
+
+  server.registerTool(
+    "generate_creative",
+    {
+      title: "Gerar criativo da oferta",
+      description:
+        "Gera o card da oferta (foto, preço de/por, desconto, cupom, selo) nos formatos pedidos. Devolve preview_url de cada formato: abra para conferir e ajuste headline/cta/accent_color se precisar.",
+      inputSchema: { ...GenerateCreativeInput.shape, ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async (args) => generateCreative(ctx, ...splitOpts(args))),
+  );
+
+  server.registerTool(
+    "request_upload",
+    {
+      title: "Pedir link de upload",
+      description:
+        "Para subir uma imagem que você criou: devolve put_url (válida por 15 min) e um comando curl pronto. Envie o arquivo com PUT e depois chame complete_upload.",
+      inputSchema: { ...RequestUploadInput.shape, ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async (args) => requestUpload(ctx, ...splitOpts(args))),
+  );
+
+  server.registerTool(
+    "complete_upload",
+    {
+      title: "Concluir upload",
+      description:
+        "Depois do PUT, transforma o arquivo em criativo (opcionalmente ligado a uma oferta) e devolve a validação do formato. Marque ai_generated=true se a imagem foi feita por IA.",
+      inputSchema: { ...CompleteUploadInput.shape, ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async (args) => completeUpload(ctx, ...splitOpts(args))),
+  );
+
+  server.registerTool(
+    "import_media_from_url",
+    {
+      title: "Importar imagem por URL",
+      description:
+        "Baixa uma imagem pública (PNG, JPEG ou WebP, até 10 MB) e cria um criativo com ela.",
+      inputSchema: { ...ImportMediaInput.shape, ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async (args) => importMediaFromUrl(ctx, ...splitOpts(args))),
+  );
+
+  server.registerTool(
+    "list_creatives",
+    {
+      title: "Biblioteca de criativos",
+      description: "Criativos do workspace (por oferta e origem), com URLs das imagens e prévias.",
+      inputSchema: ListCreativesQuery.shape,
+      annotations: READ,
+    },
+    safe(async (args) => listCreatives(ctx, args)),
+  );
+
+  server.registerTool(
+    "get_creative",
+    {
+      title: "Detalhe do criativo",
+      description: "Variantes por formato, URLs e problemas de validação.",
+      inputSchema: { creative_id: z.uuid() },
+      annotations: READ,
+    },
+    safe(async ({ creative_id }) => getCreative(ctx, creative_id)),
+  );
+
+  server.registerTool(
+    "validate_creative",
+    {
+      title: "Validar criativo para um formato",
+      description:
+        "Confere proporção, resolução, tipo e tamanho para wa_image, feed_4x5 ou story_9x16.",
+      inputSchema: ValidateCreativeInput.shape,
+      annotations: READ,
+    },
+    safe(async (args) => validateCreative(ctx, args)),
   );
 
   return server;

@@ -169,6 +169,7 @@ function Schedule({ run, onDone }: { run: Runner; onDone: () => void }) {
   const [channelId, setChannelId] = useState("");
   const [at, setAt] = useState("");
   const [spacing, setSpacing] = useState(10);
+  const [image, setImage] = useState("card_preco");
   const [plan, setPlan] = useState<Plan | null>(null);
 
   useEffect(() => {
@@ -191,6 +192,8 @@ function Schedule({ run, onDone }: { run: Runner; onDone: () => void }) {
     ...(channelId ? { channel_ids: [channelId] } : {}),
     ...(at ? { at: new Date(at).toISOString() } : {}),
     spacing_minutes: spacing,
+    with_image: image !== "none",
+    ...(image === "card_preco" || image === "cupom_destaque" ? { creative_template: image } : {}),
   });
 
   async function preview() {
@@ -232,7 +235,24 @@ function Schedule({ run, onDone }: { run: Runner; onDone: () => void }) {
       </div>
 
       <div className="card grid gap-3 md:grid-cols-4">
-        <h2 className="font-medium md:col-span-4">2. Onde e quando</h2>
+        <h2 className="font-medium md:col-span-4">2. Onde, quando e com qual imagem</h2>
+        <div className="md:col-span-4">
+          <Field label="Imagem" htmlFor="img">
+            <select
+              className="input"
+              id="img"
+              value={image}
+              onChange={(e) => setImage(e.target.value)}
+            >
+              <option value="card_preco">
+                Card de preço (gerado no envio, preço sempre atualizado)
+              </option>
+              <option value="cupom_destaque">Cupom em destaque (gerado no envio)</option>
+              <option value="photo">Foto do produto</option>
+              <option value="none">Só texto</option>
+            </select>
+          </Field>
+        </div>
         <Field label="Segmento" htmlFor="seg">
           <select
             className="input"
@@ -367,6 +387,7 @@ function Rules({ run }: { run: Runner }) {
           windows: list("windows"),
           max_per_day: num("max_per_day") ?? 10,
           min_interval_minutes: num("interval") ?? 30,
+          creative_template: String(f.get("creative") ?? "") || null,
         },
       }),
     );
@@ -443,6 +464,13 @@ function Rules({ run }: { run: Runner }) {
             min={5}
             defaultValue={30}
           />
+        </Field>
+        <Field label="Imagem" htmlFor="creative">
+          <select className="input" id="creative" name="creative" defaultValue="card_preco">
+            <option value="card_preco">Card de preço</option>
+            <option value="cupom_destaque">Cupom em destaque</option>
+            <option value="">Foto do produto</option>
+          </select>
         </Field>
         <div className="flex items-end">
           <button className="btn" type="submit" disabled={!segments.length}>

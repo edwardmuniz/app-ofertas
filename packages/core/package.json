@@ -14,6 +14,7 @@
     "@ofertas/connectors": "workspace:^",
     "@ofertas/contracts": "workspace:^",
     "@ofertas/db": "workspace:^",
+    "@ofertas/render": "workspace:^",
     "drizzle-orm": "0.45.4",
     "ioredis": "5",
     "zod": "4.6.7"

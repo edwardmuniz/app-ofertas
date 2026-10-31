@@ -77,6 +77,14 @@ Permite o ciclo: gerar → ver → ajustar parâmetros → gerar de novo.
 - Imagens de produto vêm do marketplace (uso para divulgação de afiliado); não usar marcas/pessoas de forma enganosa.
 - Nunca exibir preço diferente do validado (preço no criativo é re-checado antes da publicação; se mudou, o criativo é regenerado ou o post é bloqueado).
 
+## Implementação (Fase 4)
+
+- **Render:** Satori não desenha emoji sem imagens extras, então os templates usam só texto e formas; o selo da oferta vai sem emoji. A raiz usa `box-sizing: border-box` (sem isso o Satori soma o padding à largura).
+- **URLs assinadas:** `/media/:id?e=<expira>&s=<hmac>`, validade de 30 dias arredondada para o dia (URL estável para o WhatsApp). Prévias valem 7 dias. Uploads: `PUT /uploads/:id?e&s`, válido por 15 min, conteúdo conferido pelos bytes (PNG, JPEG ou WebP).
+- **`API_PUBLIC_URL` precisa ser acessível pela Evolution Go**: é dela que o WhatsApp baixa a imagem do card.
+- **Importação por URL:** só http(s) públicos; IPs internos (10/8, 172.16/12, 192.168/16, 127/8, 169.254/16, ::1, fc00::/7) bloqueados, inclusive após redirecionamento; limite de 10 MB.
+- **CLI:** `pnpm ofertas --help`. Login salvo em `~/.ofertas/config.json` (ou `OFERTAS_URL` + `OFERTAS_TOKEN`). As ações aparecem na auditoria com origem `cli`.
+
 ## Critérios de aceite
 
 - Fase imagem: brand kit, 2 templates de imagem, geração por oferta, upload por URL pré-assinada, prévia, uso em post de WhatsApp.

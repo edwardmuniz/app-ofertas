@@ -32,6 +32,17 @@ Teste rápido do adaptador contra a sua Evolution Go (cria e apaga uma instânci
 pnpm --filter @ofertas/connectors exec tsx --env-file=../../.env scripts/evolution-smoke.ts
 ```
 
+## CLI
+
+```bash
+pnpm ofertas login --url http://localhost:3001 --token ofk_...
+pnpm ofertas offers search "air fryer" --min-discount 30
+pnpm ofertas creatives generate <offer_id> --format wa_image,story_9x16
+pnpm ofertas upload card.png --offer <offer_id>
+```
+
+Use `--json` para saída legível por scripts e agentes.
+
 ## Comandos
 
 | Comando            | O que faz                                              |
@@ -49,9 +60,11 @@ pnpm --filter @ofertas/connectors exec tsx --env-file=../../.env scripts/evoluti
 apps/api        REST /v1 (OpenAPI em /v1/openapi.json) + MCP em /mcp
 apps/redirect   Links curtos (/<slug>) e convites rotativos (/entrar/<slug>)
 apps/web        Painel Next.js (chama a API via proxy /api)
-apps/worker     Tarefas contínuas (buscas salvas, expiração de ofertas)
+apps/worker     Tarefas contínuas (buscas salvas, publicação, regras, expiração)
+apps/cli        CLI `ofertas`
 packages/core   Regras de negócio (escopos, dry-run, idempotência, auditoria, limites)
-packages/connectors  Integrações externas (Shopee real e simulada)
+packages/connectors  Integrações externas (Shopee, Evolution Go; versões simuladas)
+packages/render  Templates de criativo (Satori)
 packages/db     Schema Drizzle e migrations
 packages/contracts  Schemas Zod compartilhados
 infra           docker-compose

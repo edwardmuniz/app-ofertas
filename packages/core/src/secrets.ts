@@ -1,4 +1,11 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from "node:crypto";
 
 /** Cifra segredos de terceiros em repouso com AES-256-GCM. Formato: v1.<iv>.<tag>.<dados> (base64). */
 export class SecretBox {
@@ -32,6 +39,20 @@ export class SecretBox {
     return Buffer.concat([decipher.update(Buffer.from(data, "base64")), decipher.final()]).toString(
       "utf8",
     );
+  }
+
+  /** Assinatura HMAC-SHA256 (base64url) com chave derivada, para URLs assinadas. */
+  mac(data: string): string {
+    const macKey = createHash("sha256")
+      .update(Buffer.concat([Buffer.from("mac:"), this.key]))
+      .digest();
+    return createHmac("sha256", macKey).update(data).digest("base64url");
+  }
+
+  verifyMac(data: string, sig: string): boolean {
+    const expected = Buffer.from(this.mac(data));
+    const given = Buffer.from(sig);
+    return expected.length === given.length && timingSafeEqual(expected, given);
   }
 
   encryptJson(value: unknown) {

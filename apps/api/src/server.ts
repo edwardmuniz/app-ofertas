@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { createRuntimeDeps } from "@ofertas/core";
 import { buildApp } from "./app";
 import { loadEnv } from "./env";
@@ -13,6 +14,8 @@ const { deps, close } = createRuntimeDeps({
       ? { baseUrl: env.EVOLUTION_GO_URL, globalKey: env.EVOLUTION_GO_API_KEY }
       : null,
   messagingWebhookUrl: env.MESSAGING_WEBHOOK_URL ?? `${env.API_PUBLIC_URL}/webhooks/whatsapp`,
+  mediaDir: resolve(process.cwd(), process.env.MEDIA_DIR ?? "../../data/media"),
+  publicApiUrl: env.API_PUBLIC_URL,
 });
 
 const app = await buildApp({
