@@ -70,7 +70,7 @@ const NAV: { section: string | null; items: NavItem[] }[] = [
 function Wordmark() {
   return (
     <span className="text-lg font-bold tracking-[-0.03em]">
-      Oferta<span className="text-brand-500 dark:text-brand-400">Hub</span>
+      Of<span className="text-brand-500 dark:text-brand-400">Zap</span>
     </span>
   );
 }

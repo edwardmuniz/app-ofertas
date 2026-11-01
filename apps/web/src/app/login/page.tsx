@@ -43,7 +43,7 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-6 p-4">
       <span className="text-2xl font-bold tracking-[-0.03em]">
-        Oferta<span className="text-brand-500 dark:text-brand-400">Hub</span>
+        Of<span className="text-brand-500 dark:text-brand-400">Zap</span>
       </span>
       <form onSubmit={onSubmit} className="card w-full max-w-sm space-y-4 !p-6">
         <div>
