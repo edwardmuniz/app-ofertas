@@ -17,6 +17,7 @@ import {
   type Tone,
 } from "@/components/ui";
 import { api, fmtDate } from "@/lib/api";
+import { useCardsEnabled } from "@/lib/prefs";
 
 type Runner = <T>(fn: () => Promise<T>) => Promise<T | null>;
 
@@ -289,6 +290,7 @@ function RuleForm({
     rule ? (rule.creative_template ?? "photo") : "card_preco",
   );
   const [busy, setBusy] = useState(false);
+  const cards = useCardsEnabled();
   const [customWindow, setCustomWindow] = useState("");
   const windowOk = HHMM_RANGE.test(customWindow.trim());
   const addWindow = () => {
@@ -467,11 +469,17 @@ function RuleForm({
         </Section>
       </div>
       <Section title="Imagem">
-        <ChoiceCards
-          options={IMAGE_OPTIONS}
-          value={image as (typeof IMAGE_OPTIONS)[number]["value"]}
-          onChange={setImage}
-        />
+        {cards === false ? (
+          <p className="text-sm text-neutral-500">
+            Cards desligados nas Preferências: a regra envia a foto do produto.
+          </p>
+        ) : (
+          <ChoiceCards
+            options={IMAGE_OPTIONS}
+            value={image as (typeof IMAGE_OPTIONS)[number]["value"]}
+            onChange={setImage}
+          />
+        )}
       </Section>
       <div className="flex gap-2">
         <LoadingButton busy={busy} type="submit" disabled={!segIds.length || !name.trim()}>

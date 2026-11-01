@@ -2,6 +2,18 @@ export const PLATFORMS = ["shopee", "amazon", "mercadolivre", "magalu"] as const
 export type Platform = (typeof PLATFORMS)[number];
 
 /** Produto + condição comercial no momento da consulta, normalizado entre plataformas. */
+/** Lê uma página pública (seguindo redirecionamentos). Fornecido pelo core, com proteção de rede. */
+export type PageReader = (url: string) => Promise<{ url: string; status: number; html: string }>;
+
+/**
+ * Plataformas que não aceitam encurtador/redirecionamento próprio: o post leva o link da loja
+ * direto. Amazon: a política de Associados proíbe links que escondam que o destino é a Amazon.
+ */
+export const DIRECT_LINK_PLATFORMS: ReadonlySet<Platform> = new Set(["amazon"]);
+
+/** Parcelamento anunciado (ex.: 12x de R$ 37,51 sem juros). */
+export type Installments = { count: number; value: number; interestFree: boolean };
+
 export type ProductOffer = {
   platform: Platform;
   externalId: string;
@@ -25,6 +37,9 @@ export type ProductOffer = {
   categoryName: string | null;
   available: boolean;
   validUntil: Date | null;
+  /** Preço à vista no Pix, quando a loja mostra um menor que o preço normal */
+  pixPrice?: number | null;
+  installments?: Installments | null;
 };
 
 export const SEARCH_SORTS = [

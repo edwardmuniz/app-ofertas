@@ -3,7 +3,7 @@
 import type { Preferences } from "@ofertas/contracts";
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Chip, Loading, LoadingButton, PageHeader } from "@/components/ui";
+import { Chip, ChoiceCards, Loading, LoadingButton, PageHeader } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 
 const toList = (s: string) =>
@@ -79,6 +79,7 @@ export default function PreferenciasPage() {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [niches, setNiches] = useState<string[]>([]);
   const [windows, setWindows] = useState<string[]>([]);
+  const [cards, setCards] = useState<"on" | "off">("on");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -86,6 +87,7 @@ export default function PreferenciasPage() {
       setPrefs(p);
       setNiches(p.niches ?? []);
       setWindows(p.posting_windows ?? []);
+      setCards(p.creative_cards === false ? "off" : "on");
     });
   }, []);
 
@@ -99,6 +101,7 @@ export default function PreferenciasPage() {
       forbidden: toList(String(f.get("forbidden") ?? "")),
       notes: String(f.get("notes") ?? ""),
       alert_webhook_url: String(f.get("alert_webhook_url") ?? "").trim() || null,
+      creative_cards: cards === "on",
     };
     setSaving(true);
     setMsg(null);
@@ -175,6 +178,26 @@ export default function PreferenciasPage() {
           <p className="text-xs text-neutral-500">
             Publicações e regras só saem nesses horários. Sem nenhum, sai a qualquer hora.
           </p>
+        </div>
+        <div className="space-y-1.5">
+          <div className="label">Imagem dos envios</div>
+          <ChoiceCards
+            columns={2}
+            value={cards}
+            onChange={setCards}
+            options={[
+              {
+                value: "on",
+                label: "Card com preço",
+                hint: "Gera o card (foto, preço e desconto) na hora do envio, quando a publicação ou regra pede.",
+              },
+              {
+                value: "off",
+                label: "Só a foto do produto",
+                hint: "Desliga a geração de cards: todos os envios vão com a foto da loja.",
+              },
+            ]}
+          />
         </div>
         <div>
           <label className="label" htmlFor="forbidden">

@@ -16,6 +16,9 @@ const { deps, close } = createRuntimeDeps({
   messagingWebhookUrl: env.MESSAGING_WEBHOOK_URL ?? `${env.API_PUBLIC_URL}/webhooks/whatsapp`,
   mediaDir: resolve(process.cwd(), process.env.MEDIA_DIR ?? "../../data/media"),
   s3: s3ConfigFromEnv(process.env),
+  gemini: process.env.GOOGLE_API_KEY
+    ? { apiKey: process.env.GOOGLE_API_KEY, model: process.env.GEMINI_MODEL }
+    : null,
   publicApiUrl: env.API_PUBLIC_URL,
 });
 

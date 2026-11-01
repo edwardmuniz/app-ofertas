@@ -39,7 +39,10 @@ export function providerError(err: unknown): AppError {
   return new AppError("PROVIDER_ERROR", `Falha na integração: ${String(err)}`);
 }
 
-type ConnectorDeps = Pick<Deps, "secrets" | "affiliateConnectors" | "db" | "openStream">;
+type ConnectorDeps = Pick<
+  Deps,
+  "secrets" | "affiliateConnectors" | "db" | "openStream" | "fetchPage"
+>;
 
 export function connectorFor(deps: ConnectorDeps, row: AccountRow): AffiliateConnector {
   const credentials = row.credentials
@@ -49,7 +52,12 @@ export function connectorFor(deps: ConnectorDeps, row: AccountRow): AffiliateCon
     const creds = credentials as Partial<FeedCredentials> | null;
     return new FeedConnector(deps.db, row.id, creds, deps.openStream);
   }
-  return deps.affiliateConnectors({ platform: row.platform, mode: row.mode, credentials });
+  return deps.affiliateConnectors({
+    platform: row.platform,
+    mode: row.mode,
+    credentials,
+    fetchPage: deps.fetchPage,
+  });
 }
 
 function toAccount(deps: ConnectorDeps, r: AccountRow): AffiliateAccount {
@@ -134,7 +142,7 @@ export async function connectAffiliateAccount(
   }
   if (input.mode === "live") {
     const missing = CREDENTIAL_FIELDS[input.platform]
-      .filter((f) => !input.credentials?.[f.key])
+      .filter((f) => !f.optional && !input.credentials?.[f.key]?.trim())
       .map((f) => f.key);
     if (missing.length || CREDENTIAL_FIELDS[input.platform].length === 0) {
       throw new AppError(
@@ -148,7 +156,11 @@ export async function connectAffiliateAccount(
   }
   const credentials =
     input.mode === "live"
-      ? (input.credentials ?? {})
+      ? Object.fromEntries(
+          Object.entries(input.credentials ?? {})
+            .map(([k, v]) => [k, v.trim()])
+            .filter(([, v]) => v),
+        )
       : input.mode === "feed"
         ? {
             affiliate_id: (input.credentials?.affiliate_id ?? "").trim(),

@@ -72,7 +72,7 @@ export const ConnectAffiliateAccountInput = z.object({
     .record(z.string(), z.string().max(4000))
     .optional()
     .describe(
-      "Shopee live: { app_id, secret }. Shopee feed: { affiliate_id, feed_urls (um link por linha) }.",
+      "Shopee live: { app_id, secret }. Shopee feed: { affiliate_id, feed_urls (um link por linha) }. Amazon live: { partner_tag, credential_id?, credential_secret? } (Creators API opcional; sem ela a busca lê a página de resultados).",
     ),
 });
 export type ConnectAffiliateAccountInput = z.input<typeof ConnectAffiliateAccountInput>;
@@ -144,6 +144,39 @@ export type SearchOffersResult = z.infer<typeof SearchOffersResult>;
 
 // ── Ofertas (curadoria) ─────────────────────────────────────────
 
+export const OfferCopy = z.object({
+  headline: z.string().describe("Chamada (vai em negrito no topo da mensagem)."),
+  body: z.string().describe("1 ou 2 frases sobre o produto."),
+  extra: z.string().nullable().describe("Fechamento: urgência, condição ou dica."),
+  source: z.enum(["ai", "agent", "human"]),
+  updated_at: z.string(),
+});
+export type OfferCopy = z.infer<typeof OfferCopy>;
+
+export const SetOfferCopyInput = z.object({
+  copy: z
+    .object({
+      headline: z.string().trim().min(3).max(90),
+      body: z.string().trim().min(3).max(320),
+      extra: z.string().trim().max(200).nullable().optional(),
+    })
+    .nullable()
+    .describe(
+      "Texto da mensagem desta oferta. null volta ao modelo padrão. Não escreva preço, parcelas, cupom nem link: o sistema coloca, sempre atualizados.",
+    ),
+});
+export type SetOfferCopyInput = z.infer<typeof SetOfferCopyInput>;
+
+export const GenerateOfferCopyInput = z.object({
+  hint: z
+    .string()
+    .trim()
+    .max(200)
+    .optional()
+    .describe("Pedido extra para a IA, ex.: 'foque em quem joga'."),
+});
+export type GenerateOfferCopyInput = z.infer<typeof GenerateOfferCopyInput>;
+
 export const Offer = z.object({
   id: z.string(),
   status: z.enum(OFFER_STATUS),
@@ -172,6 +205,14 @@ export const Offer = z.object({
   reject_reason: z.string().nullable(),
   valid_until: z.string().nullable(),
   last_validated_at: z.string().nullable(),
+  pix_price: z.number().nullable().describe("Preço no Pix, quando a loja mostra (Amazon)."),
+  installments: z
+    .object({ count: z.number(), value: z.number(), interest_free: z.boolean() })
+    .nullable()
+    .describe("Parcelamento anunciado pela loja."),
+  copy: OfferCopy.nullable().describe(
+    "Texto próprio da mensagem. Com ele, o envio usa o formato chamada + descrição + preço + fechamento.",
+  ),
   created_at: z.string(),
 });
 export type Offer = z.infer<typeof Offer>;
@@ -271,6 +312,10 @@ export const OfferLinkPreview = z.object({
   image_url: z.string().nullable(),
   price: z.number().nullable(),
   original_price: z.number().nullable(),
+  pix_price: z.number().nullable().describe("Preço no Pix, quando a página mostra (Amazon)."),
+  installments: z
+    .object({ count: z.number(), value: z.number(), interest_free: z.boolean() })
+    .nullable(),
   shop_name: z.string().nullable(),
   missing: z
     .array(z.enum(["title", "image", "price"]))
@@ -281,6 +326,13 @@ export type OfferLinkPreview = z.infer<typeof OfferLinkPreview>;
 
 export const ImportOfferFromLinkInput = z.object({
   url: z.url().max(2000).describe("O link colado (de preferência o de afiliado)."),
+  product_url: z
+    .url()
+    .max(2000)
+    .optional()
+    .describe(
+      "Página do produto na loja, quando o link de afiliado não mostra qual é o produto (ex.: meli.la). Evita oferta duplicada.",
+    ),
   title: z.string().trim().min(3).max(300),
   image_url: z.url().max(2000).nullable().optional().describe("Foto do produto."),
   price: z.number().positive().max(1_000_000).describe("Preço atual (R$)."),
@@ -291,6 +343,22 @@ export const ImportOfferFromLinkInput = z.object({
     .nullable()
     .optional()
     .describe('Preço "de" (R$), se houver.'),
+  pix_price: z
+    .number()
+    .positive()
+    .max(1_000_000)
+    .nullable()
+    .optional()
+    .describe("Preço no Pix (R$), se a loja mostrar um menor que o preço normal."),
+  installments: z
+    .object({
+      count: z.number().int().min(2).max(48),
+      value: z.number().positive().max(1_000_000),
+      interest_free: z.boolean().default(true),
+    })
+    .nullable()
+    .optional()
+    .describe("Parcelamento anunciado, ex.: 10x de R$ 52,19 sem juros."),
   coupon_code: z.string().max(60).optional(),
   coupon_description: z.string().max(200).optional(),
   notes: z.string().max(1000).optional(),
@@ -314,6 +382,11 @@ export const OfferLink = z.object({
   affiliate_url: z.string(),
   link_id: z.string(),
   short_url: z.string(),
+  share_url: z
+    .string()
+    .describe(
+      "Link para publicar. Igual ao short_url, exceto na Amazon (proíbe encurtador): link de afiliado direto.",
+    ),
   sub_ids: z.array(z.string()),
 });
 export type OfferLink = z.infer<typeof OfferLink>;

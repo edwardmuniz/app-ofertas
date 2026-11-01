@@ -28,6 +28,7 @@ import {
   SchedulePostsInput,
   SearchOffersInput,
   SeasonalCalendarQuery,
+  SetOfferCopyInput,
   SyncGroupsInput,
   UpdateBrandKitInput,
   UpdateChannelInput,
@@ -95,6 +96,7 @@ import {
   schedulePosts,
   searchOffers,
   setChannelAdminOnly,
+  setOfferCopy,
   setOfferStatus,
   syncGroups,
   updateBrandKit,
@@ -440,6 +442,22 @@ export function createMcpServer(ctx: Ctx): McpServer {
   );
 
   server.registerTool(
+    "set_offer_copy",
+    {
+      title: "Escrever texto da oferta",
+      description:
+        'Escreva você mesmo o texto da mensagem da oferta: headline (chamada curta de impacto, pode ter 1 emoji), body (1-2 frases sobre o produto) e extra (fechamento com urgência ou dica). Não coloque preço, parcelas, cupom nem link: o sistema monta a linha "De ~R$ X~ por *R$ Y no Pix* ou *Nx sem juros*" e o link na hora do envio. Use o tom de voz de get_preferences. copy=null volta ao modelo padrão. Veja o resultado com preview_post.',
+      inputSchema: {
+        offer_id: z.uuid(),
+        ...SetOfferCopyInput.shape,
+        ...MutationOptions.shape,
+      },
+      annotations: WRITE,
+    },
+    safe(async ({ offer_id, ...args }) => setOfferCopy(ctx, offer_id, ...splitOpts(args))),
+  );
+
+  server.registerTool(
     "preview_offer_from_link",
     {
       title: "Ler link de produto",
@@ -456,7 +474,7 @@ export function createMcpServer(ctx: Ctx): McpServer {
     {
       title: "Criar oferta por link",
       description:
-        "Cria uma oferta a partir de um link colado, com título, foto e preço (confira com preview_offer_from_link e pergunte ao usuário o que faltar; não invente preço). O link vira o destino dos links curtos. Sem conta real da loja, o preço não é revalidado antes do envio.",
+        "Cria uma oferta a partir de um link colado, com título, foto, preço e, se houver, preço De, Pix e parcelas (confira com preview_offer_from_link; o que faltar, pegue da página que você viu ou pergunte ao usuário; não invente preço). O link vira o destino dos links curtos. Sem conta real da loja, o preço não é revalidado antes do envio.",
       inputSchema: { ...ImportOfferFromLinkInput.shape, ...MutationOptions.shape },
       annotations: WRITE,
     },
@@ -556,7 +574,7 @@ export function createMcpServer(ctx: Ctx): McpServer {
     {
       title: "Gerar link da oferta",
       description:
-        "Gera o link de afiliado com sub-ids e o envolve num link curto rastreado. Use um link por lugar de divulgação (source: wa, ig, story, bio, ads; channel_id para o grupo). É o link que deve ser publicado.",
+        "Gera o link de afiliado com sub-ids e o envolve num link curto rastreado. Use um link por lugar de divulgação (source: wa, ig, story, bio, ads; channel_id para o grupo). Publique o share_url: é o link curto, exceto na Amazon, que proíbe encurtador (vai o link de afiliado direto).",
       inputSchema: { ...CreateOfferLinkInput.shape, ...MutationOptions.shape },
       annotations: WRITE,
     },

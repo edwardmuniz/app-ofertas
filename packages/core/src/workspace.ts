@@ -66,6 +66,15 @@ export async function getOverview(ctx: Ctx): Promise<WorkspaceOverview> {
   };
 }
 
+/** Cards (criativos) ligados nos envios? Desligado = só a foto do produto. */
+export async function creativeCardsEnabled(db: DbOrTx, workspaceId: string) {
+  const [ws] = await db
+    .select({ settings: workspaces.settings })
+    .from(workspaces)
+    .where(eq(workspaces.id, workspaceId));
+  return ws?.settings.preferences?.creative_cards !== false;
+}
+
 export async function getPreferences(ctx: Ctx): Promise<Preferences> {
   requireScope(ctx.actor, "settings:read");
   const ws = await loadWorkspace(ctx);

@@ -1,10 +1,13 @@
 import { createHash } from "node:crypto";
 import {
+  DIRECT_LINK_PLATFORMS,
+  embeddedStoreUrl,
   FAKE_CATEGORIES,
   isGenericTitle,
   looksLikeAffiliateUrl,
   type Platform,
   type ProductOffer,
+  parseAmazonPage,
   parseProductPage,
   platformOfUrl,
   productIdOfUrl,
@@ -62,7 +65,10 @@ import {
 type ProductRow = typeof products.$inferSelect;
 type OfferRow = typeof offers.$inferSelect;
 type AccountRow = typeof affiliateAccounts.$inferSelect;
-type DbDeps = Pick<Deps, "db" | "secrets" | "affiliateConnectors" | "now" | "openStream">;
+type DbDeps = Pick<
+  Deps,
+  "db" | "secrets" | "affiliateConnectors" | "now" | "openStream" | "fetchPage"
+>;
 
 /** Variação de preço aceita antes de considerar a oferta expirada. */
 export const PRICE_TOLERANCE = 0.05;
@@ -135,6 +141,8 @@ async function recordPrices(
   source: "search" | "lookup" | "validation",
   at: Date,
 ) {
+  // Preço zero = produto indisponível (sem preço na página): não entra no histórico.
+  entries = entries.filter((e) => e.price > 0);
   if (entries.length === 0) return;
   const ids = entries.map((e) => e.productId);
   const latest = await db
@@ -184,14 +192,23 @@ export async function runSearch(
   errors: { platform: string; message: string }[];
   hasMore: boolean;
 }> {
-  const accounts = await activeAccounts(
-    deps.db,
-    workspaceId,
-    q.platforms as Platform[] | undefined,
-  );
-  if (accounts.length === 0) {
+  const all = await activeAccounts(deps.db, workspaceId, q.platforms as Platform[] | undefined);
+  if (all.length === 0) {
     throw new AppError("NOT_CONFIGURED", "Nenhuma conta de afiliado conectada.", {
       hint: "Conecte uma conta em Afiliados no painel (dá para usar o modo simulado para testar).",
+    });
+  }
+  // Contas sem busca ficam de fora: as ofertas delas vêm por link.
+  const accounts = all.filter((a) => {
+    try {
+      return connectorFor(deps, a).capabilities.search;
+    } catch {
+      return true;
+    }
+  });
+  if (accounts.length === 0) {
+    throw new AppError("NOT_CONFIGURED", "Nenhuma conta conectada permite busca.", {
+      hint: "Use “Colar link” em Ofertas para trazer produtos dessa loja.",
     });
   }
   const hasFilters =
@@ -373,7 +390,23 @@ function toOffer(o: OfferRow, p: ProductRow): Offer {
     reject_reason: o.rejectReason,
     valid_until: o.validUntil?.toISOString() ?? null,
     last_validated_at: o.lastValidatedAt?.toISOString() ?? null,
+    pix_price: o.priceDetails?.pix_price ?? null,
+    installments: o.priceDetails?.installments ?? null,
+    copy: o.copy ?? null,
     created_at: o.createdAt.toISOString(),
+  };
+}
+
+/** Preço no Pix e parcelamento do item, no formato guardado na oferta. */
+export function priceDetailsOf(item: Pick<ProductOffer, "pixPrice" | "installments">) {
+  const pix = item.pixPrice ?? null;
+  const inst = item.installments ?? null;
+  if (!pix && !inst) return null;
+  return {
+    pix_price: pix,
+    installments: inst
+      ? { count: inst.count, value: inst.value, interest_free: inst.interestFree }
+      : null,
   };
 }
 
@@ -421,6 +454,7 @@ function offerValues(item: ProductOffer, score: number, flags: QualityFlag[]) {
     commissionValue: item.commissionValue,
     affiliateUrl: item.affiliateUrl,
     validUntil: item.validUntil ? new Date(item.validUntil) : null,
+    priceDetails: priceDetailsOf(item),
     score,
     qualityFlags: flags,
   };
@@ -873,11 +907,13 @@ export async function createOfferLink(
         offerId: p.offer_id,
         subIds: Object.fromEntries(p.sub_ids.map((s, idx) => [`sub${idx + 1}`, s])),
       });
+      const short = shortUrl(ctx, row.slug);
       const out: OfferLink = {
         offer_id: p.offer_id,
         affiliate_url: affiliateUrl,
         link_id: row.id,
-        short_url: shortUrl(ctx, row.slug),
+        short_url: short,
+        share_url: shareUrlFor(affiliateUrl, short),
         sub_ids: p.sub_ids,
       };
       return out;
@@ -888,6 +924,15 @@ export async function createOfferLink(
 }
 
 export { toOffer };
+
+/**
+ * Link que vai na mensagem. Lojas que proíbem encurtador próprio (Amazon) recebem o link de
+ * afiliado direto; nelas, os cliques ficam no relatório da loja.
+ */
+export function shareUrlFor(affiliateUrl: string, shortLink: string) {
+  const platform = platformOfUrl(affiliateUrl);
+  return platform && DIRECT_LINK_PLATFORMS.has(platform) ? affiliateUrl : shortLink;
+}
 
 // ── Oferta por link ─────────────────────────────────────────────
 
@@ -928,6 +973,8 @@ type LinkData = {
   price: number | null;
   originalPrice: number | null;
   shopName: string | null;
+  pixPrice: number | null;
+  installments: ProductOffer["installments"];
 };
 
 /** Abre o link (seguindo links curtos), descobre loja e produto e lê o que der da página. */
@@ -938,7 +985,18 @@ async function readLink(deps: Deps, workspaceId: string, raw: string): Promise<L
       hint: "Aceita links da Shopee, Mercado Livre, Amazon e Magalu.",
     });
   }
-  const page = await deps.fetchPage(pasted).catch(() => null);
+  let page = await deps.fetchPage(pasted).catch(() => null);
+  // Link curto que para numa página intermediária (link.amazon → amzlinks.in): segue o link de dentro.
+  if (page && !productIdOfUrl(platformOfUrl(page.url) ?? "amazon", page.url)) {
+    const inner = embeddedStoreUrl(page.html);
+    if (inner) {
+      page = (await deps.fetchPage(inner).catch(() => null)) ?? {
+        url: inner,
+        status: 599,
+        html: "",
+      };
+    }
+  }
   const finalUrl = page && platformOfUrl(page.url) ? page.url : pasted;
   const platform = (platformOfUrl(finalUrl) ?? platformOfUrl(pasted)) as Platform;
   const final = new URL(finalUrl);
@@ -948,6 +1006,17 @@ async function readLink(deps: Deps, workspaceId: string, raw: string): Promise<L
     page && page.status < 400
       ? parseProductPage(page.html, finalUrl)
       : { title: null, imageUrl: null, price: null, originalPrice: null, shopName: null };
+  let amazon: ReturnType<typeof parseAmazonPage> | null = null;
+  if (platform === "amazon" && page && page.status < 400) {
+    // Leitor próprio da Amazon: foto em alta (a og:image tem a nota por cima) e preço "De:".
+    amazon = parseAmazonPage(page.html);
+    Object.assign(data, {
+      title: amazon.title ?? data.title,
+      imageUrl: amazon.imageUrl ?? data.imageUrl,
+      price: amazon.price ?? data.price,
+      originalPrice: amazon.originalPrice ?? data.originalPrice,
+    });
+  }
   const out: LinkData = {
     platform,
     externalId: foundId ?? linkId(finalUrl),
@@ -965,13 +1034,17 @@ async function readLink(deps: Deps, workspaceId: string, raw: string): Promise<L
     price: data.price,
     originalPrice: data.originalPrice,
     shopName: data.shopName,
+    pixPrice: amazon?.pixPrice ?? null,
+    installments: amazon?.installments ?? null,
   };
 
   // Com conta real ou feed da loja, os dados vêm dela (e o preço é conferido antes de cada envio).
   const live = (await activeAccounts(deps.db, workspaceId, [platform])).find(
     (a) => a.mode === "live" || a.mode === "feed",
   );
-  if (live && !out.isAffiliate) {
+  // Na Amazon o link é montado aqui com a sua tag, então sempre remonta (o colado pode ter a
+  // tag de outra pessoa).
+  if (live && (!out.isAffiliate || DIRECT_LINK_PLATFORMS.has(platform))) {
     // Link comum da loja: vira link de comissão (os links curtos ganham sub-ids depois).
     const link = await connectorFor(deps, live)
       .generateLink(out.productUrl, [])
@@ -993,6 +1066,8 @@ async function readLink(deps: Deps, workspaceId: string, raw: string): Promise<L
         originalPrice: item.originalPrice,
         shopName: item.shopName ?? out.shopName,
         productUrl: item.url || out.productUrl,
+        pixPrice: item.pixPrice ?? out.pixPrice,
+        installments: item.installments ?? out.installments,
       });
     }
   }
@@ -1045,6 +1120,14 @@ export async function previewOfferFromLink(
     image_url: d.imageUrl,
     price: d.price,
     original_price: d.originalPrice,
+    pix_price: d.pixPrice,
+    installments: d.installments
+      ? {
+          count: d.installments.count,
+          value: d.installments.value,
+          interest_free: d.installments.interestFree,
+        }
+      : null,
     shop_name: d.shopName,
     missing,
     existing_offer_id: await openOfferFor(ctx.db, ctx.actor.workspaceId, d.platform, d.externalId),
@@ -1070,6 +1153,22 @@ export async function importOfferFromLink(
     target: (i) => ({ type: "link", id: i.url.slice(0, 200) }),
     preview: async (c, i) => {
       const d = await readLink(ctx, wsId, i.url);
+      // Link de afiliado que não revela o produto (meli.la): a página informada dá o id.
+      if (i.product_url) {
+        const id =
+          platformOfUrl(i.product_url) === d.platform
+            ? productIdOfUrl(d.platform, i.product_url)
+            : null;
+        if (!id) {
+          throw new AppError(
+            "VALIDATION_ERROR",
+            "A página do produto não é da mesma loja do link.",
+            { hint: "Envie em product_url o endereço da página do produto (ex.: .../p/MLB123)." },
+          );
+        }
+        const page = new URL(i.product_url);
+        Object.assign(d, { externalId: id, productUrl: `${page.origin}${page.pathname}` });
+      }
       const original = i.original_price && i.original_price > i.price ? i.original_price : null;
       const item: ProductOffer = {
         platform: d.platform,
@@ -1090,6 +1189,28 @@ export async function importOfferFromLink(
         categoryName: d.item?.categoryName ?? null,
         available: true,
         validUntil: null,
+        // Informado por quem cola (ex.: agente que viu a página do Mercado Livre) ou lido da
+        // página; o lido só vale se o preço conferido é o mesmo que a loja mostrou.
+        pixPrice:
+          i.pix_price !== undefined
+            ? i.pix_price && i.pix_price < i.price
+              ? i.pix_price
+              : null
+            : d.price === i.price
+              ? d.pixPrice
+              : null,
+        installments:
+          i.installments !== undefined
+            ? i.installments
+              ? {
+                  count: i.installments.count,
+                  value: i.installments.value,
+                  interestFree: i.installments.interest_free,
+                }
+              : null
+            : d.price === i.price
+              ? d.installments
+              : null,
       };
       return {
         item,

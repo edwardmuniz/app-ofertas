@@ -1,4 +1,4 @@
-import { fakeAffiliateControls, fakeMessagingControls } from "@ofertas/connectors";
+import { FakeCopyWriter, fakeAffiliateControls, fakeMessagingControls } from "@ofertas/connectors";
 import {
   automationRules,
   channelStatsDaily,
@@ -11,13 +11,16 @@ import {
 import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
+  authenticateToken,
   type Ctx,
   cancelPost,
   connectAffiliateAccount,
   createMessagingAccount,
+  createToken,
   type Deps,
   deleteSegment,
   deleteSentPost,
+  generateOfferCopy,
   getConnectionState,
   handleMessagingWebhook,
   importOfferFromLink,
@@ -37,11 +40,13 @@ import {
   schedulePosts,
   searchOffers,
   setChannelAdminOnly,
+  setOfferCopy,
   syncGroups,
   updateChannel,
   updatePreferences,
   upsertAutomationRule,
   upsertSegment,
+  validateOffer,
 } from "../src";
 import { createOwner, fakePages, importAllGroups, insertChannel, setupTestDeps } from "./helpers";
 
@@ -388,6 +393,292 @@ describe("oferta por link", () => {
     await expect(previewOfferFromLink(ctx, { url: "https://exemplo.com/produto" })).rejects.toThrow(
       /não reconhecido/,
     );
+  });
+});
+
+describe("Mercado Livre por link (dados vistos pelo agente)", () => {
+  const MELI = "https://meli.la/1AbCdEf";
+  fakePages.set(MELI, {
+    // A página bloqueia a leitura: só o título e a logo da loja no lugar da foto.
+    url: "https://www.mercadolivre.com.br/fritadeira-air-fryer-mondial-4l/p/MLB15209590?matt_tool=123&matt_word=loja",
+    html: `<meta property="og:title" content="Fritadeira Air Fryer Mondial 4L | Mercado Livre"/>
+<meta property="og:image" content="https://http2.mlstatic.com/frontend-assets/ml-web-navigation/ui-navigation/6.7.0/mercadolibre/pt_logo_large_plus@2x.webp"/>`,
+  });
+
+  it("aceita meli.la, ignora a logo e grava Pix e parcelas informados", async () => {
+    const { ctx } = await setup();
+    const p = await previewOfferFromLink(ctx, { url: MELI });
+    expect(p).toMatchObject({
+      platform: "mercadolivre",
+      external_id: "MLB15209590",
+      is_affiliate_link: true,
+      image_url: null,
+    });
+    expect(p.missing).toEqual(expect.arrayContaining(["image", "price"]));
+
+    const offer = done(
+      await importOfferFromLink(ctx, {
+        url: MELI,
+        product_url: "https://www.mercadolivre.com.br/fritadeira-mondial/p/MLB15209590",
+        title: "Fritadeira Air Fryer Mondial 4L",
+        image_url: "https://http2.mlstatic.com/D_NQ_NP_123-O.webp",
+        price: 279.9,
+        original_price: 399.9,
+        pix_price: 265.9,
+        installments: { count: 10, value: 27.99, interest_free: true },
+      }),
+    );
+    expect(offer).toMatchObject({
+      platform: "mercadolivre",
+      affiliate_url: MELI,
+      discount_pct: 30,
+      pix_price: 265.9,
+      installments: { count: 10, value: 27.99, interest_free: true },
+    });
+    // Pix maior ou igual ao preço não vale.
+    const noPix = done(
+      await importOfferFromLink(ctx, {
+        url: MELI,
+        title: "Fritadeira Air Fryer Mondial 4L",
+        price: 279.9,
+        pix_price: 279.9,
+      }),
+    );
+    expect(noPix.pix_price).toBeNull();
+
+    // meli.la que não revela o produto: product_url dá o id e evita duplicar.
+    const SOCIAL = "https://meli.la/2gApnZZ";
+    fakePages.set(SOCIAL, {
+      url: SOCIAL,
+      html: '<meta property="og:url" content="https://www.mercadolivre.com.br/social/loja?matt_word=loja"/>',
+    });
+    const viaSocial = done(
+      await importOfferFromLink(ctx, {
+        url: SOCIAL,
+        product_url: "https://www.mercadolivre.com.br/fritadeira-mondial/p/MLB15209590?x=1",
+        title: "Fritadeira Air Fryer Mondial 4L",
+        price: 279.9,
+      }),
+    );
+    expect(viaSocial.id).toBe(offer.id);
+    expect(viaSocial.affiliate_url).toBe(SOCIAL);
+    await expect(
+      importOfferFromLink(ctx, {
+        url: SOCIAL,
+        product_url: "https://www.amazon.com.br/dp/B0BTYCJXBK",
+        title: "Outra loja",
+        price: 1,
+      }),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+  });
+});
+
+describe("Amazon (associado só com a tag)", () => {
+  const ASIN = "B0BTYCJXBK";
+  const PASTED = `https://www.amazon.com.br/Fone-Anker/dp/${ASIN}?ref=sr_1_1&tag=outro-20`;
+  const PAGE_URL = `https://www.amazon.com.br/dp/${ASIN}`;
+  const page = (price: string) =>
+    `<span id="productTitle"> Fone Anker P20i </span>
+<img data-old-hires="https://m.media-amazon.com/images/I/fone._AC_SL1500_.jpg">
+<span class="basisPrice"><span class="a-offscreen">R$249,00</span></span>
+<span class="apex-pricetopay-value"><span class="a-offscreen">R$146,20</span></span>
+<span> no Pix ou NuPay </span> <span> 5x de R$ 30,78 sem juros</span>
+<div id="availability"><span> Em estoque </span></div>
+<script>{"priceAmount":${price}}</script>`;
+  const serve = (html: string) => {
+    fakePages.set(PASTED, { url: PASTED, html });
+    fakePages.set(PAGE_URL, { url: PAGE_URL, html });
+  };
+
+  it("sem Creators API a busca lê a página de resultados da Amazon", async () => {
+    const s = await createOwner(deps);
+    const r = await resolveSession(deps, s.sessionToken);
+    if (!r) throw new Error("sessão");
+    const ctx: Ctx = { ...deps, actor: r.actor };
+    const acc = done(
+      await connectAffiliateAccount(ctx, {
+        platform: "amazon",
+        label: "Amazon",
+        mode: "live",
+        credentials: { partner_tag: "minhaloja-20", credential_id: " ", credential_secret: "" },
+      }),
+    );
+    expect(acc.capabilities).toMatchObject({ search: true, lookup: true, subIds: 0 });
+    const SEARCH = "https://www.amazon.com.br/s?k=fone";
+    fakePages.set(SEARCH, {
+      url: SEARCH,
+      html: `<div data-asin="${ASIN}" data-component-type="s-search-result">
+<img class="s-image" src="https://m.media-amazon.com/images/I/fone._AC_UL320_.jpg"/>
+<h2 aria-label="Fone Anker P20i"><span>Fone Anker P20i</span></h2>
+<span class="a-price" data-a-size="xl"><span class="a-offscreen">R$ 153,90</span></span>
+<span class="a-price a-text-price" data-a-strike="true"><span class="a-offscreen">R$ 249,00</span></span></div>`,
+    });
+    const found = await searchOffers(ctx, { keyword: "fone" });
+    expect(found.items).toHaveLength(1);
+    expect(found.items[0]).toMatchObject({
+      platform: "amazon",
+      external_id: ASIN,
+      price: 153.9,
+      discount_pct: 38,
+    });
+    await expect(
+      connectAffiliateAccount(ctx, {
+        platform: "amazon",
+        label: "x",
+        mode: "live",
+        credentials: { partner_tag: "sem-formato" },
+      }),
+    ).rejects.toMatchObject({ code: "PROVIDER_ERROR" });
+  });
+
+  it("link colado ganha a sua tag, o preço é conferido e o post leva o link direto", async () => {
+    const { ctx, channels: chs } = await setup();
+    const ch = chs[0];
+    if (!ch) throw new Error("sem canal");
+    done(
+      await connectAffiliateAccount(ctx, {
+        platform: "amazon",
+        label: "Amazon",
+        mode: "live",
+        credentials: { partner_tag: "minhaloja-20" },
+      }),
+    );
+    serve(page("153.90"));
+
+    const p = await previewOfferFromLink(ctx, { url: PASTED });
+    expect(p).toMatchObject({
+      platform: "amazon",
+      external_id: ASIN,
+      source: "platform",
+      affiliate_url: `${PAGE_URL}?tag=minhaloja-20`,
+      price: 153.9,
+      original_price: 249,
+      image_url: "https://m.media-amazon.com/images/I/fone._AC_SL1500_.jpg",
+      missing: [],
+    });
+    const offer = done(
+      await importOfferFromLink(ctx, {
+        url: PASTED,
+        title: "Fone Anker P20i",
+        price: 153.9,
+        original_price: 249,
+      }),
+    );
+    expect(offer).toMatchObject({
+      origin: "platform",
+      status: "approved",
+      discount_pct: 38,
+      pix_price: 146.2,
+      installments: { count: 5, value: 30.78, interest_free: true },
+    });
+
+    // Prévia já mostra o link da Amazon (sem encurtador).
+    const preview = await previewPost(ctx, { offer_id: offer.id });
+    expect(preview.body).toContain(`${PAGE_URL}?tag=minhaloja-20`);
+
+    // Página com captcha: não expira a oferta; o post tenta de novo depois.
+    serve("<p>captcha</p>");
+    await expect(validateOffer(ctx, offer.id)).rejects.toMatchObject({ code: "PROVIDER_ERROR" });
+
+    serve(page("149.90"));
+    done(await schedulePosts(ctx, { offer_ids: [offer.id], channel_ids: [ch.id], at: past() }));
+    expect((await runPublisher(deps)).map((r) => r.status)).toEqual(["sent"]);
+    const text = fakeMessagingControls.sent[0]?.text ?? "";
+    expect(text).toContain(`${PAGE_URL}?tag=minhaloja-20`);
+    expect(text).not.toContain("go.test");
+    expect(text).toMatch(/no pix/i);
+    expect(text).toContain("5x de R$\u00a030,78 sem juros");
+
+    // Preço subiu mais de 5%: a oferta expira na validação.
+    serve(page("199.00"));
+    const v = done(await validateOffer(ctx, offer.id));
+    expect(v).toMatchObject({ ok: false, status: "expired", price_now: 199 });
+  });
+});
+
+describe("texto próprio da oferta e cards", () => {
+  it("IA só pelo painel: sugere em dry_run, salva e o envio usa o formato chamada + preço", async () => {
+    const { ctx, channels: chs } = await setup();
+    const ch = chs[0];
+    if (!ch) throw new Error("sem canal");
+    const { offer } = await approvedOffer(ctx);
+
+    await expect(generateOfferCopy(ctx, offer.id)).rejects.toMatchObject({
+      code: "NOT_CONFIGURED",
+    });
+    const writer = new FakeCopyWriter();
+    const aiCtx: Ctx = { ...ctx, copywriter: writer };
+    await updatePreferences(ctx, { tone_of_voice: "divertido" });
+
+    const dry = await generateOfferCopy(
+      aiCtx,
+      offer.id,
+      { hint: "para quem cozinha" },
+      { dryRun: true },
+    );
+    expect(dry.status).toBe("dry_run");
+    expect(writer.calls[0]).toMatchObject({ tone: "divertido", hint: "para quem cozinha" });
+    expect(writer.calls[0]?.price).toMatch(/^R\$/);
+
+    const saved = await generateOfferCopy(aiCtx, offer.id);
+    expect(saved.status).toBe("done");
+    const copy = saved.status === "done" ? saved.result?.copy : null;
+    expect(copy).toMatchObject({ source: "ai" });
+
+    // Agente não usa a IA da plataforma: escreve o próprio texto.
+    const t = await createToken(ctx, { name: "agente", preset: "full" });
+    const actor = await authenticateToken(deps, t.token, "mcp");
+    if (!actor) throw new Error("token");
+    const agentCtx: Ctx = { ...deps, copywriter: writer, actor };
+    await expect(generateOfferCopy(agentCtx, offer.id)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(
+      setOfferCopy(agentCtx, offer.id, {
+        copy: { headline: "Só hoje por R$ 10", body: "Corre que acaba" },
+      }),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    const byAgent = done(
+      await setOfferCopy(agentCtx, offer.id, {
+        copy: {
+          headline: "Fritadeira sem óleo que cabe na sua cozinha!",
+          body: "Batata crocante sem sujeira e sem cheiro de fritura.",
+          extra: "Aproveite antes que acabe.",
+        },
+      }),
+    );
+    expect(byAgent.copy).toMatchObject({ source: "agent" });
+
+    const preview = await previewPost(ctx, { offer_id: offer.id });
+    expect(preview.body.split("\n")[0]).toBe("*Fritadeira sem óleo que cabe na sua cozinha!*");
+    expect(preview.body).toMatch(/Por \*R\$|De ~R\$/);
+    expect(preview.body).toContain("Aproveite antes que acabe.");
+
+    done(await schedulePosts(ctx, { offer_ids: [offer.id], channel_ids: [ch.id], at: past() }));
+    expect((await runPublisher(deps)).map((r) => r.status)).toEqual(["sent"]);
+    expect(fakeMessagingControls.sent[0]?.text).toContain("Batata crocante");
+
+    // null volta ao modelo padrão
+    const cleared = done(await setOfferCopy(ctx, offer.id, { copy: null }));
+    expect(cleared.copy).toBeNull();
+  });
+
+  it("cards desligados nas Preferências: envia só a foto do produto", async () => {
+    const { ctx, channels: chs } = await setup();
+    const ch = chs[0];
+    if (!ch) throw new Error("sem canal");
+    const { offer } = await approvedOffer(ctx, "fone");
+    await updatePreferences(ctx, { creative_cards: false });
+    done(
+      await schedulePosts(ctx, {
+        offer_ids: [offer.id],
+        channel_ids: [ch.id],
+        at: past(),
+        creative_template: "card_preco",
+      }),
+    );
+    expect((await runPublisher(deps)).map((r) => r.status)).toEqual(["sent"]);
+    expect(fakeMessagingControls.sent[0]?.imageUrl).toBe(offer.image_url);
   });
 });
 

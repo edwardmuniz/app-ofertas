@@ -38,6 +38,11 @@ export function FromLinkPanel({
   const [price, setPrice] = useState("");
   const [original, setOriginal] = useState("");
   const [coupon, setCoupon] = useState("");
+  const [pix, setPix] = useState("");
+  const [instCount, setInstCount] = useState("");
+  const [instValue, setInstValue] = useState("");
+  const [instFree, setInstFree] = useState(true);
+  const [productUrl, setProductUrl] = useState("");
   const [busy, setBusy] = useState<"read" | "approved" | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [imageBroken, setImageBroken] = useState(false);
@@ -59,6 +64,11 @@ export function FromLinkPanel({
       setImage(p.image_url ?? "");
       setPrice(toText(p.price));
       setOriginal(toText(p.original_price));
+      setPix(toText(p.pix_price));
+      setInstCount(p.installments ? String(p.installments.count) : "");
+      setInstValue(toText(p.installments?.value ?? null));
+      setInstFree(p.installments?.interest_free ?? true);
+      setProductUrl("");
       setImageBroken(false);
     } catch (err) {
       fail(err, "Não foi possível abrir o link.");
@@ -71,6 +81,16 @@ export function FromLinkPanel({
   const originalN = toNumber(original);
   const discount =
     priceN && originalN && originalN > priceN ? Math.round((1 - priceN / originalN) * 100) : null;
+  const pixN = toNumber(pix);
+  const pixOk = pixN && priceN && pixN < priceN ? pixN : null;
+  const countN = Number(instCount);
+  const instValueN = toNumber(instValue);
+  const installments =
+    Number.isInteger(countN) && countN >= 2 && countN <= 48 && instValueN
+      ? { count: countN, value: instValueN, interest_free: instFree }
+      : null;
+  // Link que não mostra qual é o produto (ex.: meli.la): a página do produto evita duplicar.
+  const hiddenProduct = preview?.external_id.startsWith("link:") ?? false;
 
   async function save(status: "approved" | "new") {
     if (!preview || !priceN) return;
@@ -85,6 +105,9 @@ export function FromLinkPanel({
           image_url: image.trim() || null,
           price: priceN,
           original_price: originalN && priceN && originalN > priceN ? originalN : null,
+          pix_price: pixOk,
+          installments,
+          ...(productUrl.trim() && { product_url: productUrl.trim() }),
           ...(coupon.trim() && { coupon_code: coupon.trim() }),
           status,
         },
@@ -169,6 +192,15 @@ export function FromLinkPanel({
             </p>
           )}
 
+          {preview.platform === "mercadolivre" && needs("price") && (
+            <p className="text-xs text-neutral-500">
+              O Mercado Livre não mostra o preço para robôs. Na página do produto: se aparecer “ou
+              R$ X em outros meios” (ou “ou R$ X em 10x”), X é o <strong>preço atual</strong> e o
+              valor grande com “no Pix” vai em <strong>Preço no Pix</strong>. O link de afiliado sai
+              no botão Compartilhar da barra de Afiliados.
+            </p>
+          )}
+
           <div className="grid gap-4 md:grid-cols-[160px_1fr]">
             <div className="flex aspect-square items-center justify-center overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-900">
               {image && !imageBroken ? (
@@ -239,6 +271,64 @@ export function FromLinkPanel({
                   onChange={(e) => setOriginal(e.target.value)}
                 />
               </Field>
+              <Field label="Preço no Pix (opcional)" htmlFor="fl_pix">
+                <input
+                  className="input"
+                  id="fl_pix"
+                  inputMode="decimal"
+                  value={pix}
+                  placeholder="71,90"
+                  onChange={(e) => setPix(e.target.value)}
+                />
+              </Field>
+              <Field label="Parcelas (opcional)" htmlFor="fl_inst_count">
+                <div className="flex items-center gap-2">
+                  <input
+                    className="input w-16"
+                    id="fl_inst_count"
+                    inputMode="numeric"
+                    value={instCount}
+                    placeholder="10"
+                    aria-label="Quantidade de parcelas"
+                    onChange={(e) => setInstCount(e.target.value.replace(/\D/g, "").slice(0, 2))}
+                  />
+                  <span className="text-sm text-neutral-500">x de</span>
+                  <input
+                    className="input min-w-0 flex-1"
+                    inputMode="decimal"
+                    value={instValue}
+                    placeholder="7,99"
+                    aria-label="Valor da parcela"
+                    onChange={(e) => setInstValue(e.target.value)}
+                  />
+                  <label className="flex shrink-0 items-center gap-1 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={instFree}
+                      onChange={(e) => setInstFree(e.target.checked)}
+                    />
+                    sem juros
+                  </label>
+                </div>
+              </Field>
+              {hiddenProduct && (
+                <div className="md:col-span-2">
+                  <Field label="Página do produto (recomendado)" htmlFor="fl_product_url">
+                    <input
+                      className="input"
+                      id="fl_product_url"
+                      type="url"
+                      value={productUrl}
+                      placeholder="https://www.mercadolivre.com.br/…/p/MLB…"
+                      onChange={(e) => setProductUrl(e.target.value)}
+                    />
+                  </Field>
+                  <p className="mt-1 text-xs text-neutral-500">
+                    Esse link não mostra qual é o produto. Cole o endereço da página dele (a barra
+                    do navegador) para o sistema reconhecer o mesmo produto em outros links.
+                  </p>
+                </div>
+              )}
               <Field label="Cupom (opcional)" htmlFor="fl_coupon">
                 <input
                   className="input"
@@ -253,6 +343,8 @@ export function FromLinkPanel({
                   <span>
                     Sai como <strong>{money(priceN)}</strong>
                     {discount ? ` · ${discount}% OFF` : ""}
+                    {pixOk ? ` · ${money(pixOk)} no Pix` : ""}
+                    {pixN && !pixOk ? " · Pix ignorado (não é menor que o preço)" : ""}
                   </span>
                 ) : (
                   <span className="text-neutral-400">Informe o preço para salvar</span>

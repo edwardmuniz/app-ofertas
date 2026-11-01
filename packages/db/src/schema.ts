@@ -395,6 +395,20 @@ export const affiliateAccounts = pgTable(
   (t) => [index().on(t.workspaceId)],
 );
 
+export type OfferPriceDetails = {
+  pix_price: number | null;
+  installments: { count: number; value: number; interest_free: boolean } | null;
+};
+
+export type OfferCopy = {
+  headline: string;
+  body: string;
+  extra: string | null;
+  /** Quem escreveu: IA (Gemini, pelo painel), agente (MCP) ou humano */
+  source: "ai" | "agent" | "human";
+  updated_at: string;
+};
+
 export type FeedInfo = {
   /** Produtos guardados (com desconto) e lidos no total */
   items: number;
@@ -515,6 +529,10 @@ export const offers = pgTable(
     lastValidatedAt: timestamp({ withTimezone: true }),
     /** Busca salva que encontrou a oferta (curadoria automática) */
     savedSearchId: uuid(),
+    /** Condições de pagamento lidas da loja (preço no Pix, parcelamento) */
+    priceDetails: jsonb().$type<OfferPriceDetails>(),
+    /** Texto de divulgação próprio da oferta (IA no painel, agente pelo MCP ou humano) */
+    copy: jsonb().$type<OfferCopy>(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

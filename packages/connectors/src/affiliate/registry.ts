@@ -1,22 +1,38 @@
+import { AmazonConnector } from "./amazon";
 import { FakeAffiliateConnector } from "./fake";
 import { ShopeeConnector } from "./shopee";
-import { type AffiliateConnector, ConnectorError, type Platform } from "./types";
+import { type AffiliateConnector, ConnectorError, type PageReader, type Platform } from "./types";
 
 export type ConnectorAccount = {
   platform: Platform;
   mode: "live" | "fake" | "feed";
   credentials: Record<string, string> | null;
+  /** Leitura de páginas de produto (Amazon sem API). */
+  fetchPage?: PageReader;
+};
+
+export type CredentialField = {
+  key: string;
+  label: string;
+  /** Pode ficar em branco (ex.: credenciais da Creators API, só para quem já tem acesso) */
+  optional?: boolean;
+  secret?: boolean;
+  placeholder?: string;
 };
 
 export type AffiliateConnectorFactory = (account: ConnectorAccount) => AffiliateConnector;
 
 /** Campos de credencial por plataforma (exibidos no painel). */
-export const CREDENTIAL_FIELDS: Record<Platform, { key: string; label: string }[]> = {
+export const CREDENTIAL_FIELDS: Record<Platform, CredentialField[]> = {
   shopee: [
     { key: "app_id", label: "AppID" },
-    { key: "secret", label: "Secret" },
+    { key: "secret", label: "Secret", secret: true },
   ],
-  amazon: [],
+  amazon: [
+    { key: "partner_tag", label: "Tag de associado", placeholder: "minhaloja-20" },
+    { key: "credential_id", label: "Creators API: Credential ID", optional: true },
+    { key: "credential_secret", label: "Creators API: Secret", optional: true, secret: true },
+  ],
   mercadolivre: [],
   magalu: [],
 };
@@ -41,6 +57,15 @@ export const defaultAffiliateConnectorFactory: AffiliateConnectorFactory = (acco
         app_id: account.credentials?.app_id ?? "",
         secret: account.credentials?.secret ?? "",
       });
+    case "amazon":
+      return new AmazonConnector(
+        {
+          partner_tag: account.credentials?.partner_tag ?? "",
+          credential_id: account.credentials?.credential_id,
+          credential_secret: account.credentials?.credential_secret,
+        },
+        { fetchPage: account.fetchPage },
+      );
     default:
       throw new ConnectorError(
         account.platform,

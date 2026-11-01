@@ -4,6 +4,7 @@ import {
   ConnectAffiliateAccountInput,
   CreateOfferLinkInput,
   FindSimilarInput,
+  GenerateOfferCopyInput,
   ImportOfferFromLinkInput,
   ListOffersQuery,
   Offer,
@@ -18,6 +19,7 @@ import {
   SaveOfferInput,
   SearchOffersInput,
   SearchOffersResult,
+  SetOfferCopyInput,
   UpdateAffiliateAccountInput,
   UpdateOfferStatusInput,
   UpsertSavedSearchInput,
@@ -30,6 +32,7 @@ import {
   type Deps,
   deleteAffiliateAccount,
   findSimilarOffers,
+  generateOfferCopy,
   getOffer,
   importOfferFromLink,
   listAffiliateAccounts,
@@ -41,6 +44,7 @@ import {
   saveOffer,
   searchOffers,
   setAffiliateAccountStatus,
+  setOfferCopy,
   setOfferStatus,
   updateAffiliateAccount,
   upsertSavedSearch,
@@ -297,6 +301,37 @@ export const offerRoutes: FastifyPluginAsyncZod<{ deps: Deps }> = async (app, { 
     },
     async (req) =>
       createOfferLink(ctx(req), { ...req.body, offer_id: req.params.id }, mutationOpts(req)),
+  );
+
+  // ── Texto da mensagem ──────────────────────────────────────────
+  app.post(
+    "/offers/:id/copy/generate",
+    {
+      schema: {
+        tags: ["ofertas"],
+        description:
+          "Gera chamada, descrição e fechamento com IA (Gemini) e salva na oferta. Só humanos (painel). dry_run mostra sem salvar.",
+        params: IdParams,
+        body: GenerateOfferCopyInput,
+        ...mutationSchema,
+        response: { 200: MutationResult(Offer), ...errors },
+      },
+    },
+    async (req) => generateOfferCopy(ctx(req), req.params.id, req.body, mutationOpts(req)),
+  );
+  app.put(
+    "/offers/:id/copy",
+    {
+      schema: {
+        tags: ["ofertas"],
+        description: "Salva o texto da mensagem da oferta (null volta ao modelo padrão).",
+        params: IdParams,
+        body: SetOfferCopyInput,
+        ...mutationSchema,
+        response: { 200: MutationResult(Offer), ...errors },
+      },
+    },
+    async (req) => setOfferCopy(ctx(req), req.params.id, req.body, mutationOpts(req)),
   );
 
   // ── Buscas salvas ──────────────────────────────────────────────

@@ -170,16 +170,24 @@ export const fakeAffiliateControls = {
   failNext: null as null | ConnectorError["code"],
 };
 
-export class FakeAffiliateConnector implements AffiliateConnector {
-  readonly capabilities = {
-    search: true,
-    lookup: true,
-    linkGeneration: true,
-    subIds: 5,
-    conversionsReport: false,
-  };
+/** Id simulado no formato da plataforma (Amazon usa ASIN de 10 caracteres). */
+const fakeId = (platform: Platform, base: string) =>
+  platform === "amazon"
+    ? `B0${Number(base).toString(36).toUpperCase().padStart(8, "0").slice(-8)}`
+    : base;
 
-  constructor(readonly platform: Platform = "shopee") {}
+export class FakeAffiliateConnector implements AffiliateConnector {
+  readonly capabilities;
+
+  constructor(readonly platform: Platform = "shopee") {
+    this.capabilities = {
+      search: true,
+      lookup: true,
+      linkGeneration: true,
+      subIds: platform === "amazon" ? 0 : 5,
+      conversionsReport: false,
+    };
+  }
 
   private checkFailure() {
     const code = fakeAffiliateControls.failNext;
@@ -190,15 +198,21 @@ export class FakeAffiliateConnector implements AffiliateConnector {
   }
 
   private materialize(item: FakeItem): ProductOffer {
-    const o = fakeAffiliateControls.overrides.get(item.externalId);
+    const id = fakeId(this.platform, item.externalId);
+    const o = fakeAffiliateControls.overrides.get(id);
     const price = o?.price ?? item.price;
+    const amazon = this.platform === "amazon";
     return {
       ...item,
+      externalId: id,
+      url: amazon ? `https://www.amazon.com.br/dp/${id}` : item.url,
       platform: this.platform,
       price,
       commissionValue: round2(price * (item.commissionRate ?? 0)),
       available: o?.available ?? true,
-      affiliateUrl: `https://s.shopee.com.br/fake${item.externalId.slice(-6)}`,
+      affiliateUrl: amazon
+        ? `https://www.amazon.com.br/dp/${id}?tag=simulado-20`
+        : `https://s.shopee.com.br/fake${item.externalId.slice(-6)}`,
     };
   }
 
@@ -232,12 +246,16 @@ export class FakeAffiliateConnector implements AffiliateConnector {
 
   async lookup(externalId: string) {
     this.checkFailure();
-    const item = CATALOG_ITEMS.find((i) => i.externalId === externalId);
+    const item = CATALOG_ITEMS.find((i) => fakeId(this.platform, i.externalId) === externalId);
     return item ? this.materialize(item) : null;
   }
 
   async generateLink(productUrl: string, subIds: string[]) {
     this.checkFailure();
+    if (this.platform === "amazon") {
+      const asin = productUrl.match(/\/dp\/([A-Z0-9]{10})/)?.[1] ?? "B000000000";
+      return `https://www.amazon.com.br/dp/${asin}?tag=simulado-20`;
+    }
     const id = productUrl.split("/").pop()?.slice(-6) ?? "x";
     const subs = subIds.map(sanitizeSubId).filter(Boolean).slice(0, 5);
     return `https://s.shopee.com.br/fake${id}${subs.length ? `?sub=${subs.join("-")}` : ""}`;

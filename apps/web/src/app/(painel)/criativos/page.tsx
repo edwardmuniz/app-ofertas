@@ -18,6 +18,7 @@ import {
 } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 import { money } from "@/lib/format";
+import { useCardsEnabled } from "@/lib/prefs";
 
 type Mutation<T> = { status: string; result?: T };
 
@@ -50,6 +51,7 @@ export default function CriativosPage() {
   const [offers, setOffers] = useState<Offer[]>([]);
   const [items, setItems] = useState<Creative[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const cards = useCardsEnabled();
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState<"kit" | "generate" | "upload" | null>(null);
   const [formats, setFormats] = useState<string[]>(["wa_image"]);
@@ -180,7 +182,19 @@ export default function CriativosPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Criativos"
-        subtitle="Cards de oferta com a sua identidade visual e imagens próprias"
+        subtitle={
+          cards === false ? (
+            <>
+              Cards desligados nos envios: as publicações vão só com a foto do produto. Religue em{" "}
+              <Link className="underline" href="/preferencias">
+                Preferências
+              </Link>
+              .
+            </>
+          ) : (
+            "Cards de oferta com a sua identidade visual e imagens próprias"
+          )
+        }
         actions={
           <label
             className={`btn-ghost inline-flex cursor-pointer items-center gap-1.5 ${busy === "upload" ? "pointer-events-none opacity-60" : ""}`}

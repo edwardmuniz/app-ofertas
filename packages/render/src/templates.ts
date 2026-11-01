@@ -68,7 +68,7 @@ function productBox(d: CreativeData, brand: BrandKit, accent: string, height: nu
       overflow: "hidden",
     },
     d.image
-      ? img(d.image, { width: "86%", height: "86%", objectFit: "contain" })
+      ? img(d.image, { width: "94%", height: "94%", objectFit: "contain" })
       : h(
           "div",
           { fontSize: 180, fontWeight: 800, color: accent, opacity: 0.25 },
@@ -111,20 +111,26 @@ function productBox(d: CreativeData, brand: BrandKit, accent: string, height: nu
   );
 }
 
-function header(brand: BrandKit, d: CreativeData, accent: string, headline?: string): El {
+function header(
+  brand: BrandKit,
+  d: CreativeData,
+  accent: string,
+  headline?: string,
+  size = 44,
+): El {
   return h(
     "div",
-    { justifyContent: "space-between", alignItems: "center" },
-    h("div", { fontSize: 44, fontWeight: 800, color: accent }, brand.name),
+    { justifyContent: "space-between", alignItems: "center", flexShrink: 0 },
+    h("div", { fontSize: size, fontWeight: 800, color: accent }, brand.name),
     h(
       "div",
-      { fontSize: 32, fontWeight: 700, color: brand.text_color, opacity: 0.6 },
+      { fontSize: Math.round(size * 0.75), fontWeight: 700, color: brand.text_color, opacity: 0.6 },
       headline ?? d.platform,
     ),
   );
 }
 
-/** Card de preço: foto grande, desconto, preço "de/por" e cupom. */
+/** Card de preço: a foto do produto domina o card; título em 2 linhas, preço de/por e chamada. */
 function cardPreco(
   d: CreativeData,
   brand: BrandKit,
@@ -133,9 +139,10 @@ function cardPreco(
   hgt: number,
 ): El {
   const accent = p.accent_color ?? brand.primary_color;
-  const pad = 64;
-  // A foto ocupa o espaço que sobrar (flexGrow); este é só o mínimo.
-  const imageH = Math.round(hgt * 0.25);
+  const pad = 48;
+  // A foto ocupa todo o espaço que sobrar (flexGrow); este é só o mínimo.
+  const imageH = Math.round(hgt * 0.5);
+  const titleSize = 40;
   return h(
     "div",
     {
@@ -144,63 +151,76 @@ function cardPreco(
       flexDirection: "column",
       backgroundColor: brand.secondary_color,
       padding: pad,
-      gap: 28,
+      gap: 20,
       fontFamily: "Inter",
       // Sem isto o Satori soma o padding à largura da raiz.
       boxSizing: "border-box",
     },
-    header(brand, d, accent, p.headline),
+    header(brand, d, accent, p.headline, 36),
     productBox(d, brand, accent, imageH),
+    // Altura fixa de 2 linhas: título longo é cortado em vez de invadir o preço.
     h(
       "div",
-      { fontSize: 50, fontWeight: 700, color: brand.text_color, lineHeight: 1.2, maxHeight: 130 },
-      truncate(d.title, 70),
+      {
+        fontSize: titleSize,
+        fontWeight: 700,
+        color: brand.text_color,
+        lineHeight: 1.15,
+        height: Math.round(titleSize * 1.15 * 2),
+        overflow: "hidden",
+        flexShrink: 0,
+      },
+      truncate(d.title, 64),
     ),
     h(
       "div",
-      { flexDirection: "column", gap: 4 },
-      d.originalPrice
-        ? h(
-            "div",
-            {
-              fontSize: 40,
-              color: brand.text_color,
-              opacity: 0.55,
-              textDecoration: "line-through",
-            },
-            `De ${d.originalPrice}`,
-          )
-        : null,
-      h("div", { fontSize: 112, fontWeight: 800, color: accent, lineHeight: 1 }, d.price),
-    ),
-    h(
-      "div",
-      { justifyContent: "space-between", alignItems: "center" },
-      d.coupon
-        ? h(
-            "div",
-            {
-              border: `4px dashed ${accent}`,
-              borderRadius: 18,
-              padding: "14px 24px",
-              fontSize: 38,
-              fontWeight: 800,
-              color: accent,
-            },
-            `CUPOM ${d.coupon}`,
-          )
-        : h("div", {}, ""),
+      { justifyContent: "space-between", alignItems: "flex-end", flexShrink: 0, gap: 24 },
       h(
         "div",
-        {
-          backgroundColor: brand.text_color,
-          color: "#FFFFFF",
-          borderRadius: 999,
-          padding: "18px 34px",
-          fontSize: 36,
-          fontWeight: 700,
-        },
-        p.cta ?? brand.cta,
+        { flexDirection: "column", gap: 2 },
+        d.originalPrice
+          ? h(
+              "div",
+              {
+                fontSize: 32,
+                color: brand.text_color,
+                opacity: 0.55,
+                textDecoration: "line-through",
+              },
+              `De ${d.originalPrice}`,
+            )
+          : null,
+        h("div", { fontSize: 96, fontWeight: 800, color: accent, lineHeight: 1 }, d.price),
+      ),
+      h(
+        "div",
+        { flexDirection: "column", alignItems: "flex-end", gap: 12 },
+        d.coupon
+          ? h(
+              "div",
+              {
+                border: `4px dashed ${accent}`,
+                borderRadius: 16,
+                padding: "10px 20px",
+                fontSize: 30,
+                fontWeight: 800,
+                color: accent,
+              },
+              `CUPOM ${truncate(d.coupon, 16)}`,
+            )
+          : null,
+        h(
+          "div",
+          {
+            backgroundColor: brand.text_color,
+            color: "#FFFFFF",
+            borderRadius: 999,
+            padding: "16px 28px",
+            fontSize: 30,
+            fontWeight: 700,
+          },
+          p.cta ?? brand.cta,
+        ),
       ),
     ),
   );
@@ -216,7 +236,7 @@ function cupomDestaque(
 ): El {
   const accent = p.accent_color ?? brand.primary_color;
   const pad = 64;
-  const imageH = Math.round(hgt * 0.2);
+  const imageH = Math.round(hgt * 0.32);
   return h(
     "div",
     {
@@ -247,7 +267,8 @@ function cupomDestaque(
         color: accent,
         borderRadius: 40,
         border: "6px dashed rgba(255,255,255,0.9)",
-        padding: "48px 32px",
+        padding: "28px 32px",
+        flexShrink: 0,
         gap: 8,
       },
       h(
@@ -258,7 +279,7 @@ function cupomDestaque(
       h(
         "div",
         {
-          fontSize: d.coupon && d.coupon.length > 10 ? 96 : 140,
+          fontSize: d.coupon && d.coupon.length > 10 ? 80 : 112,
           fontWeight: 800,
           letterSpacing: 4,
         },
@@ -268,13 +289,20 @@ function cupomDestaque(
     productBox({ ...d, badge: null }, brand, accent, imageH),
     h(
       "div",
-      { fontSize: 48, fontWeight: 700, lineHeight: 1.2, maxHeight: 120 },
+      {
+        fontSize: 40,
+        fontWeight: 700,
+        lineHeight: 1.15,
+        height: 92,
+        overflow: "hidden",
+        flexShrink: 0,
+      },
       truncate(d.title, 60),
     ),
     h(
       "div",
-      { alignItems: "flex-end", gap: 24 },
-      h("div", { fontSize: 104, fontWeight: 800, lineHeight: 1 }, d.price),
+      { alignItems: "flex-end", gap: 24, flexShrink: 0 },
+      h("div", { fontSize: 96, fontWeight: 800, lineHeight: 1 }, d.price),
       d.originalPrice
         ? h(
             "div",
@@ -289,7 +317,7 @@ function cupomDestaque(
 export const CREATIVE_TEMPLATES = {
   card_preco: {
     name: "Card de preço",
-    description: "Foto grande do produto, selo de desconto, preço de/por, cupom e chamada.",
+    description: "Foto do produto em destaque, selo de desconto, preço de/por, cupom e chamada.",
     render: cardPreco,
   },
   cupom_destaque: {

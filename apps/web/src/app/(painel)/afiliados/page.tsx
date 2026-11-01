@@ -17,7 +17,27 @@ import {
 } from "@/components/ui";
 import { ApiError, api, fmtDate } from "@/lib/api";
 
-type Platforms = { credential_fields: Record<string, { key: string; label: string }[]> };
+type CredField = {
+  key: string;
+  label: string;
+  optional?: boolean;
+  secret?: boolean;
+  placeholder?: string;
+};
+type Platforms = { credential_fields: Record<string, CredField[]> };
+type ReadyPlatform = "shopee" | "amazon";
+
+/** Lojas com integração e os modos de cada uma (as demais aparecem como "em breve"). */
+const PLATFORM_MODES: Record<ReadyPlatform, AffiliateAccount["mode"][]> = {
+  shopee: ["feed", "live", "fake"],
+  amazon: ["live", "fake"],
+};
+const isReady = (p: string): p is ReadyPlatform => p in PLATFORM_MODES;
+
+const modeLabel = (a: AffiliateAccount) =>
+  a.platform === "amazon" && a.mode === "live"
+    ? "Associado (tag): busca e links"
+    : MODE_LABEL[a.mode];
 
 const MODE_LABEL: Record<AffiliateAccount["mode"], string> = {
   fake: "Simulado",
@@ -86,7 +106,7 @@ function EditAccount({
   onCancel,
 }: {
   account: AffiliateAccount;
-  liveFields: { key: string; label: string }[];
+  liveFields: CredField[];
   onDone: () => void;
   onCancel: () => void;
 }) {
@@ -156,7 +176,7 @@ function EditAccount({
                 className="input font-mono"
                 id={`${c.key}-${account.id}`}
                 name={c.key}
-                type={c.key === "secret" ? "password" : "text"}
+                type={c.secret ? "password" : "text"}
                 autoComplete="off"
                 placeholder="Em branco mantém o atual"
               />
@@ -192,11 +212,25 @@ const PLATFORM_LABEL: Record<string, string> = {
   magalu: "Magazine Luiza",
 };
 
+const AMAZON_MODES: { value: AffiliateAccount["mode"]; label: string; hint: string }[] = [
+  {
+    value: "live",
+    label: "Associado",
+    hint: "Sua tag de associado. Busque produtos ou cole links da Amazon; o preço é conferido antes de cada envio.",
+  },
+  {
+    value: "fake",
+    label: "Simulado",
+    hint: "Catálogo de teste com links da Amazon, sem credenciais.",
+  },
+];
+
 export default function AfiliadosPage() {
   const [accounts, setAccounts] = useState<AffiliateAccount[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [fields, setFields] = useState<Platforms["credential_fields"]>({});
+  const [platform, setPlatform] = useState<ReadyPlatform>("shopee");
   const [mode, setMode] = useState<AffiliateAccount["mode"]>("feed");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -220,7 +254,6 @@ export default function AfiliadosPage() {
     setSaving(true);
     const form = e.currentTarget;
     const f = new FormData(form);
-    const platform = "shopee";
     setMsg(null);
     const credentials =
       mode === "feed"
@@ -229,10 +262,9 @@ export default function AfiliadosPage() {
             feed_urls: String(f.get("feed_urls") ?? "").trim(),
           }
         : Object.fromEntries(
-            (fields[platform] ?? []).map((c) => [
-              c.key,
-              String(f.get(`cred_${c.key}`) ?? "").trim(),
-            ]),
+            (fields[platform] ?? [])
+              .map((c) => [c.key, String(f.get(`cred_${c.key}`) ?? "").trim()])
+              .filter(([, v]) => v),
           );
     try {
       await api("/affiliate-accounts", {
@@ -250,7 +282,9 @@ export default function AfiliadosPage() {
         mode === "feed"
           ? "Feed conectado. A importação começa em até 1 minuto e pode levar alguns minutos."
           : mode === "live"
-            ? "Conta conectada e testada."
+            ? platform === "amazon"
+              ? "Conta Amazon conectada. Cole links da Amazon em Ofertas › Colar link: a sua tag entra sozinha."
+              : "Conta conectada e testada."
             : "Conta simulada conectada.",
       );
     } catch (err) {
@@ -324,24 +358,45 @@ export default function AfiliadosPage() {
         <div className="space-y-1.5 md:col-span-2">
           <div className="label">Plataforma</div>
           <div className="flex flex-wrap gap-2">
-            {Object.entries(PLATFORM_LABEL).map(([key, label]) => (
-              <span
-                key={key}
-                className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
-                  key === "shopee"
-                    ? "border-brand-500 bg-brand-50/60 dark:bg-brand-500/10"
-                    : "border-neutral-200 text-neutral-400 dark:border-neutral-800"
-                }`}
-              >
-                <PlatformBadge platform={key} showLabel={false} />
-                {label}
-                {key !== "shopee" && <span className="text-xs">em breve</span>}
-              </span>
-            ))}
+            {Object.entries(PLATFORM_LABEL).map(([key, label]) => {
+              const ready = isReady(key);
+              const selected = key === platform;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  disabled={!ready}
+                  aria-pressed={selected}
+                  onClick={() => {
+                    if (!isReady(key)) return;
+                    setPlatform(key);
+                    setMode(PLATFORM_MODES[key][0] ?? "fake");
+                  }}
+                  className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+                    selected
+                      ? "border-brand-500 bg-brand-50/60 dark:bg-brand-500/10"
+                      : ready
+                        ? "border-neutral-200 hover:border-neutral-400 dark:border-neutral-800"
+                        : "border-neutral-200 text-neutral-400 dark:border-neutral-800"
+                  }`}
+                >
+                  <PlatformBadge platform={key} showLabel={false} />
+                  {label}
+                  {!ready && <span className="text-xs">em breve</span>}
+                </button>
+              );
+            })}
           </div>
         </div>
         <Field label="Nome da conta" htmlFor="label">
-          <input className="input" id="label" name="label" required defaultValue="Shopee" />
+          <input
+            key={platform}
+            className="input"
+            id="label"
+            name="label"
+            required
+            defaultValue={PLATFORM_LABEL[platform]}
+          />
         </Field>
         <div className="space-y-1.5 md:col-span-2">
           <div className="label">Modo</div>
@@ -349,26 +404,30 @@ export default function AfiliadosPage() {
             columns={3}
             value={mode}
             onChange={setMode}
-            options={[
-              {
-                value: "feed",
-                label: "Feed de produtos",
-                hint: "CSV oficial da Shopee, atualizado todo dia. Ofertas reais sem precisar da API.",
-              },
-              {
-                value: "live",
-                label: "Real (API)",
-                hint: "API de Afiliados da Shopee: precisa de App ID e senha.",
-              },
-              {
-                value: "fake",
-                label: "Simulado",
-                hint: "Catálogo de teste, sem credenciais. Bom para conhecer a plataforma.",
-              },
-            ]}
+            options={
+              platform === "amazon"
+                ? AMAZON_MODES
+                : [
+                    {
+                      value: "feed",
+                      label: "Feed de produtos",
+                      hint: "CSV oficial da Shopee, atualizado todo dia. Ofertas reais sem precisar da API.",
+                    },
+                    {
+                      value: "live",
+                      label: "Real (API)",
+                      hint: "API de Afiliados da Shopee: precisa de App ID e senha.",
+                    },
+                    {
+                      value: "fake",
+                      label: "Simulado",
+                      hint: "Catálogo de teste, sem credenciais. Bom para conhecer a plataforma.",
+                    },
+                  ]
+            }
           />
         </div>
-        {mode === "feed" && (
+        {platform === "shopee" && mode === "feed" && (
           <>
             <Field label="ID de afiliado" htmlFor="affiliate_id">
               <input
@@ -406,20 +465,36 @@ export default function AfiliadosPage() {
         )}
         {mode === "live" && (
           <p className="text-xs text-neutral-500 md:col-span-2">
-            Pegue o App ID e a senha no painel de afiliados da Shopee (Open API). A plataforma testa
-            a conexão antes de salvar.
+            {platform === "amazon" ? (
+              <>
+                A tag fica em Associados Amazon › Gerenciar IDs de rastreamento (termina em -20). A
+                busca lê a página de resultados da Amazon. A Creators API é opcional (o acesso sai
+                depois de 10 vendas em 30 dias, em Associados › Ferramentas). A Amazon não permite
+                encurtador próprio, então os posts levam o link da Amazon direto.
+              </>
+            ) : (
+              <>
+                Pegue o App ID e a senha no painel de afiliados da Shopee (Open API). A plataforma
+                testa a conexão antes de salvar.
+              </>
+            )}
           </p>
         )}
         {mode === "live" &&
-          (fields.shopee ?? []).map((c) => (
-            <Field key={c.key} label={c.label} htmlFor={`cred_${c.key}`}>
+          (fields[platform] ?? []).map((c) => (
+            <Field
+              key={`${platform}-${c.key}`}
+              label={c.optional ? `${c.label} (opcional)` : c.label}
+              htmlFor={`cred_${c.key}`}
+            >
               <input
                 className="input font-mono"
                 id={`cred_${c.key}`}
                 name={`cred_${c.key}`}
-                type={c.key === "secret" ? "password" : "text"}
+                type={c.secret ? "password" : "text"}
+                placeholder={c.placeholder}
                 autoComplete="off"
-                required
+                required={!c.optional}
               />
             </Field>
           ))}
@@ -456,7 +531,7 @@ export default function AfiliadosPage() {
                       )}
                     </div>
                     <div className="text-sm text-neutral-600 dark:text-neutral-400">
-                      {MODE_LABEL[a.mode]}
+                      {modeLabel(a)}
                     </div>
                     {a.feed && <FeedStatus feed={a.feed} />}
                     {a.status === "error" && a.last_error && (
@@ -506,7 +581,7 @@ export default function AfiliadosPage() {
                 {editing === a.id && (
                   <EditAccount
                     account={a}
-                    liveFields={fields.shopee ?? []}
+                    liveFields={fields[a.platform] ?? []}
                     onCancel={() => setEditing(null)}
                     onDone={() => {
                       setEditing(null);

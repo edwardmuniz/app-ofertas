@@ -11,8 +11,11 @@ export type ProductPageData = {
 
 const HOSTS: [RegExp, Platform][] = [
   [/(^|\.)shopee\.com\.br$|(^|\.)shope\.ee$/, "shopee"],
-  [/(^|\.)mercadolivre\.com(\.br)?$|(^|\.)mercadolibre\.com$/, "mercadolivre"],
-  [/(^|\.)amazon\.com\.br$|(^|\.)amzn\.to$|(^|\.)a\.co$/, "amazon"],
+  [/(^|\.)mercadolivre\.com(\.br)?$|(^|\.)mercadolibre\.com$|(^|\.)meli\.la$/, "mercadolivre"],
+  [
+    /(^|\.)amazon\.com\.br$|(^|\.)amzn\.to$|(^|\.)a\.co$|(^|\.)link\.amazon$|(^|\.)amzlinks\.in$/,
+    "amazon",
+  ],
   [
     /(^|\.)magazineluiza\.com\.br$|(^|\.)magalu\.com(\.br)?$|(^|\.)divulgador\.magalu\.com$/,
     "magalu",
@@ -66,7 +69,9 @@ export function looksLikeAffiliateUrl(raw: string): boolean {
     const url = new URL(raw);
     const host = url.hostname.toLowerCase();
     return (
-      /^(s\.shopee\.com\.br|shope\.ee|amzn\.to|a\.co|divulgador\.magalu\.com)$/.test(host) ||
+      /^(s\.shopee\.com\.br|shope\.ee|meli\.la|amzn\.to|a\.co|link\.amazon|(r\.)?amzlinks\.in|divulgador\.magalu\.com)$/.test(
+        host,
+      ) ||
       url.pathname.startsWith("/sec/") ||
       url.searchParams.has("tag") ||
       url.searchParams.has("mpid") ||
@@ -77,6 +82,28 @@ export function looksLikeAffiliateUrl(raw: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Página intermediária de link curto (ex.: link.amazon → amzlinks.in) que não redireciona para
+ * robôs, mas traz o endereço da loja dentro dela (`btn_url=` ou `<base href>`).
+ */
+export function embeddedStoreUrl(html: string): string | null {
+  const candidates: string[] = [];
+  for (const m of html.matchAll(/[?&](?:amp;)?(?:btn_url|url|u)=([^&"'\s>]+)/gi)) {
+    try {
+      candidates.push(decodeURIComponent(m[1] ?? ""));
+    } catch {
+      // ignora valor malformado
+    }
+  }
+  const base = html.match(/<base[^>]+href=["']([^"']+)["']/i)?.[1];
+  if (base) candidates.push(base.replace(/&amp;/g, "&"));
+  for (const c of candidates) {
+    const platform = platformOfUrl(c);
+    if (platform && productIdOfUrl(platform, c)) return c;
+  }
+  return null;
 }
 
 /** Título a partir do trecho legível da URL (Shopee: "Nome-Do-Produto-i.123.456"). */
@@ -221,6 +248,8 @@ export function parseProductPage(html: string, pageUrl: string): ProductPageData
       imageUrl = null;
     }
   }
+  // Logo da loja no lugar da foto (o Mercado Livre devolve a logo quando bloqueia a leitura).
+  if (imageUrl && /\/frontend-assets\/|_logo_/i.test(imageUrl)) imageUrl = null;
 
   const title = cleanTitle(
     str(ld?.name) ??

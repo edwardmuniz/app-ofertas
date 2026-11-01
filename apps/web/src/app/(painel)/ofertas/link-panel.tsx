@@ -17,7 +17,7 @@ export const LINK_SOURCES = [
 
 const sourceLabel = (v: string) => LINK_SOURCES.find((s) => s.value === v)?.label ?? v;
 
-type Generated = { source: string; campaign: string; url: string };
+type Generated = { source: string; campaign: string; url: string; direct: boolean };
 
 /** Gera links rastreados da oferta, um por origem, prontos para copiar. */
 export function OfferLinkPanel({ offerId, onClose }: { offerId: string; onClose: () => void }) {
@@ -37,8 +37,12 @@ export function OfferLinkPanel({ offerId, onClose }: { offerId: string; onClose:
         method: "POST",
         body: { source, ...(c && { campaign: c }) },
       });
-      const url = res.result?.short_url;
-      if (url) setMade((list) => [{ source, campaign: c, url }, ...list]);
+      const r = res.result;
+      const url = r?.share_url ?? r?.short_url;
+      if (r && url) {
+        const direct = url !== r.short_url;
+        setMade((list) => [{ source, campaign: c, url, direct }, ...list]);
+      }
     } catch (err) {
       setError(
         err instanceof ApiError ? `${err.message} ${err.hint ?? ""}` : "Erro ao gerar o link.",
@@ -105,6 +109,13 @@ export function OfferLinkPanel({ offerId, onClose }: { offerId: string; onClose:
       </div>
 
       <ErrorText error={error} />
+
+      {made.some((m) => m.direct) && (
+        <p className="text-xs text-neutral-500">
+          Amazon: o link vai direto para a loja, com a sua tag (a Amazon não permite encurtador
+          próprio). Os cliques e vendas aparecem no relatório de Associados.
+        </p>
+      )}
 
       {made.length > 0 && (
         <ul className="space-y-1.5">

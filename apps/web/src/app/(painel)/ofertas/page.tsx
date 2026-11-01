@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Empty, ErrorText, Loading, LoadingButton, PageHeader, Tag } from "@/components/ui";
 import { ApiError, api, fmtDate } from "@/lib/api";
 import { money } from "@/lib/format";
+import { CopyEditor } from "./copy-editor";
 import { FromLinkPanel } from "./from-link";
 import { OfferLinkPanel } from "./link-panel";
 import { ProductCard } from "./parts";
@@ -129,6 +130,16 @@ function OfferList({
   const [busy, setBusy] = useState<string | null>(null);
   /** Oferta com o painel "Gerar link" aberto */
   const [linkFor, setLinkFor] = useState<string | null>(null);
+  /** Oferta com o editor de texto aberto */
+  const [copyFor, setCopyFor] = useState<Offer | null>(null);
+
+  function openCopy(o: Offer) {
+    setCopyFor(o);
+    setTimeout(
+      () => document.getElementById("copy-editor")?.scrollIntoView({ behavior: "smooth" }),
+      50,
+    );
+  }
 
   const load = useCallback(async () => {
     const page = await api<{ items: Offer[] }>(`/offers?status=${status}&limit=100`);
@@ -177,135 +188,172 @@ function OfferList({
     );
   }
 
+  const textButton = (o: Offer) => (
+    <button
+      type="button"
+      className="text-neutral-500 hover:underline"
+      aria-expanded={copyFor?.id === o.id}
+      onClick={() => (copyFor?.id === o.id ? setCopyFor(null) : openCopy(o))}
+    >
+      {o.copy ? "Editar texto" : "Escrever texto"}
+    </button>
+  );
+
   return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
-      {items.map((o) => {
-        return (
-          <div key={o.id}>
-            <ProductCard
-              p={o}
-              overlay={
-                rejecting === o.id ? (
-                  <div className="flex h-full flex-col gap-1.5 text-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium">Por que rejeitar?</span>
+    <div className="space-y-4">
+      {copyFor && (
+        <CopyEditor
+          key={copyFor.id}
+          offer={copyFor}
+          onClose={() => setCopyFor(null)}
+          onSaved={(saved) =>
+            setItems((list) => list?.map((x) => (x.id === saved.id ? saved : x)) ?? null)
+          }
+        />
+      )}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+        {items.map((o) => {
+          return (
+            <div key={o.id}>
+              <ProductCard
+                p={o}
+                overlay={
+                  rejecting === o.id ? (
+                    <div className="flex h-full flex-col gap-1.5 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">Por que rejeitar?</span>
+                        <button
+                          type="button"
+                          className="text-xs text-neutral-500 hover:underline"
+                          onClick={() => setRejecting(null)}
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                      {REJECT_REASONS.map((reason) => (
+                        <button
+                          key={reason}
+                          type="button"
+                          disabled={busy !== null}
+                          onClick={() => setStatus(o, "rejected", reason)}
+                          className="rounded-lg border border-neutral-200 px-3 py-1.5 text-left hover:border-neutral-400 disabled:opacity-50 dark:border-neutral-700"
+                        >
+                          {reason}
+                        </button>
+                      ))}
                       <button
-                        type="button"
-                        className="text-xs text-neutral-500 hover:underline"
-                        onClick={() => setRejecting(null)}
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                    {REJECT_REASONS.map((reason) => (
-                      <button
-                        key={reason}
                         type="button"
                         disabled={busy !== null}
-                        onClick={() => setStatus(o, "rejected", reason)}
-                        className="rounded-lg border border-neutral-200 px-3 py-1.5 text-left hover:border-neutral-400 disabled:opacity-50 dark:border-neutral-700"
+                        onClick={() => setStatus(o, "rejected")}
+                        className="px-3 py-1 text-left text-neutral-500 hover:underline disabled:opacity-50"
                       >
-                        {reason}
+                        {busy === `rejected:${o.id}` ? "Rejeitando…" : "Sem motivo"}
                       </button>
-                    ))}
-                    <button
-                      type="button"
-                      disabled={busy !== null}
-                      onClick={() => setStatus(o, "rejected")}
-                      className="px-3 py-1 text-left text-neutral-500 hover:underline disabled:opacity-50"
-                    >
-                      {busy === `rejected:${o.id}` ? "Rejeitando…" : "Sem motivo"}
-                    </button>
-                  </div>
-                ) : linkFor === o.id ? (
-                  <OfferLinkPanel offerId={o.id} onClose={() => setLinkFor(null)} />
-                ) : null
-              }
-              badge={
-                o.origin === "link" ? (
-                  <Tag tone="info" dot>
-                    Por link
-                  </Tag>
-                ) : null
-              }
-              footer={
-                status === "rejected" ? (
-                  <LoadingButton
-                    className="flex-1 px-2"
-                    busy={busy === `approved:${o.id}`}
-                    onClick={() => setStatus(o, "approved")}
-                  >
-                    Aprovar de novo
-                  </LoadingButton>
-                ) : status === "new" ? (
-                  <>
+                    </div>
+                  ) : linkFor === o.id ? (
+                    <OfferLinkPanel offerId={o.id} onClose={() => setLinkFor(null)} />
+                  ) : null
+                }
+                badge={
+                  o.origin === "link" || o.copy ? (
+                    <span className="flex gap-1">
+                      {o.origin === "link" && (
+                        <Tag tone="info" dot>
+                          Por link
+                        </Tag>
+                      )}
+                      {o.copy && (
+                        <Tag tone="positive" dot>
+                          Texto próprio
+                        </Tag>
+                      )}
+                    </span>
+                  ) : null
+                }
+                footer={
+                  status === "rejected" ? (
                     <LoadingButton
                       className="flex-1 px-2"
                       busy={busy === `approved:${o.id}`}
                       onClick={() => setStatus(o, "approved")}
                     >
-                      Aprovar
+                      Aprovar de novo
                     </LoadingButton>
-                    <button
-                      type="button"
-                      className="btn-ghost flex-1 px-2"
-                      aria-expanded={rejecting === o.id}
-                      onClick={() => setRejecting(rejecting === o.id ? null : o.id)}
-                    >
-                      Rejeitar
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <a className="btn flex-1 px-2 text-center" href={`/publicacoes?offer=${o.id}`}>
-                      Publicar
-                    </a>
-                    <button
-                      type="button"
-                      className="btn-ghost flex-1 px-2"
-                      aria-expanded={linkFor === o.id}
-                      onClick={() => setLinkFor(linkFor === o.id ? null : o.id)}
-                    >
-                      Gerar link
-                    </button>
-                    <div className="flex w-full justify-between text-xs">
-                      {o.origin === "platform" ? (
-                        <button
-                          type="button"
-                          className="text-neutral-500 hover:underline disabled:opacity-50"
-                          disabled={busy === `validate:${o.id}`}
-                          onClick={() => validate(o)}
-                        >
-                          {busy === `validate:${o.id}` ? "Conferindo…" : "Conferir preço"}
-                        </button>
-                      ) : (
-                        <span />
-                      )}
+                  ) : status === "new" ? (
+                    <>
+                      <LoadingButton
+                        className="flex-1 px-2"
+                        busy={busy === `approved:${o.id}`}
+                        onClick={() => setStatus(o, "approved")}
+                      >
+                        Aprovar
+                      </LoadingButton>
                       <button
                         type="button"
-                        className="text-neutral-500 hover:text-red-600 hover:underline"
+                        className="btn-ghost flex-1 px-2"
                         aria-expanded={rejecting === o.id}
                         onClick={() => setRejecting(rejecting === o.id ? null : o.id)}
                       >
-                        Remover
+                        Rejeitar
                       </button>
-                    </div>
-                  </>
-                )
-              }
-            >
-              <div className="text-xs text-neutral-500">
-                {status === "rejected"
-                  ? `Rejeitada${o.reject_reason ? `: ${o.reject_reason}` : ""}`
-                  : o.origin === "link"
-                    ? `Criada por link · ${fmtDate(o.created_at)}`
-                    : `Conferida ${fmtDate(o.last_validated_at)}`}
-              </div>
-              {notes[o.id] && <div className="text-xs">{notes[o.id]}</div>}
-            </ProductCard>
-          </div>
-        );
-      })}
+                      <div className="flex w-full justify-center text-xs">{textButton(o)}</div>
+                    </>
+                  ) : (
+                    <>
+                      <a
+                        className="btn flex-1 px-2 text-center"
+                        href={`/publicacoes?offer=${o.id}`}
+                      >
+                        Publicar
+                      </a>
+                      <button
+                        type="button"
+                        className="btn-ghost flex-1 px-2"
+                        aria-expanded={linkFor === o.id}
+                        onClick={() => setLinkFor(linkFor === o.id ? null : o.id)}
+                      >
+                        Gerar link
+                      </button>
+                      <div className="flex w-full justify-between text-xs">
+                        {o.origin === "platform" ? (
+                          <button
+                            type="button"
+                            className="text-neutral-500 hover:underline disabled:opacity-50"
+                            disabled={busy === `validate:${o.id}`}
+                            onClick={() => validate(o)}
+                          >
+                            {busy === `validate:${o.id}` ? "Conferindo…" : "Conferir preço"}
+                          </button>
+                        ) : (
+                          <span />
+                        )}
+                        {textButton(o)}
+                        <button
+                          type="button"
+                          className="text-neutral-500 hover:text-red-600 hover:underline"
+                          aria-expanded={rejecting === o.id}
+                          onClick={() => setRejecting(rejecting === o.id ? null : o.id)}
+                        >
+                          Remover
+                        </button>
+                      </div>
+                    </>
+                  )
+                }
+              >
+                <div className="text-xs text-neutral-500">
+                  {status === "rejected"
+                    ? `Rejeitada${o.reject_reason ? `: ${o.reject_reason}` : ""}`
+                    : o.origin === "link"
+                      ? `Criada por link · ${fmtDate(o.created_at)}`
+                      : `Conferida ${fmtDate(o.last_validated_at)}`}
+                </div>
+                {notes[o.id] && <div className="text-xs">{notes[o.id]}</div>}
+              </ProductCard>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

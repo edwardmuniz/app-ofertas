@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Segmented } from "@/components/ui";
 import { api, fmtDate } from "@/lib/api";
 import { money, scoreClass } from "@/lib/format";
+import { useCardsEnabled } from "@/lib/prefs";
 
 type Runner = <T>(fn: () => Promise<T>) => Promise<T | null>;
 type Mutation<T> = { status: string; result?: T; preview?: T };
@@ -107,6 +108,11 @@ export function Schedule({ run, onDone }: { run: Runner; onDone: () => void }) {
   const [spacing, setSpacing] = useState(10);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [busy, setBusy] = useState<"plan" | "confirm" | null>(null);
+  const cards = useCardsEnabled();
+  const imageOptions = cards === false ? IMAGES.filter((o) => !o.value.includes("_")) : IMAGES;
+  useEffect(() => {
+    if (cards === false) setImage((v) => (v.includes("_") ? "photo" : v));
+  }, [cards]);
 
   useEffect(() => {
     Promise.all([
@@ -403,8 +409,17 @@ export function Schedule({ run, onDone }: { run: Runner; onDone: () => void }) {
       </Step>
 
       <Step n={3} title="Imagem">
+        {cards === false && (
+          <p className="text-xs text-neutral-500">
+            Cards desligados nas{" "}
+            <Link className="underline" href="/preferencias">
+              Preferências
+            </Link>
+            : os envios vão com a foto do produto.
+          </p>
+        )}
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          {IMAGES.map((opt) => {
+          {imageOptions.map((opt) => {
             const on = image === opt.value;
             const Icon = opt.icon;
             return (

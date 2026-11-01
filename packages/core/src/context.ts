@@ -1,4 +1,8 @@
-import type { AffiliateConnectorFactory, MessagingProviderFactory } from "@ofertas/connectors";
+import type {
+  AffiliateConnectorFactory,
+  CopyWriter,
+  MessagingProviderFactory,
+} from "@ofertas/connectors";
 import { type ActorType, type Origin, type Role, SCOPES, type Scope } from "@ofertas/contracts";
 import type { Db, DbOrTx } from "@ofertas/db";
 import type { AlertNotifier } from "./alerts";
@@ -46,6 +50,8 @@ export type Deps = {
   openStream: StreamOpener;
   /** URL pública da API: links de upload e de imagens (precisa ser acessível pela Evolution Go) */
   publicApiUrl: string;
+  /** Escreve o texto das ofertas com IA (Gemini). Ausente = geração desligada. */
+  copywriter?: CopyWriter | null;
   /** Envia alertas ao webhook do workspace (ausente = não notifica) */
   notify?: AlertNotifier;
   now?: () => Date;

@@ -1,6 +1,7 @@
 import {
   createMessagingProviderFactory,
   defaultAffiliateConnectorFactory,
+  GeminiCopyWriter,
 } from "@ofertas/connectors";
 import { createDb } from "@ofertas/db";
 import { Redis } from "ioredis";
@@ -30,6 +31,8 @@ export type RuntimeConfig = {
   s3?: S3Config | null;
   publicApiUrl: string;
   dbPoolSize?: number;
+  /** Gemini para escrever o texto das ofertas (GOOGLE_API_KEY). */
+  gemini?: { apiKey: string; model?: string } | null;
 };
 
 /** Monta as dependências reais (Postgres, Redis, cifra, conectores) usadas pelos apps. */
@@ -53,6 +56,9 @@ export function createRuntimeDeps(cfg: RuntimeConfig) {
     openStream: createSafeStreamOpener(),
     notify: createSafeNotifier(),
     publicApiUrl: cfg.publicApiUrl,
+    copywriter: cfg.gemini?.apiKey
+      ? new GeminiCopyWriter(cfg.gemini.apiKey, { model: cfg.gemini.model })
+      : null,
   };
   const close = async () => {
     await closeDb();

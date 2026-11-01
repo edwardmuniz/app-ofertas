@@ -117,9 +117,15 @@ Pendente para ✅: deploy na VPS e 3 dias de operação real.
 
 Publicação feed/reels/story, DM por comentário, página de bio dinâmica.
 
-## Fase 7 — Outros afiliados ⬜  ([10](10-afiliados-e-ofertas.md))
+## Fase 7 — Outros afiliados 🟨  ([10](10-afiliados-e-ofertas.md))
 
 Amazon, Mercado Livre, Magalu (conforme APIs verificadas); oferta manual por link colado.
+
+**Pesquisa (01/11/2026):** nenhuma das três tem API aberta como a da Shopee. Amazon: a PA-API 5 foi desligada e a Creators API exige 10 vendas em 30 dias. Mercado Livre e Magalu: sem API de afiliado (links só pelo portal/app).
+**Entregue (01/11/2026), Amazon:** conta em modo Associado com a tag (Creators API opcional). Link colado vira link com a sua tag; preço, estoque e foto lidos da página antes de cada envio; com a Creators API, busca e consulta pela API. Posts da Amazon levam o link direto (a Amazon proíbe encurtador). Conta simulada da Amazon. Painel: Amazon em Afiliados.
+**Entregue (01/11/2026), busca na Amazon sem a Creators API:** `search_offers` (e buscas salvas) lê a página de resultados da Amazon e devolve os produtos com preço, "De", parcelas, nota e compras no mês, já com a sua tag.
+**Entregue (01/11/2026), Mercado Livre por agente:** `meli.la` reconhecido; `import_offer_from_link` aceita Pix e parcelas; roteiro no MCP para o agente com navegador buscar, gerar o link no portal e importar (a loja fechou API e páginas).
+**Pendente:** testar a Creators API com credenciais reais ([VERIFICAR] em `amazon.ts`); Mercado Livre e Magalu (por enquanto só oferta por link).
 
 ## Fase 8 — Criativos de vídeo ⬜  ([14](14-criativos.md))
 

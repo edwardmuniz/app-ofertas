@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  embeddedStoreUrl,
   looksLikeAffiliateUrl,
   parsePrice,
   parseProductPage,
@@ -52,5 +53,17 @@ describe("página de produto", () => {
     expect(og.title).toBe("Fone Sony | Cancelamento de ruído");
     expect(parsePrice("R$ 1.299,90")).toBe(1299.9);
     expect(parsePrice("1.299")).toBe(1299);
+  });
+});
+
+describe("link.amazon (página intermediária)", () => {
+  it("reconhece o domínio e acha o link da loja dentro da página", () => {
+    expect(platformOfUrl("https://link.amazon/B0f8ECDL1")).toBe("amazon");
+    expect(looksLikeAffiliateUrl("https://link.amazon/B0f8ECDL1")).toBe(true);
+    const html = `<html><head><base href="https://r.amzlinks.in?btn_ref=org-1&amp;btn_url=https%3A%2F%2Fwww.amazon.com.br%2FApple-iPhone-16%2Fdp%2FB0DJFRYWK8%3FlinkCode%3Dsl2%26tag%3Doutro-20"><title>Apple iPhone 16</title></head><body></body></html>`;
+    expect(embeddedStoreUrl(html)).toBe(
+      "https://www.amazon.com.br/Apple-iPhone-16/dp/B0DJFRYWK8?linkCode=sl2&tag=outro-20",
+    );
+    expect(embeddedStoreUrl("<html><title>nada</title></html>")).toBeNull();
   });
 });

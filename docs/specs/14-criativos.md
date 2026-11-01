@@ -24,7 +24,7 @@ Vídeo: MP4 H.264 + AAC, 30 fps, 6–60 s (reels/anúncios), ≤ 100 MB no uploa
 
 ### Imagem (Satori → PNG)
 
-- `card_preco`: foto do produto, título curto, preço "de/por", % OFF, selo (menor preço/cupom), logo.
+- `card_preco`: a foto do produto ocupa a maior parte do card (cerca de 60% da altura no 1:1); título em até 2 linhas com altura fixa (título longo é cortado, sem invadir o preço), preço "de/por", % OFF, selo, chamada e marca no topo.
 - `cupom_destaque`: foco no cupom.
 - `comparativo`: produto + histórico ("menor preço em 90 dias").
 - `colagem_achadinhos`: 3–4 produtos.

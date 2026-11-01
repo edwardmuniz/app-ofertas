@@ -29,9 +29,10 @@ import { getLimit } from "./limits";
 import { shortUrl } from "./links";
 import { getAccountRow, messagingError, providerOf, refOf } from "./messaging";
 import { type MutationOptions, runMutation } from "./mutation";
-import { createOfferLink, validateOfferAsSystem } from "./offers";
-import { offerVars, renderTemplate, resolveTemplateBody } from "./templates";
+import { createOfferLink, shareUrlFor, validateOfferAsSystem } from "./offers";
+import { messageBodyFor, offerVars, renderTemplate, resolveTemplateBody } from "./templates";
 import { localDate, nextAllowedTime } from "./tz";
+import { creativeCardsEnabled } from "./workspace";
 
 type PostRow = typeof posts.$inferSelect;
 type ChannelRow = typeof channels.$inferSelect;
@@ -42,6 +43,15 @@ const PUBLISHABLE_TYPES = ["wa_group", "wa_community", "wa_channel"] as const;
 const LIVE_STATUSES = ["scheduled", "sending", "sent"] as const;
 const MAX_ATTEMPTS = 3;
 const PLACEHOLDER_LINK = "xxxxxxx";
+
+/** Link da prévia: o curto (gerado só no envio) ou, na Amazon, o link de afiliado direto. */
+function previewLink(
+  deps: Pick<Deps, "redirectBaseUrl">,
+  offer: { affiliateUrl: string | null },
+  product: { url: string },
+) {
+  return shareUrlFor(offer.affiliateUrl ?? product.url, shortUrl(deps, PLACEHOLDER_LINK));
+}
 
 export async function workspaceSchedule(db: DbOrTx, workspaceId: string) {
   const [ws] = await db
@@ -178,8 +188,12 @@ export async function previewPost(ctx: Ctx, raw: PreviewPostInput) {
   const [row] = await offersWithProducts(ctx.db, wsId, [input.offer_id]);
   if (!row) throw new AppError("NOT_FOUND", "Oferta não encontrada.");
   const body = renderTemplate(
-    await resolveTemplateBody(ctx.db, wsId, input.template_id),
-    offerVars(row.offer, row.product, shortUrl(ctx, PLACEHOLDER_LINK)),
+    messageBodyFor(
+      await resolveTemplateBody(ctx.db, wsId, input.template_id),
+      input.template_id,
+      row.offer,
+    ),
+    offerVars(row.offer, row.product, previewLink(ctx, row.offer, row.product)),
   );
   return { body, image_url: row.product.imageUrls[0] ?? null };
 }
@@ -246,8 +260,8 @@ export async function schedulePosts(ctx: Ctx, raw: SchedulePostsInput, opts: Mut
               productId: r.product.id,
               title: r.product.title,
               body: renderTemplate(
-                templateBody,
-                offerVars(r.offer, r.product, shortUrl(c, PLACEHOLDER_LINK)),
+                messageBodyFor(templateBody, i.template_id, r.offer),
+                offerVars(r.offer, r.product, previewLink(c, r.offer, r.product)),
               ),
             });
         }
@@ -518,11 +532,20 @@ async function postOfferLink(
   channelId: string,
 ): Promise<{ id: string; url: string }> {
   const [existing] = await deps.db
-    .select({ id: trackedLinks.id, slug: trackedLinks.slug })
+    .select({
+      id: trackedLinks.id,
+      slug: trackedLinks.slug,
+      destination: trackedLinks.destinationUrl,
+    })
     .from(trackedLinks)
     .where(eq(trackedLinks.postId, postId))
     .limit(1);
-  if (existing) return { id: existing.id, url: shortUrl(deps, existing.slug) };
+  if (existing) {
+    return {
+      id: existing.id,
+      url: shareUrlFor(existing.destination, shortUrl(deps, existing.slug)),
+    };
+  }
   const link = await createOfferLink(sysCtx, {
     offer_id: offerId,
     source: "wa",
@@ -533,7 +556,7 @@ async function postOfferLink(
     .update(trackedLinks)
     .set({ postId })
     .where(eq(trackedLinks.id, link.result.link_id));
-  return { id: link.result.link_id, url: link.result.short_url };
+  return { id: link.result.link_id, url: link.result.share_url };
 }
 
 export type PublishOutcome = { status: string; reason?: string | null };
@@ -624,10 +647,18 @@ export async function publishPost(deps: Deps, postId: string): Promise<PublishOu
       const shortLink = await postOfferLink(deps, sysCtx, post.id, post.offerId, channel.id);
       trackedLinkId = shortLink.id;
       body = renderTemplate(
-        await resolveTemplateBody(deps.db, wsId, post.templateId),
+        messageBodyFor(
+          await resolveTemplateBody(deps.db, wsId, post.templateId),
+          post.templateId,
+          (fresh ?? o).offer,
+        ),
         offerVars((fresh ?? o).offer, (fresh ?? o).product, shortLink.url),
       );
-      if (post.withImage) {
+      // Cards desligados nas Preferências: vai só a foto do produto.
+      const cards = post.withImage && (await creativeCardsEnabled(deps.db, wsId));
+      if (post.withImage && !cards) {
+        imageUrl = o.product.imageUrls[0] ?? null;
+      } else if (post.withImage) {
         const creative = await creativeImageForPost(deps, {
           offer: (fresh ?? o).offer,
           product: (fresh ?? o).product,

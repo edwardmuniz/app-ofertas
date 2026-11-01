@@ -22,6 +22,7 @@ export * from "./messaging";
 export * from "./metrics";
 export * from "./modules";
 export * from "./mutation";
+export * from "./offer-copy";
 export * from "./offers";
 export * from "./policy";
 export * from "./posts";

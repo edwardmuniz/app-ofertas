@@ -23,15 +23,26 @@ interface AffiliateConnector {
 
 A UI e o MCP leem `capabilities` para esconder/explicar o que não é possível em cada plataforma.
 
-### Situação esperada por plataforma  [VERIFICAR antes de cada fase]
+### Situação por plataforma (pesquisada em 01/11/2026)
 
-| Plataforma                                              | Busca                             | Link por API                    | Sub-IDs                             | Relatório                                       | Observações                                                                                               |
-| ------------------------------------------------------- | --------------------------------- | ------------------------------- | ----------------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| **Shopee**                                              | Sim (Affiliate Open API, GraphQL) | Sim (`generateShortLink`)       | Sim (até 5)                         | Sim (relatórios de conversão)                   | **Primeiro conector.** Melhor API do grupo                                                                |
-| **Amazon**                                              | Sim (PA-API 5)                    | Link montado com `tag`          | Via tracking IDs (vários por conta) | Relatório pelo portal (sem API pública robusta) | Acesso à PA-API exige vendas qualificadas recentes; termos rígidos sobre exibição de preço e encurtadores |
-| **Mercado Livre**                                       | Limitada/sem API de afiliado      | Gerador no portal               | [VERIFICAR]                         | Portal                                          | Provável: lookup por API pública de itens + link gerado manual/semiautomático                             |
-| **Magazine Luiza**                                      | [VERIFICAR] (Parceiro Magalu)     | Link com id da loja do parceiro | [VERIFICAR]                         | Portal                                          |                                                                                                           |
-| Outras (AliExpress, Natura, Netshoes via Awin/Lomadee…) | Conforme rede                     |                                 |                                     |                                                 | Futuro, via conectores de redes de afiliados                                                              |
+| Plataforma                                              | Busca                                            | Link por API                          | Sub-IDs                                   | Relatório                     | Observações                                                                                                             |
+| ------------------------------------------------------- | ------------------------------------------------ | ------------------------------------- | ----------------------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| **Shopee**                                              | Sim (Affiliate Open API, GraphQL)                | Sim (`generateShortLink`)             | Sim (até 5)                               | Sim (relatórios de conversão) | **Primeiro conector.** Melhor API do grupo                                                                              |
+| **Amazon**                                              | Página de resultados da Amazon (ou Creators API) | Montado com `?tag=` (formato oficial) | Não (uma tag por canal, criada no portal) | Portal                        | **Integrada (Fase 7).** API exige 10 vendas em 30 dias. Proíbe encurtador que esconda a Amazon: post leva o link direto |
+| **Mercado Livre**                                       | Não há API de afiliado                           | Só o gerador do portal (`meli.la`)    | Não                                       | Portal                        | Ferramentas de terceiros usam cookies da sessão (sem documentação, risco de bloqueio). Por enquanto: oferta por link    |
+| **Magazine Luiza**                                      | Não há API (Parceiro Magalu)                     | Links da loja do parceiro (app/web)   | Não                                       | Portal                        | Página bloqueia leitura. Por enquanto: oferta por link, dados à mão                                                     |
+| Outras (AliExpress, Natura, Netshoes via Awin/Lomadee…) | Conforme rede                                    |                                       |                                           |                               | Futuro, via conectores de redes de afiliados                                                                            |
+
+### Mercado Livre (01/11/2026)
+
+O Mercado Livre fechou o acesso de fora: a API de busca (`/sites/MLB/search`) e a de anúncios respondem 403 para apps de terceiros, mesmo com token (só os anúncios da própria loja), e as páginas de busca e de produto não entregam preço nem foto a leitores automáticos (a foto vira a logo da loja, que o sistema descarta). Link de afiliado também não tem API.
+
+- **Fluxo:** o agente do usuário, com navegador e a conta logada, busca no site, gera o `meli.la` (barra de Afiliados na página do produto ou Gerador de links do portal) e chama `import_offer_from_link` com o link, `product_url` (a página do produto) e os dados que viu: título, foto, preço, preço "De", `pix_price` e `installments`.
+- **Por que `product_url`:** o `meli.la` abre uma página "social" do afiliado com o produto cifrado (testado em 01/11/2026), sem o id `MLB…`. Sem a página do produto, o mesmo item colado por outro link viraria outra oferta.
+- **Preço na lista e na página:** quando aparece "ou R$ X em outros meios" (ou "ou R$ X em Nx"), o valor em destaque é o do Pix e X é o preço normal. Resultados patrocinados (`click1.mercadolivre…`) são pulados.
+- **Link:** botão **Compartilhar** da barra de Afiliados no topo da página do produto (logado) → "Gerar link / ID de produto" mostra o `meli.la`, o ID do produto para busca e um texto sugerido. Humanos fazem o mesmo pelo "Colar link".
+- `meli.la` é reconhecido como link de afiliado do Mercado Livre.
+- O preço **não** é conferido antes do envio (não há como ler): importar perto da hora de publicar.
 
 Quando não há API de link: a plataforma aceita **link de afiliado colado** (humano ou agente) e trata como oferta manual; o rastreamento próprio (redirect) continua funcionando.
 
@@ -60,6 +71,26 @@ A conta Shopee tem três modos:
 - **Editar** (`PUT /v1/affiliate-accounts/:id`): nome e credenciais. Campo em branco mantém o valor atual, e as credenciais salvas nunca são mostradas. As novas são testadas antes de salvar. Mudar os links do feed pede nova importação.
 - **Remover** (`DELETE /v1/affiliate-accounts/:id`): ofertas e publicações ficam. As ofertas da conta passam a "por link" e mantêm o link de afiliado salvo. O catálogo do feed é apagado. O painel pede confirmação na própria tela.
 - **Oferta por link com conta feed:** produto do catálogo vem com os dados do feed. Link comum da loja colado vira link de comissão, e cada link curto ganha seus sub-ids.
+
+### Amazon (Associados Amazon.com.br)
+
+Conta Amazon em modo **Associado** (`live`), com:
+
+| Campo                                                 | Obrigatório | Para quê                                                          |
+| ----------------------------------------------------- | ----------- | ----------------------------------------------------------------- |
+| `partner_tag` (tag de associado, ex.: `minhaloja-20`) | Sim         | Link de comissão: `https://www.amazon.com.br/dp/<ASIN>?tag=<tag>` |
+| `credential_id` e `credential_secret` (Creators API)  | Não         | Busca e consulta pela API                                         |
+
+- **Só com a tag:** as ofertas entram pela **busca** ou por **Colar link**.
+  - **Busca pela página de resultados** (`/s?k=<palavra>`, pedida como o WhatsApp pede a prévia, uma página por busca, cerca de 48 produtos): ASIN, título, foto em alta (sem o sufixo de tamanho), preço, preço "De", parcelas, nota, avaliações e "compras no mês passado" (vira `sold_count`). Cada item já sai com o link da sua tag. Departamento vai como `rh=n:<nó>` e faixa de preço como `rh=p_36:<min>-<max>` em centavos. A Amazon ignora o filtro de desconto e a ordenação nessa página; o sistema filtra e ordena depois. O preço no Pix só aparece na página do produto (lido ao salvar a oferta e antes de cada envio). Captcha vira erro da plataforma.
+  - **Colar link:** qualquer link da Amazon (inclusive `amzn.to` ou com a tag de outra pessoa) é remontado com a sua tag. A oferta fica ligada à conta e o **preço é conferido antes de cada envio** lendo a página do produto (título, foto em alta, preço, preço "De:", nota, estoque e categoria).
+  - Página 404: produto não existe, a oferta expira.
+  - Sem anúncio principal (só "Ver todas as opções de compra") ou "Não disponível": sem estoque, a oferta expira.
+  - Captcha ou falha de leitura: erro da plataforma. A oferta **não** expira e o post tenta de novo depois.
+- **Com a Creators API** (sucessora da PA-API 5, desligada em 2026; acesso em Associados › Ferramentas › Creators API, depois de 10 vendas qualificadas em 30 dias; perde o acesso após 30 dias sem vendas): token OAuth 2.0 (`client_credentials`, escopo `creatorsapi::default`) em `api.amazon.com/auth/o2/token`, chamadas `POST https://creatorsapi.amazon/catalog/v1/searchItems|getItems` com `x-marketplace: www.amazon.com.br`. Filtros: desconto mínimo (`minSavingPercent`), faixa de preço em centavos, nota mínima, ordenação. Até 10 itens por página e 10 páginas. Limite inicial de 1 requisição/s e 8.640/dia. A comissão por item não vem na API. [VERIFICAR com credenciais reais] o caminho de `searchItems` e a chave da lista em `getItems` (a documentação mostra `itemsResult` e `itemResults`).
+- **Link direto, sem encurtador:** a política de Associados proíbe encurtador ou redirecionamento que esconda que o destino é a Amazon. Por isso, nas ofertas da Amazon, o post e o "Gerar link" usam o link de afiliado direto (`share_url`). O link rastreado continua sendo gravado (ligado ao post e à oferta), mas os cliques e vendas dessas ofertas aparecem só no relatório da Amazon.
+- **Sub-ids:** a Amazon não tem. Para separar canais, crie tags diferentes no portal (uma conta por tag) ou use o relatório por tag.
+- **Simulado:** a conta simulada da Amazon usa ASINs e links da Amazon (`?tag=simulado-20`).
 
 ## Pesquisa de ofertas
 
@@ -115,12 +146,12 @@ Para quem ainda não tem as chaves da API da loja, ou quer divulgar um produto e
 - **Como os dados são lidos:** a página é pedida como o WhatsApp pede para montar a prévia de link, seguindo redirecionamentos (links curtos) e bloqueando endereços internos. São lidos JSON-LD (`schema.org/Product`), Open Graph e metatags de preço. Quando a página não traz o título, ele sai do próprio endereço (ex.: `Nome-Do-Produto-i.123.456`).
 - **O que cada loja entrega** (testado em 31/10/2026):
 
-  | Loja          | Título           | Foto | Preço |
-  | ------------- | ---------------- | ---- | ----- |
-  | Amazon        | sim              | sim  | sim   |
-  | Mercado Livre | sim              | sim  | não   |
-  | Shopee        | só pelo endereço | não  | não   |
-  | Magalu        | não (bloqueia)   | não  | não   |
+  | Loja          | Título           | Foto                      | Preço |
+  | ------------- | ---------------- | ------------------------- | ----- |
+  | Amazon        | sim              | sim                       | sim   |
+  | Mercado Livre | sim              | não (logo, desde 11/2026) | não   |
+  | Shopee        | só pelo endereço | não                       | não   |
+  | Magalu        | não (bloqueia)   | não                       | não   |
 
   O que faltar é preenchido no formulário. Na Shopee, o painel explica como copiar o preço e o endereço da foto.
 - **Com conta real ou feed da loja conectada**, os dados vêm dela (API ou catálogo do feed), e a oferta fica ligada à conta: o preço é conferido antes de cada envio, como nas ofertas da busca. Se o produto não está no catálogo do feed, a oferta fica como "por link", mas o link comum colado vira link de comissão com o seu ID.

@@ -49,8 +49,38 @@ Decisão: **Evolution Go** atrás do adapter (`packages/connectors/messaging/evo
 
 ## Templates de mensagem
 
-Variáveis: `{{titulo}}`, `{{preco}}`, `{{preco_original}}`, `{{desconto}}`, `{{cupom}}`, `{{link}}`, `{{plataforma}}`, `{{selo}}` (ex.: "🔥 MENOR PREÇO 90 DIAS"), `{{parcelamento}}`.
-Cada template tem variações para evitar mensagens idênticas em massa. Copy pode ser gerada por IA (serviço no servidor, opcional) ou enviada pronta pelo agente.
+Variáveis: `{{titulo}}`, `{{preco}}`, `{{preco_original}}`, `{{desconto}}`, `{{cupom}}`, `{{link}}`, `{{plataforma}}`, `{{loja}}`, `{{selo}}` (ex.: "🔥 MENOR PREÇO 90 DIAS"), `{{preco_pix}}`, `{{parcelas}}` (ex.: "5x de R$ 30,78 sem juros"), `{{linha_preco}}` e, quando a oferta tem texto próprio, `{{chamada}}`, `{{descricao}}` e `{{extra}}`.
+Cada template tem variações para evitar mensagens idênticas em massa. Linha com variável vazia some da mensagem.
+
+### Preço no Pix e parcelamento
+
+Lidos da página da Amazon (preço "no Pix" e "Nx de R$ Y sem juros") e guardados na oferta (`price_details`). São atualizados a cada conferência de preço. O Pix só aparece se for menor que o preço normal. As outras lojas ainda não informam.
+
+### Texto próprio da oferta
+
+Formato de mensagem com chamada, descrição, linha de preço e fechamento:
+
+```
+*{{chamada}}*
+
+{{descricao}}
+
+{{linha_preco}}          → De ~R$ 449,90~ por *R$ 395,91 no Pix* ou *12x de R$ 37,51 sem juros*
+🎟️ Cupom: *{{cupom}}*
+
+{{extra}}
+
+{{link}}
+```
+
+- O texto (chamada, descrição, fechamento) fica na oferta (`offers.copy`, com a origem: `ai`, `agent` ou `human`). Com texto e sem modelo escolhido na publicação, o envio usa esse formato; sem texto, o modelo padrão.
+- **Preço, Pix, parcelas, cupom e link nunca fazem parte do texto:** o sistema monta essas linhas na hora do envio, com o preço conferido. Texto com preço (`R$ 10`) ou link é recusado.
+- **Humanos (painel):** Ofertas › "Escrever texto" abre o editor com **Gerar com IA** (Gemini, `GOOGLE_API_KEY`; modelo em `GEMINI_MODEL`, padrão `gemini-flash-latest`). A IA recebe o título, a loja, a categoria, os preços (só como contexto), o tom de voz das Preferências e um pedido opcional. A sugestão vem em `dry_run` (não salva) para revisar e editar antes de salvar. `POST /v1/offers/:id/copy/generate` só aceita usuários.
+- **Agentes (MCP):** não usam a IA da plataforma; escrevem o próprio texto com `set_offer_copy` (ou `PUT /v1/offers/:id/copy`). `copy: null` volta ao modelo padrão.
+
+### Imagem dos envios
+
+Preferências › **Imagem dos envios** (`creative_cards`): "Card com preço" (padrão) ou "Só a foto do produto". Desligado, todo envio com imagem vai com a foto da loja, mesmo em regras e publicações que pediram card; a escolha da regra fica guardada para quando religar.
 
 ## Fila de publicação
 

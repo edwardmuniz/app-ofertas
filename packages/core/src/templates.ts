@@ -12,6 +12,8 @@ export const DEFAULT_TEMPLATE_BODY = `{{selo}}
 
 De ~{{preco_original}}~
 🔥 Por *{{preco}}*
+⚡ *{{preco_pix}}* no Pix
+💳 {{parcelas}}
 📉 {{desconto}} OFF
 🎟️ Cupom: *{{cupom}}*
 
@@ -21,6 +23,8 @@ De ~{{preco_original}}~
 {{titulo}}
 
 💰 *{{preco}}* (era {{preco_original}})
+⚡ *{{preco_pix}}* no Pix
+💳 {{parcelas}}
 🎟️ Use o cupom *{{cupom}}*
 
 Compre aqui: {{link}}
@@ -30,9 +34,26 @@ Compre aqui: {{link}}
 
 Só *{{preco}}*
 De {{preco_original}} por {{preco}} — {{desconto}} de desconto
+⚡ No Pix: *{{preco_pix}}*
+💳 {{parcelas}}
 🎟️ Cupom: {{cupom}}
 
 🔗 {{link}}`;
+
+/**
+ * Formato usado quando a oferta tem texto próprio (gerado por IA no painel, escrito pelo agente
+ * ou à mão): chamada, descrição, preço com Pix e parcelas, fechamento e link.
+ */
+export const COPY_TEMPLATE_BODY = `*{{chamada}}*
+
+{{descricao}}
+
+{{linha_preco}}
+🎟️ Cupom: *{{cupom}}*
+
+{{extra}}
+
+{{link}}`;
 
 const PLATFORM_NAMES: Record<string, string> = {
   shopee: "Shopee",
@@ -60,6 +81,22 @@ export function offerVars(
         ? "⚡ SUPER OFERTA"
         : null;
   const hasOriginal = offer.originalPrice !== null && offer.originalPrice > offer.price;
+  const details = offer.priceDetails;
+  const pix =
+    details?.pix_price && details.pix_price < offer.price ? brl.format(details.pix_price) : null;
+  const inst = details?.installments;
+  const parcelas =
+    inst && inst.count > 1
+      ? `${inst.count}x de ${brl.format(inst.value)}${inst.interest_free ? " sem juros" : ""}`
+      : null;
+  // "De ~R$ 449,90~ por *R$ 395,91 no Pix* ou *12x de R$ 37,51 sem juros*"
+  const linhaPreco = [
+    hasOriginal && offer.originalPrice ? `De ~${brl.format(offer.originalPrice)}~ por` : "Por",
+    pix ? `*${pix} no Pix*` : `*${brl.format(offer.price)}*`,
+    parcelas ? `ou *${parcelas}*` : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
   return {
     titulo: product.title,
     preco: brl.format(offer.price),
@@ -70,6 +107,12 @@ export function offerVars(
     plataforma: PLATFORM_NAMES[product.platform] ?? product.platform,
     loja: product.shopName,
     selo,
+    preco_pix: pix,
+    parcelas,
+    linha_preco: linhaPreco,
+    chamada: offer.copy?.headline ?? null,
+    descricao: offer.copy?.body ?? null,
+    extra: offer.copy?.extra ?? null,
   };
 }
 
@@ -129,6 +172,18 @@ export async function resolveTemplateBody(
       and(eq(messageTemplates.workspaceId, workspaceId), eq(messageTemplates.isDefault, true)),
     );
   return def?.body ?? DEFAULT_TEMPLATE_BODY;
+}
+
+/**
+ * Corpo da mensagem de uma oferta: com texto próprio (copy) e sem modelo escolhido no post,
+ * usa o formato do texto personalizado; senão, o modelo do post ou o padrão.
+ */
+export function messageBodyFor(
+  templateBody: string,
+  explicitTemplateId: string | null | undefined,
+  offer: Pick<typeof offers.$inferSelect, "copy">,
+) {
+  return offer.copy && !explicitTemplateId ? COPY_TEMPLATE_BODY : templateBody;
 }
 
 export async function listMessageTemplates(ctx: Ctx) {

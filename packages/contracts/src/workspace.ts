@@ -17,6 +17,12 @@ export const Preferences = z.object({
     .optional()
     .describe("O que nunca publicar (categorias, marcas, termos)."),
   notes: z.string().max(5000).optional().describe("Outras orientações livres."),
+  creative_cards: z
+    .boolean()
+    .optional()
+    .describe(
+      "Gerar cards (criativos) nos envios. false = envia só a foto do produto, mesmo em regras e posts que pediram card. Padrão: true.",
+    ),
   alert_webhook_url: z
     .url({ protocol: /^https?$/ })
     .max(500)
