@@ -7,7 +7,16 @@ import {
   type ScopePreset,
 } from "@ofertas/contracts";
 import { useCallback, useEffect, useState } from "react";
-import { PageHeader } from "@/components/ui";
+import {
+  ChoiceCards,
+  Empty,
+  ErrorText,
+  Loading,
+  LoadingButton,
+  PageHeader,
+  Segmented,
+  Tag,
+} from "@/components/ui";
 import { ApiError, api, fmtDate } from "@/lib/api";
 
 const MCP_URL = process.env.MCP_URL ?? "http://localhost:3001/mcp";
@@ -49,6 +58,14 @@ function snippets(token: string) {
   ];
 }
 
+/** O que cada nível de permissão deixa o agente fazer (em linguagem do dia a dia). */
+const PRESET_HINTS: Record<ScopePreset, string> = {
+  read_only: "Só consulta: métricas, ofertas, grupos e a fila. Não muda nada.",
+  operation: "Busca e aprova ofertas, agenda posts, cria links e cards.",
+  full_no_spend: "Tudo, menos anúncios pagos. Recomendado para agentes do dia a dia.",
+  full: "Tudo, inclusive gastar com anúncios.",
+};
+
 function CopyBlock({ title, code }: { title: string; code: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -75,7 +92,9 @@ function CopyBlock({ title, code }: { title: string; code: string }) {
 }
 
 export default function AgentesPage() {
-  const [tokens, setTokens] = useState<ApiToken[]>([]);
+  const [tokens, setTokens] = useState<ApiToken[] | null>(null);
+  const [client, setClient] = useState(0);
+  const [busy, setBusy] = useState<string | null>(null);
   const [created, setCreated] = useState<CreatedToken | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("Meu agente");
@@ -89,19 +108,31 @@ export default function AgentesPage() {
   async function create(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setBusy("create");
     try {
       const t = await api<CreatedToken>("/tokens", { method: "POST", body: { name, preset } });
       setCreated(t);
+      setClient(0);
       load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Erro ao criar token.");
+    } finally {
+      setBusy(null);
     }
   }
 
-  async function revoke(id: string) {
-    if (!confirm("Revogar este token? O agente perde o acesso na hora.")) return;
-    await api(`/tokens/${id}`, { method: "DELETE" });
-    load();
+  async function revoke(t: ApiToken) {
+    if (!confirm(`Revogar "${t.name}"? O agente perde o acesso na hora.`)) return;
+    setError(null);
+    setBusy(t.id);
+    try {
+      await api(`/tokens/${t.id}`, { method: "DELETE" });
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Erro ao revogar.");
+    } finally {
+      setBusy(null);
+    }
   }
 
   return (
@@ -116,10 +147,10 @@ export default function AgentesPage() {
         }
       />
 
-      <form onSubmit={create} className="card grid gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
-        <div>
+      <form onSubmit={create} className="card space-y-4">
+        <div className="max-w-sm">
           <label className="label" htmlFor="name">
-            Nome
+            Nome do agente
           </label>
           <input
             className="input"
@@ -127,29 +158,30 @@ export default function AgentesPage() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
+            placeholder="Claude do escritório"
           />
         </div>
-        <div>
-          <label className="label" htmlFor="preset">
-            Permissões
-          </label>
-          <select
-            className="input"
-            id="preset"
+        <div className="space-y-1.5">
+          <div className="label">O que ele pode fazer</div>
+          <ChoiceCards
+            columns={4}
             value={preset}
-            onChange={(e) => setPreset(e.target.value as ScopePreset)}
-          >
-            {(Object.keys(SCOPE_PRESETS) as ScopePreset[]).map((k) => (
-              <option key={k} value={k}>
-                {SCOPE_PRESETS[k].label}
-              </option>
-            ))}
-          </select>
+            onChange={setPreset}
+            options={(Object.keys(SCOPE_PRESETS) as ScopePreset[]).map((k) => ({
+              value: k,
+              label: SCOPE_PRESETS[k].label.replace(/ \(.*\)$/, ""),
+              hint: PRESET_HINTS[k],
+            }))}
+          />
+          <p className="text-xs text-neutral-500">
+            Conectar números de WhatsApp, criar grupos e mexer em participantes continuam só com
+            você, no painel.
+          </p>
         </div>
-        <button className="btn" type="submit">
+        <ErrorText error={error} />
+        <LoadingButton busy={busy === "create"} type="submit">
           Gerar token
-        </button>
-        {error && <p className="text-sm text-red-600 md:col-span-3">{error}</p>}
+        </LoadingButton>
       </form>
 
       {created && (
@@ -161,9 +193,23 @@ export default function AgentesPage() {
             </p>
           </div>
           <CopyBlock title="Token" code={created.token} />
-          {snippets(created.token).map((s) => (
-            <CopyBlock key={s.name} title={s.name} code={s.code} />
-          ))}
+          <div className="space-y-2">
+            <div className="text-sm font-medium">Como conectar</div>
+            <div className="overflow-x-auto">
+              <Segmented
+                options={snippets(created.token).map((sn, i) => ({
+                  value: String(i),
+                  label: sn.name.replace(/ \(.*\)$/, ""),
+                }))}
+                value={String(client)}
+                onChange={(v) => setClient(Number(v))}
+              />
+            </div>
+            {(() => {
+              const sn = snippets(created.token)[client];
+              return sn ? <CopyBlock title={sn.name} code={sn.code} /> : null;
+            })()}
+          </div>
           <button type="button" className="btn-ghost" onClick={() => setCreated(null)}>
             Fechar
           </button>
@@ -172,8 +218,10 @@ export default function AgentesPage() {
 
       <section className="card overflow-x-auto">
         <h2 className="mb-3 font-medium">Tokens</h2>
-        {tokens.length === 0 ? (
-          <p className="text-sm text-neutral-500">Nenhum agente conectado ainda.</p>
+        {!tokens ? (
+          <Loading />
+        ) : tokens.length === 0 ? (
+          <Empty>Nenhum agente conectado ainda. Gere um token acima.</Empty>
         ) : (
           <table className="w-full text-left text-sm">
             <thead className="text-neutral-500">
@@ -194,11 +242,15 @@ export default function AgentesPage() {
                   <td className="py-2">{fmtDate(t.last_used_at)}</td>
                   <td className="py-2 text-right">
                     {t.revoked_at ? (
-                      <span className="text-xs">Revogado</span>
+                      <Tag>Revogado</Tag>
                     ) : (
-                      <button type="button" className="btn-ghost" onClick={() => revoke(t.id)}>
+                      <LoadingButton
+                        variant="btn-ghost"
+                        busy={busy === t.id}
+                        onClick={() => revoke(t)}
+                      >
                         Revogar
-                      </button>
+                      </LoadingButton>
                     )}
                   </td>
                 </tr>

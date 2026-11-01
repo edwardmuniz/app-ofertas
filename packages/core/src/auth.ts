@@ -1,10 +1,11 @@
 import { LoginInput, type Me, ROLE_SCOPES, type Role, SignupInput } from "@ofertas/contracts";
-import { memberships, sessions, users, workspaces } from "@ofertas/db";
+import { type DbOrTx, memberships, sessions, users, workspaces } from "@ofertas/db";
 import { and, eq, gt, sql } from "drizzle-orm";
 import { recordAudit } from "./audit";
 import { type Actor, type Deps, now } from "./context";
 import { hashPassword, randomToken, sha256, verifyPassword } from "./crypto";
 import { AppError } from "./errors";
+import { consumeLimit, DEFAULT_LIMITS } from "./limits";
 
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -42,23 +43,26 @@ export async function signup(
   const input = SignupInput.parse(rawInput);
   const email = input.email.toLowerCase();
 
-  if (!opts.allowSignup) {
-    const [row] = await deps.db.select({ n: sql<number>`count(*)::int` }).from(users);
+  const ensureOpen = async (db: DbOrTx) => {
+    if (opts.allowSignup) return;
+    const [row] = await db.select({ n: sql<number>`count(*)::int` }).from(users);
     if ((row?.n ?? 0) > 0) {
       throw new AppError("FORBIDDEN", "Novos cadastros estão desativados.", {
         hint: "Peça acesso ao dono do workspace.",
       });
     }
-  }
-
-  const [existing] = await deps.db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.email, email));
-  if (existing) throw new AppError("CONFLICT", "Já existe uma conta com este e-mail.");
+  };
+  // Checagem rápida antes do hash da senha (que é caro de propósito).
+  await ensureOpen(deps.db);
 
   const passwordHash = await hashPassword(input.password);
   const me = await deps.db.transaction(async (tx) => {
+    // Trava global: dois cadastros simultâneos numa instalação nova não viram dois donos.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext('auth.signup'))`);
+    await ensureOpen(tx);
+    const [existing] = await tx.select({ id: users.id }).from(users).where(eq(users.email, email));
+    if (existing) throw new AppError("CONFLICT", "Já existe uma conta com este e-mail.");
+
     const [user] = await tx
       .insert(users)
       .values({ email, name: input.name, passwordHash })
@@ -102,12 +106,35 @@ async function loadMe(deps: Deps, userId: string, workspaceId?: string): Promise
   };
 }
 
-export async function login(deps: Deps, rawInput: LoginInput): Promise<SessionResult> {
+const LOGIN_WINDOW_SEC = 15 * 60;
+
+/** Freia tentativa de senha por força bruta: limite por IP e por e-mail. */
+async function throttleLogin(deps: Deps, email: string, ip: string | undefined) {
+  if (ip) {
+    await consumeLimit(deps, {
+      key: "auth.login_per_ip",
+      bucket: ip,
+      max: DEFAULT_LIMITS["auth.login_per_ip"],
+      windowSec: LOGIN_WINDOW_SEC,
+    });
+  }
+  await consumeLimit(deps, {
+    key: "auth.login_per_email",
+    bucket: sha256(email),
+    max: DEFAULT_LIMITS["auth.login_per_email"],
+    windowSec: LOGIN_WINDOW_SEC,
+  });
+}
+
+export async function login(
+  deps: Deps,
+  rawInput: LoginInput,
+  opts: { ip?: string } = {},
+): Promise<SessionResult> {
   const input = LoginInput.parse(rawInput);
-  const [user] = await deps.db
-    .select()
-    .from(users)
-    .where(eq(users.email, input.email.toLowerCase()));
+  const email = input.email.toLowerCase();
+  await throttleLogin(deps, email, opts.ip);
+  const [user] = await deps.db.select().from(users).where(eq(users.email, email));
   const ok = user ? await verifyPassword(input.password, user.passwordHash) : false;
   if (!user || !ok) throw new AppError("UNAUTHENTICATED", "E-mail ou senha incorretos.");
 

@@ -1,6 +1,6 @@
 # 90 — Roadmap
 
-Uma fase por vez. Cada fase entrega **API + MCP + painel mínimo + testes** do que cobre. Marco: **Black Friday 2026 = sexta 27/11**. As fases 0–5 formam o MVP mirando operar a BF.
+Uma fase por vez. Cada fase entrega **API + MCP + painel mínimo + testes** do que cobre. As fases 0–5 formam o MVP (sem data fixa de lançamento).
 
 Legenda de status: ⬜ não iniciado · 🟨 em andamento · ✅ concluído
 
@@ -32,7 +32,7 @@ Legenda de status: ⬜ não iniciado · 🟨 em andamento · ✅ concluído
 
 **Aceite:** p95 < 50 ms local; cliques humanos vs bot separados; convite rotativo alternando entre 2 grupos.
 
-**Entregue (28/10/2026):** serviço `apps/redirect` (porta 3002) com cache Redis e cliques gravados em lote; p95 medido de 0,9 ms com Redis real. Canais e segmentos com cadastro manual (`upsert_channel`, `upsert_segment`), links (`create/update/list_tracked_link(s)`), convites (`create/update/list_invite_link(s)`) e `get_link_stats` com quebra por dia, link, convite, canal e origem. Painel: Grupos, Links e Convites. Eventos `segment.full`, `link.created` e `link.destination_changed` gravados na tabela `events`.
+**Entregue (28/10/2026):** serviço `apps/redirect` (porta 3002) com cache Redis e cliques gravados em lote; p95 medido de 0,9 ms com Redis real. Canais e segmentos com cadastro manual (`upsert_channel`, `upsert_segment`; o cadastro manual de canais saiu em 31/10/2026, ver Fase 3.1), links (`create/update/list_tracked_link(s)`), convites (`create/update/list_invite_link(s)`) e `get_link_stats` com quebra por dia, link, convite, canal e origem. Painel: Grupos, Links e Convites. Eventos `segment.full`, `link.created` e `link.destination_changed` gravados na tabela `events`.
 Desvios: cliques ficam em buffer de memória por até 1 s antes de gravar (queda do processo perde esse intervalo; trocar por fila no Redis se virar problema). Contagem de membros é manual até a Fase 3.
 
 ## Fase 2 — Shopee e ofertas 🟨
@@ -47,6 +47,7 @@ Desvios: cliques ficam em buffer de memória por até 1 s antes de gravar (queda
 **Aceite:** buscar, salvar e validar ofertas reais da Shopee; link de afiliado com sub-ids.
 
 **Entregue (30/10/2026), falta só a Shopee real:** pacote `packages/connectors` com interface de afiliados, Shopee simulada (catálogo de ~240 produtos, controles de preço/estoque/falha) e conector real da Shopee (assinatura SHA256, busca, consulta por item, link curto com 5 sub-ids) testado contra respostas simuladas. Contas de afiliado com credenciais cifradas (AES-256-GCM, `ENCRYPTION_KEY`), conectadas só por humanos. Busca com nota 0–100 e sinais (`fake_discount`, `lowest_30d/90d`, `low_rating`, `unavailable`, `coupon_required`), histórico de preço, curadoria (new/approved/rejected/expired), validação com tolerância de 5%, similares e `create_offer_link` (link de afiliado com sub-ids `[origem, slug do link, campanha]` dentro de link rastreado). Buscas salvas rodadas pelo novo `apps/worker` (a cada 60 s, com trava no Redis), que também expira ofertas vencidas. 13 tools MCP novas; telas Ofertas e Afiliados.
+**Entregue (31/10/2026), ofertas reais sem a API:** conta Shopee em modo **feed de produtos** (CSV oficial importado todo dia pelo worker, só itens com 10%+ de desconto e avaliação 4+, em `feed_items`). Busca, buscas salvas, regras e validação usam o catálogo. Links de comissão montados com o ID de afiliado (`an_redir` com 5 sub-ids), inclusive para link comum colado. **Oferta por link** (`preview/import_offer_from_link`): cola o link, o painel lê título, foto e preço da página e completa-se o que faltar.
 **Pendente:** testar o conector real com as credenciais da Shopee (pedidas em 30/10) e ajustar campos/códigos marcados [VERIFICAR] em `shopee.ts`.
 
 ## Fase 3 — WhatsApp e publicação ✅
@@ -64,6 +65,23 @@ Desvios: cliques ficam em buffer de memória por até 1 s antes de gravar (queda
 **Entregue (30/10/2026):** adaptador Evolution Go (testado contra a instância real: criar, conectar, status, QR, apagar) e WhatsApp simulado. Conexão do número por QR ou código de pareamento (só humanos). Importação de grupos com link de convite, "só admins enviam", contagem de membros por webhook (`GroupInfo` Join/Leave, autenticado pelo token da instância). Modelos de mensagem com variações e remoção de linhas vazias. Fila de publicação no Postgres (`FOR UPDATE SKIP LOCKED`, sem BullMQ): janelas de envio, intervalo mínimo por grupo, teto por hora por número, atraso aleatório, sem repetir produto no grupo por 7 dias, revalidação da oferta e link rastreado gerado na hora do envio, retentativas, cancelar e apagar mensagem enviada. Regras automáticas (1 oferta por grupo por vez, filtros de nota/desconto/palavra-chave). 12 tools MCP novas; telas WhatsApp e Publicações.
 **Pendente:** conectar o número real e apontar o redirecionamento de portas para `MESSAGING_WEBHOOK_URL/evolution_go`; conferir o formato real dos eventos `GroupInfo` e do id da mensagem enviada.
 
+## Fase 3.1 — Gestão completa de grupos ✅
+
+**Specs:** [12 §Gestão de grupos](12-grupos-e-publicacao.md#gestão-de-grupos)
+
+- Tudo o que a Evolution Go faz com grupos: criar grupo, editar nome/descrição/foto, as 4 configurações, novo link de convite, participantes (promover o número reserva, remover spammer, adicionar equipe), detalhes do grupo, entrar por link, sair.
+- Comunidades: criar e ligar/desligar grupos.
+- Webhooks `GroupInfo` completos (nome, configurações, admin perdido, grupo apagado/suspenso) e `JoinedGroup`.
+- API para todas as ações; tools MCP para as que agentes podem fazer sem aprovação (`get_group`, `update_group`, `update_group_settings`, `list_team_contacts`).
+- Painel: "Criar grupo", página de detalhes do grupo, "Entrar em grupo por link".
+
+**Aceite:** criar um grupo real pelo painel já com "só admins", foto, descrição, link de convite e segmento; promover o número reserva a admin; mudar o nome pelo celular e ver o canal atualizado pelo webhook.
+
+**Fora (limite do provedor):** aprovar pedidos de entrada, prévia de grupo pelo link, mensagens temporárias.
+
+**Entregue (31/10/2026):** criar grupo (já com descrição, foto, "só admins enviam", "só admins editam", "só admins adicionam", link de convite e segmentos), editar nome/descrição/foto, as 4 configurações, novo link de convite, participantes (adicionar só números da equipe, remover, promover, rebaixar, com confirmação relendo o grupo e limite diário), detalhes do grupo com admins mascarados, entrar por link (importa o grupo), sair (arquiva e cancela agendados), comunidades (criar, ligar e desligar grupos). Números da equipe. Webhook `GroupInfo` completo e alertas `group_admin_lost`/`group_unavailable`. Tools MCP: `get_group`, `update_group`, `update_group_settings`, `list_team_contacts`; as demais ações ficam só para humanos até existir o fluxo de aprovações. Painel: "Criar grupo"/"Criar comunidade", página de detalhes do grupo com abas, "Entrar por link" e "Números da equipe".
+**Pendente:** testar contra a instância real (formato de `/group/create`, `/group/info`, comunidades e chaves do webhook `GroupInfo`, marcados [VERIFICAR]); publicar no grupo de avisos da comunidade.
+
 ## Fase 4 — Criativos de imagem ✅
 
 **Specs:** [14](14-criativos.md)
@@ -78,7 +96,7 @@ Desvios: cliques ficam em buffer de memória por até 1 s antes de gravar (queda
 **Entregue (30/10/2026):** `packages/render` com templates `card_preco` e `cupom_destaque` (Satori + resvg, fonte Inter embutida) nos formatos 1:1, 4:5 e 9:16, com prévia de 480 px. Brand kit (nome, cores, chamada). Upload em duas etapas (`request_upload` → PUT na URL assinada → `complete_upload`), importação por URL com bloqueio de endereços internos, validação por formato e biblioteca. Imagens servidas por URL assinada (HMAC) em `/media/:id`. Publicações e regras aceitam `creative_template`: o card é gerado na hora do envio (preço sempre atualizado); criativo pronto com preço antigo é refeito. CLI `ofertas` (login, whoami, offers search/list, creatives generate, upload). 10 tools MCP novas; tela Criativos.
 Desvios: armazenamento local em disco (`MEDIA_DIR`) atrás da interface `ObjectStorage` (trocar por S3/R2 no deploy); renderização síncrona (~1 s por formato), sem fila.
 
-## Fase 5 — Métricas MVP + pronto para BF 🟨
+## Fase 5 — Métricas MVP + pronto para operar 🟨
 
 **Specs:** [16](16-metricas-e-financeiro.md), [17 §Calendário](17-growth.md)
 

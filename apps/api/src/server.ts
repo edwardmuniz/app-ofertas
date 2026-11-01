@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { createRuntimeDeps } from "@ofertas/core";
+import { createRuntimeDeps, s3ConfigFromEnv } from "@ofertas/core";
 import { buildApp } from "./app";
 import { loadEnv } from "./env";
 
@@ -15,6 +15,7 @@ const { deps, close } = createRuntimeDeps({
       : null,
   messagingWebhookUrl: env.MESSAGING_WEBHOOK_URL ?? `${env.API_PUBLIC_URL}/webhooks/whatsapp`,
   mediaDir: resolve(process.cwd(), process.env.MEDIA_DIR ?? "../../data/media"),
+  s3: s3ConfigFromEnv(process.env),
   publicApiUrl: env.API_PUBLIC_URL,
 });
 
@@ -23,6 +24,7 @@ const app = await buildApp({
   allowSignup: env.ALLOW_SIGNUP,
   publicUrl: env.API_PUBLIC_URL,
   secureCookies: env.NODE_ENV === "production",
+  trustProxy: env.TRUST_PROXY,
   logger: true,
 });
 

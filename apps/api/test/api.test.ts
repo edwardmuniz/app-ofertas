@@ -5,7 +5,7 @@ import {
   defaultAffiliateConnectorFactory,
 } from "@ofertas/connectors";
 import { MemoryCache, MemoryCounterStore, MemoryStorage, SecretBox } from "@ofertas/core";
-import { createDb, limits, runMigrations } from "@ofertas/db";
+import { channels, createDb, limits, runMigrations } from "@ofertas/db";
 import { resetDb } from "@ofertas/db/testing";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -64,6 +64,12 @@ beforeAll(async () => {
       messagingWebhookUrl: "http://api.test/webhooks/whatsapp",
       storage: new MemoryStorage(),
       fetchMedia: async () => {
+        throw new Error("sem rede nos testes");
+      },
+      fetchPage: async () => {
+        throw new Error("sem rede nos testes");
+      },
+      openStream: async () => {
         throw new Error("sem rede nos testes");
       },
       publicApiUrl: "http://localhost",
@@ -280,9 +286,13 @@ describe("Fase 1: links e convites", () => {
     };
 
     const seg = await call("upsert_segment", { name: "achadinhos" });
-    const ch = await call("upsert_channel", {
-      name: "Achadinhos #1",
-      invite_url: "https://chat.whatsapp.com/XYZ",
+    // Grupo de fora do número conectado (não há cadastro manual: entra direto no banco).
+    const [row] = await db
+      .insert(channels)
+      .values({ workspaceId, name: "Achadinhos #1", inviteUrl: "https://chat.whatsapp.com/XYZ" })
+      .returning();
+    const ch = await call("update_channel", {
+      channel_id: row?.id,
       segment_ids: [seg.result.id],
     });
     expect(ch.result.segment_ids).toEqual([seg.result.id]);
@@ -494,7 +504,13 @@ describe("Fase 3: WhatsApp e publicação", () => {
       if (r.isError) throw new Error(JSON.stringify(r.body));
       return r.body;
     };
-    const synced = await call("sync_whatsapp_groups", { account_id: accountId });
+    // O agente vê os grupos do número na prévia e importa os escolhidos.
+    const avail = await call("sync_whatsapp_groups", { account_id: accountId, dry_run: true });
+    expect(avail.preview.groups).toHaveLength(3);
+    const synced = await call("sync_whatsapp_groups", {
+      account_id: accountId,
+      group_jids: avail.preview.groups.map((g: { jid: string }) => g.jid),
+    });
     expect(synced.result.channels).toHaveLength(3);
     const group = synced.result.channels[0];
 
@@ -551,6 +567,63 @@ describe("Fase 3: WhatsApp e publicação", () => {
     const channels = await app.inject({ url: "/v1/channels", headers: { cookie } });
     const updated = channels.json().find((c: { id: string }) => c.id === group.id);
     expect(updated.member_count).toBe(group.member_count + 1);
+  });
+});
+
+describe("Fase 3.1: gestão de grupos", () => {
+  it("humano cria grupo pela API; agente lê e configura pelo MCP mas não cria", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/whatsapp/accounts",
+      headers: { cookie },
+      payload: { label: "Gestão", provider: "fake" },
+    });
+    const accountId = created.json().result.id;
+    await app.inject({ url: `/v1/whatsapp/accounts/${accountId}/connection`, headers: { cookie } });
+
+    const team = await app.inject({
+      method: "POST",
+      url: "/v1/team-contacts",
+      headers: { cookie },
+      payload: { phone: "+55 11 98888-1111", label: "Dono" },
+    });
+    expect(team.json().result.phone).toBe("5511988881111");
+
+    const res = await app.inject({
+      method: "POST",
+      url: `/v1/whatsapp/accounts/${accountId}/groups`,
+      headers: { cookie },
+      payload: { name: "Ofertas API", participants: ["5511988881111"] },
+    });
+    expect(res.statusCode).toBe(200);
+    const group = res.json().result.channel;
+    expect(group).toMatchObject({ name: "Ofertas API", admin_only: true, locked: true });
+
+    const details = await app.inject({
+      url: `/v1/channels/${group.id}/group`,
+      headers: { cookie },
+    });
+    expect(details.statusCode).toBe(200);
+    expect(details.json().team_in_group).toEqual([
+      { phone: "5511988881111", label: "Dono", is_admin: false },
+    ]);
+
+    const token = await createAgentToken("full_no_spend");
+    const client = await mcpClient(token);
+    const settings = parse(
+      await client.callTool({
+        name: "update_group_settings",
+        arguments: { channel_id: group.id, approval_required: true },
+      }),
+    );
+    expect(settings.body.result.approval_required).toBe(true);
+    const byAgent = await app.inject({
+      method: "POST",
+      url: `/v1/whatsapp/accounts/${accountId}/groups`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: "Agente", participants: ["5511988881111"] },
+    });
+    expect(byAgent.statusCode).toBe(403);
   });
 });
 

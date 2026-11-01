@@ -13,7 +13,12 @@ export type EventType =
   | "whatsapp.connected"
   | "whatsapp.logged_out"
   | "post.failed"
-  | "post.skipped";
+  | "post.skipped"
+  | "group.created"
+  | "group.joined"
+  | "group.left"
+  | "group.admin_lost"
+  | "group.unavailable";
 
 export async function emitEvent(
   db: DbOrTx,

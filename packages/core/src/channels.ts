@@ -1,11 +1,20 @@
 import {
   type Channel,
+  ListChannelsQuery,
   type Segment,
-  UpsertChannelInput,
+  UpdateChannelInput,
   UpsertSegmentInput,
 } from "@ofertas/contracts";
-import { channelSegments, channels, type DbOrTx, segments } from "@ofertas/db";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import {
+  automationRules,
+  channelSegments,
+  channels,
+  type DbOrTx,
+  inviteLinks,
+  posts,
+  segments,
+} from "@ofertas/db";
+import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { requireScope } from "./authz";
 import type { Ctx } from "./context";
 import { AppError } from "./errors";
@@ -25,6 +34,13 @@ const toChannel = (r: ChannelRow, segmentIds: string[]): Channel => ({
   external_id: r.externalId,
   messaging_account_id: r.messagingAccountId,
   admin_only: r.adminOnly,
+  number_is_admin: r.numberIsAdmin,
+  description: r.description,
+  locked: r.locked,
+  approval_required: r.approvalRequired,
+  admins_add_members: r.adminsAddMembers,
+  provider_state: r.providerState,
+  community_jid: r.communityJid,
   last_synced_at: r.lastSyncedAt?.toISOString() ?? null,
   created_at: r.createdAt.toISOString(),
 });
@@ -51,12 +67,19 @@ export async function getChannelRow(db: DbOrTx, workspaceId: string, id: string)
   return row;
 }
 
-export async function listChannels(ctx: Ctx): Promise<Channel[]> {
+/** Canais do workspace. Arquivados (removidos) só aparecem com `include_archived`. */
+export async function listChannels(ctx: Ctx, raw: ListChannelsQuery = {}): Promise<Channel[]> {
   requireScope(ctx.actor, "channels:read");
+  const q = ListChannelsQuery.parse(raw);
   const rows = await ctx.db
     .select()
     .from(channels)
-    .where(eq(channels.workspaceId, ctx.actor.workspaceId))
+    .where(
+      and(
+        eq(channels.workspaceId, ctx.actor.workspaceId),
+        q.include_archived ? undefined : ne(channels.status, "archived"),
+      ),
+    )
     .orderBy(asc(channels.createdAt));
   const segs = await segmentIdsFor(
     ctx.db,
@@ -65,7 +88,28 @@ export async function listChannels(ctx: Ctx): Promise<Channel[]> {
   return rows.map((r) => toChannel(r, segs.get(r.id) ?? []));
 }
 
-async function assertSegmentsExist(db: DbOrTx, workspaceId: string, ids: string[]) {
+/** Adiciona segmentos aos canais, mantendo os que eles já têm. */
+export async function addSegments(db: DbOrTx, channelIds: string[], segmentIds: string[]) {
+  if (!channelIds.length || !segmentIds.length) return;
+  await db
+    .insert(channelSegments)
+    .values(
+      channelIds.flatMap((channelId) => segmentIds.map((segmentId) => ({ channelId, segmentId }))),
+    )
+    .onConflictDoNothing();
+}
+
+/** Publicações agendadas (ainda não enviadas) para os canais. */
+async function scheduledPostIds(db: DbOrTx, channelIds: string[]) {
+  if (!channelIds.length) return [];
+  const rows = await db
+    .select({ id: posts.id })
+    .from(posts)
+    .where(and(inArray(posts.channelId, channelIds), eq(posts.status, "scheduled")));
+  return rows.map((r) => r.id);
+}
+
+export async function assertSegmentsExist(db: DbOrTx, workspaceId: string, ids: string[]) {
   if (ids.length === 0) return;
   const found = await db
     .select({ id: segments.id })
@@ -80,53 +124,57 @@ async function assertSegmentsExist(db: DbOrTx, workspaceId: string, ids: string[
   }
 }
 
-/** Cria (sem id) ou edita (com id) um canal. Na Fase 3, os grupos passam a ser importados do WhatsApp. */
-export async function upsertChannel(ctx: Ctx, raw: UpsertChannelInput, opts: MutationOptions = {}) {
-  const input = UpsertChannelInput.parse(raw);
+/**
+ * Edita status, limite e segmentos de um canal. Canais só nascem da importação ou da criação
+ * de grupos no WhatsApp (ver groups.ts); não há cadastro manual.
+ */
+export async function updateChannel(
+  ctx: Ctx,
+  channelId: string,
+  raw: UpdateChannelInput,
+  opts: MutationOptions = {},
+) {
+  const input = UpdateChannelInput.parse(raw);
   const wsId = ctx.actor.workspaceId;
   return runMutation(ctx, {
-    action: input.id ? "channels.update" : "channels.create",
+    action: "channels.update",
     scope: "channels:write",
-    input,
+    input: { id: channelId, ...input },
     opts,
     target: (i) => ({ type: "channel", id: i.id }),
     preview: async (c, i) => {
       if (i.segment_ids) await assertSegmentsExist(c.db, wsId, i.segment_ids);
-      if (!i.id) {
-        if (!i.name) {
-          throw new AppError("VALIDATION_ERROR", "Informe o nome para criar o canal.");
-        }
-        return { before: null, changes: i };
-      }
       const before = await getChannelRow(c.db, wsId, i.id);
       const segs = await segmentIdsFor(c.db, [before.id]);
-      return { before: toChannel(before, segs.get(before.id) ?? []), changes: i };
+      // Arquivar = remover o grupo da operação: os agendamentos dele são cancelados.
+      const archiving = i.status === "archived" && before.status !== "archived";
+      return {
+        before: toChannel(before, segs.get(before.id) ?? []),
+        changes: i,
+        scheduled_posts_canceled: archiving
+          ? (await scheduledPostIds(c.db, [before.id])).length
+          : 0,
+      };
     },
     execute: async (tx, i) => {
       const values = {
-        ...(i.type !== undefined && { type: i.type }),
-        ...(i.name !== undefined && { name: i.name }),
-        ...(i.invite_url !== undefined && { inviteUrl: i.invite_url }),
-        ...(i.member_count !== undefined && { memberCount: i.member_count }),
         ...(i.member_limit !== undefined && { memberLimit: i.member_limit }),
         ...(i.status !== undefined && { status: i.status }),
       };
-      let row: ChannelRow | undefined;
-      if (i.id) {
-        [row] = Object.keys(values).length
-          ? await tx.db
-              .update(channels)
-              .set(values)
-              .where(and(eq(channels.id, i.id), eq(channels.workspaceId, wsId)))
-              .returning()
-          : [await getChannelRow(tx.db, wsId, i.id)];
-      } else {
-        [row] = await tx.db
-          .insert(channels)
-          .values({ ...values, name: i.name ?? "", workspaceId: wsId })
-          .returning();
-      }
+      const [row] = Object.keys(values).length
+        ? await tx.db
+            .update(channels)
+            .set(values)
+            .where(and(eq(channels.id, i.id), eq(channels.workspaceId, wsId)))
+            .returning()
+        : [await getChannelRow(tx.db, wsId, i.id)];
       if (!row) throw new AppError("NOT_FOUND", "Canal não encontrado.");
+      if (i.status === "archived") {
+        const ids = await scheduledPostIds(tx.db, [row.id]);
+        if (ids.length) {
+          await tx.db.update(posts).set({ status: "canceled" }).where(inArray(posts.id, ids));
+        }
+      }
       if (i.segment_ids) {
         await tx.db.delete(channelSegments).where(eq(channelSegments.channelId, row.id));
         if (i.segment_ids.length) {
@@ -143,13 +191,19 @@ export async function upsertChannel(ctx: Ctx, raw: UpsertChannelInput, opts: Mut
 
 export async function listSegments(ctx: Ctx): Promise<Segment[]> {
   requireScope(ctx.actor, "channels:read");
+  // Conta só grupos em operação: removidos (arquivados) mantêm o segmento para quando
+  // forem restaurados, mas não entram na contagem.
   const rows = await ctx.db
     .select({
       segment: segments,
-      channelCount: sql<number>`count(${channelSegments.channelId})::int`,
+      channelCount: sql<number>`count(${channels.id})::int`,
     })
     .from(segments)
     .leftJoin(channelSegments, eq(channelSegments.segmentId, segments.id))
+    .leftJoin(
+      channels,
+      and(eq(channels.id, channelSegments.channelId), ne(channels.status, "archived")),
+    )
     .where(eq(segments.workspaceId, ctx.actor.workspaceId))
     .groupBy(segments.id)
     .orderBy(asc(segments.name));
@@ -205,6 +259,66 @@ export async function upsertSegment(ctx: Ctx, raw: UpsertSegmentInput, opts: Mut
             .returning();
       if (!row) throw new AppError("NOT_FOUND", "Segmento não encontrado.");
       return { id: row.id, name: row.name, description: row.description };
+    },
+  });
+}
+
+/**
+ * Apaga um segmento. Recusa se alguma regra automática ou link de convite usa o segmento,
+ * para não deixar automações apontando para o nada. Os canais continuam, só perdem a etiqueta.
+ */
+export async function deleteSegment(ctx: Ctx, segmentId: string, opts: MutationOptions = {}) {
+  const wsId = ctx.actor.workspaceId;
+  return runMutation(ctx, {
+    action: "segments.delete",
+    scope: "channels:write",
+    input: { segment_id: segmentId },
+    opts,
+    target: (i) => ({ type: "segment", id: i.segment_id }),
+    preview: async (c, i) => {
+      const [seg] = await c.db
+        .select()
+        .from(segments)
+        .where(and(eq(segments.id, i.segment_id), eq(segments.workspaceId, wsId)));
+      if (!seg) throw new AppError("NOT_FOUND", "Segmento não encontrado.");
+      const rules = await c.db
+        .select({ id: automationRules.id, name: automationRules.name })
+        .from(automationRules)
+        .where(
+          and(
+            eq(automationRules.workspaceId, wsId),
+            sql`${seg.id}::uuid = any(${automationRules.segmentIds})`,
+          ),
+        );
+      const invites = await c.db
+        .select({ id: inviteLinks.id, name: inviteLinks.name })
+        .from(inviteLinks)
+        .where(eq(inviteLinks.segmentId, seg.id));
+      if (rules.length || invites.length) {
+        const used = [
+          ...rules.map((r) => `regra "${r.name}"`),
+          ...invites.map((v) => `convite "${v.name}"`),
+        ];
+        throw new AppError(
+          "CONFLICT",
+          `O segmento "${seg.name}" está em uso: ${used.join(", ")}.`,
+          {
+            hint: "Tire o segmento dessas regras e convites (ou apague-os) antes de apagar o segmento.",
+            details: { rule_ids: rules.map((r) => r.id), invite_ids: invites.map((v) => v.id) },
+          },
+        );
+      }
+      const [n] = await c.db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(channelSegments)
+        .where(eq(channelSegments.segmentId, seg.id));
+      return { id: seg.id, name: seg.name, channel_count: n?.n ?? 0 };
+    },
+    execute: async (tx, _i, p) => {
+      await tx.db
+        .delete(segments)
+        .where(and(eq(segments.id, p.id), eq(segments.workspaceId, wsId)));
+      return { deleted: true as const, id: p.id, name: p.name, channel_count: p.channel_count };
     },
   });
 }

@@ -27,23 +27,23 @@
 
 ## Stack (D1 — decidido)
 
-| Camada              | Escolha                                                                   | Motivo                                                         |
-| ------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| Linguagem           | **TypeScript** (Node 22 LTS) em tudo                                      | Um idioma só; SDK MCP oficial maduro; Remotion (vídeo) é TS    |
-| Monorepo            | **pnpm workspaces + Turborepo**                                           | Compartilhar domínio entre api, worker, web                    |
-| API                 | **Fastify** + **Zod** (`fastify-type-provider-zod`)                       | Rápido, schema → validação + OpenAPI gerado                    |
-| MCP                 | `@modelcontextprotocol/sdk` (Streamable HTTP) montado dentro do `api`     | Reusa os mesmos serviços de domínio                            |
-| Painel              | **Next.js** (App Router) + Tailwind + shadcn/ui                           | Produtividade; consome a API via client gerado do OpenAPI      |
-| Banco               | **PostgreSQL 16** + **Drizzle ORM**                                       | Relacional, migrations simples, SQL explícito                  |
-| Filas / agendamento | **Redis** + **BullMQ**                                                    | Jobs atrasados, repetíveis, rate-limit por fila                |
-| Storage             | S3-compatível (**Cloudflare R2** em prod, **MinIO** local)                | URLs pré-assinadas para upload direto (essencial para agentes) |
-| Render imagem       | **Satori + resvg** (JSX → SVG → PNG)                                      | Rápido, sem browser                                            |
-| Render vídeo        | **Remotion** (+ FFmpeg)                                                   | Templates de vídeo em React                                    |
-| Auth usuários       | Sessão (cookie) no painel; implementação própria (D2)                     | —                                                              |
-| Auth agentes        | Tokens de API com escopo (fase 0) → **OAuth 2.1** p/ MCP (fase posterior) | Ver [03](03-api-mcp-agentes.md)                                |
-| WhatsApp            | Adapter; **Evolution Go** self-hosted (D3)                                | API oficial não cobre bem grupos; ver riscos                   |
-| Observabilidade     | Pino (logs JSON) + Sentry + métricas básicas                              | —                                                              |
-| Infra               | Docker Compose (local e VPS inicial) [DECISÃO D4]                         | Simples para começar; migrar se crescer                        |
+| Camada              | Escolha                                                                   | Motivo                                                                  |
+| ------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Linguagem           | **TypeScript** (Node 22 LTS) em tudo                                      | Um idioma só; SDK MCP oficial maduro; Remotion (vídeo) é TS             |
+| Monorepo            | **pnpm workspaces + Turborepo**                                           | Compartilhar domínio entre api, worker, web                             |
+| API                 | **Fastify** + **Zod** (`fastify-type-provider-zod`)                       | Rápido, schema → validação + OpenAPI gerado                             |
+| MCP                 | `@modelcontextprotocol/sdk` (Streamable HTTP) montado dentro do `api`     | Reusa os mesmos serviços de domínio                                     |
+| Painel              | **Next.js** (App Router) + Tailwind + shadcn/ui                           | Produtividade; consome a API via client gerado do OpenAPI               |
+| Banco               | **PostgreSQL 16** + **Drizzle ORM**                                       | Relacional, migrations simples, SQL explícito                           |
+| Filas / agendamento | **Redis** + **BullMQ**                                                    | Jobs atrasados, repetíveis, rate-limit por fila                         |
+| Storage             | Disco local ou **AWS S3** (opcional, por variáveis `AWS_*`)               | Com S3, a Evolution Go baixa as imagens por link pré-assinado do bucket |
+| Render imagem       | **Satori + resvg** (JSX → SVG → PNG)                                      | Rápido, sem browser                                                     |
+| Render vídeo        | **Remotion** (+ FFmpeg)                                                   | Templates de vídeo em React                                             |
+| Auth usuários       | Sessão (cookie) no painel; implementação própria (D2)                     | —                                                                       |
+| Auth agentes        | Tokens de API com escopo (fase 0) → **OAuth 2.1** p/ MCP (fase posterior) | Ver [03](03-api-mcp-agentes.md)                                         |
+| WhatsApp            | Adapter; **Evolution Go** self-hosted (D3)                                | API oficial não cobre bem grupos; ver riscos                            |
+| Observabilidade     | Pino (logs JSON) + Sentry + métricas básicas                              | —                                                                       |
+| Infra               | Docker Compose (local e VPS inicial) [DECISÃO D4]                         | Simples para começar; migrar se crescer                                 |
 
 ## Estrutura do repositório
 

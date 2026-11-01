@@ -1,9 +1,12 @@
 "use client";
 
 import type { ConnectionState, MessagingAccount } from "@ofertas/contracts";
+import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ErrorText, Field, PageHeader } from "@/components/ui";
+import { ChoiceCards, ErrorText, Field, PageHeader } from "@/components/ui";
 import { ApiError, api, fmtDate } from "@/lib/api";
+import { ImportPanel } from "./import-panel";
+import { JoinPanel, TeamPanel } from "./team-panel";
 
 const STATUS: Record<string, { label: string; cls: string }> = {
   connected: {
@@ -46,10 +49,19 @@ function ConnectPanel({ account, onDone }: { account: MessagingAccount; onDone: 
     }
   }, [account.id, onDone]);
 
+  // Próxima consulta só depois da anterior terminar (a Evolution Go pode segurar a resposta).
   useEffect(() => {
-    poll();
-    const t = setInterval(poll, 3000);
-    return () => clearInterval(t);
+    let stop = false;
+    let t: ReturnType<typeof setTimeout>;
+    const loop = async () => {
+      await poll();
+      if (!stop && !doneRef.current) t = setTimeout(loop, 2000);
+    };
+    loop();
+    return () => {
+      stop = true;
+      clearTimeout(t);
+    };
   }, [poll]);
 
   async function pair(e: React.FormEvent<HTMLFormElement>) {
@@ -121,6 +133,12 @@ function ConnectPanel({ account, onDone }: { account: MessagingAccount; onDone: 
 export default function WhatsAppPage() {
   const [accounts, setAccounts] = useState<MessagingAccount[]>([]);
   const [connecting, setConnecting] = useState<string | null>(null);
+  const [importing, setImporting] = useState<string | null>(null);
+  const [provider, setProvider] = useState<"evolution_go" | "fake">("evolution_go");
+  const [joining, setJoining] = useState<string | null>(null);
+  /** Número sendo removido (card esmaecido) e o que acabou de sair (card sumindo). */
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [leaving, setLeaving] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -131,6 +149,39 @@ export default function WhatsAppPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  async function remove(a: MessagingAccount) {
+    setError(null);
+    setMsg(null);
+    try {
+      const prev = await api<{
+        preview: { channels_kept: number; scheduled_posts_canceled: number };
+      }>(`/whatsapp/accounts/${a.id}?dry_run=true`, { method: "DELETE" });
+      const { channels_kept: kept, scheduled_posts_canceled: posts } = prev.preview;
+      const text = [
+        `Remover "${a.label}" da plataforma e da Evolution Go?`,
+        kept ? `${kept} grupo(s) continuam como canais, sem número ligado.` : null,
+        posts ? `${posts} publicação(ões) agendada(s) serão canceladas.` : null,
+      ]
+        .filter(Boolean)
+        .join("\n");
+      if (!confirm(text)) return;
+      setRemoving(a.id);
+      await api(`/whatsapp/accounts/${a.id}`, { method: "DELETE" });
+      if (connecting === a.id) setConnecting(null);
+      setLeaving(a.id);
+      setMsg(`"${a.label}" removido.`);
+      // Deixa o card sumir antes de tirá-lo da lista.
+      await new Promise((ok) => setTimeout(ok, 300));
+      setAccounts((list) => list.filter((x) => x.id !== a.id));
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? `${err.message} ${err.hint ?? ""}` : "Erro ao remover.");
+    } finally {
+      setRemoving(null);
+      setLeaving(null);
+    }
+  }
 
   async function run(fn: () => Promise<unknown>, ok?: string) {
     setError(null);
@@ -150,24 +201,9 @@ export default function WhatsAppPage() {
     await run(async () => {
       const res = await api<Mutation<MessagingAccount>>("/whatsapp/accounts", {
         method: "POST",
-        body: { label: f.get("label"), provider: f.get("provider") },
+        body: { label: f.get("label"), provider },
       });
       if (res.result) setConnecting(res.result.id);
-    });
-  }
-
-  async function sync(a: MessagingAccount) {
-    await run(async () => {
-      const res = await api<Mutation<{ created: number; updated: number; invite_errors: number }>>(
-        `/whatsapp/accounts/${a.id}/sync-groups`,
-        { method: "POST" },
-      );
-      const r = res.result;
-      if (r) {
-        setMsg(
-          `${r.created} grupo(s) novo(s), ${r.updated} atualizado(s).${r.invite_errors ? ` ${r.invite_errors} sem link de convite (o número precisa ser admin).` : ""} Veja em Grupos.`,
-        );
-      }
     });
   }
 
@@ -180,19 +216,32 @@ export default function WhatsAppPage() {
         }
       />
 
-      <form onSubmit={create} className="card grid gap-3 md:grid-cols-[2fr_1fr_auto] md:items-end">
+      <form onSubmit={create} className="card grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
         <Field label="Nome do número" htmlFor="label">
           <input className="input" id="label" name="label" required defaultValue="Ofertas" />
-        </Field>
-        <Field label="Tipo" htmlFor="provider">
-          <select className="input" id="provider" name="provider" defaultValue="evolution_go">
-            <option value="evolution_go">Real (Evolution Go)</option>
-            <option value="fake">Simulado (teste)</option>
-          </select>
         </Field>
         <button className="btn" type="submit">
           Conectar número
         </button>
+        <div className="md:col-span-2">
+          <ChoiceCards
+            columns={2}
+            value={provider}
+            onChange={setProvider}
+            options={[
+              {
+                value: "evolution_go",
+                label: "Número real",
+                hint: "Você lê o QR code com o celular do número das ofertas.",
+              },
+              {
+                value: "fake",
+                label: "Simulado",
+                hint: "Grupos e envios de mentira, para testar sem um celular.",
+              },
+            ]}
+          />
+        </div>
       </form>
 
       <ErrorText error={error} />
@@ -202,7 +251,17 @@ export default function WhatsAppPage() {
         {accounts.map((a) => {
           const st = STATUS[a.status] ?? { label: a.status, cls: "" };
           return (
-            <div key={a.id} className="card space-y-3">
+            <div
+              key={a.id}
+              aria-busy={removing === a.id}
+              className={`card space-y-3 transition-all duration-300 ${
+                leaving === a.id
+                  ? "scale-[0.98] opacity-0"
+                  : removing === a.id
+                    ? "pointer-events-none opacity-60"
+                    : ""
+              }`}
+            >
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
                   <div className="font-medium">
@@ -223,8 +282,26 @@ export default function WhatsAppPage() {
                   <span className={`rounded-full px-2 py-0.5 text-xs ${st.cls}`}>{st.label}</span>
                   {a.status === "connected" ? (
                     <>
-                      <button type="button" className="btn" onClick={() => sync(a)}>
+                      <button
+                        type="button"
+                        className="btn"
+                        disabled={importing === a.id}
+                        onClick={() => {
+                          setMsg(null);
+                          setImporting(a.id);
+                        }}
+                      >
                         Importar grupos
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost"
+                        onClick={() => {
+                          setMsg(null);
+                          setJoining(a.id);
+                        }}
+                      >
+                        Entrar por link
                       </button>
                       <button
                         type="button"
@@ -238,12 +315,45 @@ export default function WhatsAppPage() {
                       </button>
                     </>
                   ) : (
-                    <button type="button" className="btn" onClick={() => setConnecting(a.id)}>
-                      Conectar
-                    </button>
+                    <>
+                      <button type="button" className="btn" onClick={() => setConnecting(a.id)}>
+                        Conectar
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost inline-flex items-center gap-1.5"
+                        disabled={removing !== null}
+                        onClick={() => remove(a)}
+                      >
+                        {removing === a.id && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                        {removing === a.id ? "Removendo…" : "Remover"}
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
+              {joining === a.id && a.status === "connected" && (
+                <JoinPanel
+                  accountId={a.id}
+                  onClose={() => setJoining(null)}
+                  onDone={(text) => {
+                    setJoining(null);
+                    setMsg(text);
+                    load();
+                  }}
+                />
+              )}
+              {importing === a.id && a.status === "connected" && (
+                <ImportPanel
+                  account={a}
+                  onClose={() => setImporting(null)}
+                  onDone={(text) => {
+                    setImporting(null);
+                    setMsg(text);
+                    load();
+                  }}
+                />
+              )}
               {connecting === a.id && a.status !== "connected" && (
                 <ConnectPanel
                   account={a}
@@ -257,6 +367,8 @@ export default function WhatsAppPage() {
           );
         })}
       </div>
+
+      <TeamPanel />
     </div>
   );
 }

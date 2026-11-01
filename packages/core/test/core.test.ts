@@ -1,4 +1,6 @@
-import { policies } from "@ofertas/db";
+import { policies, users } from "@ofertas/db";
+import { resetDb } from "@ofertas/db/testing";
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   AppError,
@@ -65,6 +67,50 @@ describe("auth", () => {
         { allowSignup: false },
       ),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("freia força bruta no login por e-mail e por IP", async () => {
+    const s = await createOwner(deps);
+    const email = s.me.user.email;
+    for (let i = 0; i < 10; i++) {
+      await expect(login(deps, { email, password: "errada" })).rejects.toMatchObject({
+        code: "UNAUTHENTICATED",
+      });
+    }
+    // 11ª tentativa no mesmo e-mail: bloqueada mesmo com a senha certa.
+    await expect(login(deps, { email, password: "senha-forte-123" })).rejects.toMatchObject({
+      code: "LIMIT_EXCEEDED",
+    });
+
+    const ip = "203.0.113.9";
+    for (let i = 0; i < 20; i++) {
+      await login(deps, { email: `naoexiste${i}@teste.com`, password: "x" }, { ip }).catch(
+        () => {},
+      );
+    }
+    const other = await createOwner(deps);
+    await expect(
+      login(deps, { email: other.me.user.email, password: "senha-forte-123" }, { ip }),
+    ).rejects.toMatchObject({ code: "LIMIT_EXCEEDED" });
+  });
+
+  it("instalação nova: dois cadastros ao mesmo tempo criam um só dono", async () => {
+    await resetDb(deps.db);
+    const attempt = (n: number) =>
+      signup(
+        deps,
+        {
+          name: `P${n}`,
+          email: `primeiro${n}@teste.com`,
+          password: "senha-forte-123",
+          workspace_name: `W${n}`,
+        },
+        { allowSignup: false },
+      );
+    const results = await Promise.allSettled([attempt(1), attempt(2), attempt(3)]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const [row] = await deps.db.select({ n: sql<number>`count(*)::int` }).from(users);
+    expect(row?.n).toBe(1);
   });
 });
 

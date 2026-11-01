@@ -1,0 +1,1 @@
+ALTER TABLE "channels" ADD COLUMN "number_is_admin" boolean;

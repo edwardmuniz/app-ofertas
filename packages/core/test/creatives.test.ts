@@ -10,6 +10,7 @@ import {
   createMessagingAccount,
   createSafeFetcher,
   type Deps,
+  deleteCreative,
   generateCreative,
   getBrandKit,
   getConnectionState,
@@ -24,11 +25,10 @@ import {
   schedulePosts,
   searchOffers,
   serveMedia,
-  syncGroups,
   updateBrandKit,
   validateCreative,
 } from "../src";
-import { createOwner, fakeFetchMedia, setupTestDeps } from "./helpers";
+import { createOwner, fakeFetchMedia, importAllGroups, setupTestDeps } from "./helpers";
 
 let deps: Deps & { close: () => Promise<void> };
 
@@ -184,7 +184,7 @@ describe("criativo no envio", () => {
       .values({ workspaceId: ctx.actor.workspaceId, key: "posts.jitter_seconds", value: 0 });
     const acc = done(await createMessagingAccount(ctx, { label: "N", provider: "fake" }));
     await getConnectionState(ctx, acc.id);
-    return done(await syncGroups(ctx, acc.id)).channels[0];
+    return (await importAllGroups(ctx, acc.id)).channels[0];
   }
 
   it("gera o card na hora do envio e manda a URL assinada", async () => {
@@ -244,5 +244,20 @@ describe("criativo no envio", () => {
         creative_id: offer.id,
       }),
     ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+  });
+});
+
+describe("remoção", () => {
+  it("remove o criativo, os registros dos arquivos e os arquivos", async () => {
+    const { ctx, offer } = await setup();
+    const cr = done(await generateCreative(ctx, { offer_id: offer.id }));
+    const url = cr.variants[0]?.url ?? "";
+    expect(await fetchSigned(url)).not.toBeNull();
+    const dry = await deleteCreative(ctx, cr.id, { dryRun: true });
+    expect(dry.status).toBe("dry_run");
+    expect(done(await deleteCreative(ctx, cr.id))).toEqual({ id: cr.id, deleted: true });
+    expect((await listCreatives(ctx, { offer_id: offer.id })).items).toHaveLength(0);
+    expect(await fetchSigned(url)).toBeNull();
+    await expect(deleteCreative(ctx, cr.id)).rejects.toThrow(/não encontrado/);
   });
 });

@@ -68,7 +68,7 @@ export const v1Routes: FastifyPluginAsyncZod<V1Options> = async (app, opts) => {
     "/auth/login",
     { schema: { tags: ["auth"], body: LoginInput, response: { 200: Me, ...errors } } },
     async (req, reply) => {
-      const s = await login(deps, req.body);
+      const s = await login(deps, req.body, { ip: req.ip });
       setSessionCookie(reply, s.sessionToken, s.expiresAt, opts.secureCookies);
       return s.me;
     },

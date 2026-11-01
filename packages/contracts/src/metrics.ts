@@ -179,7 +179,13 @@ export type MetricsBreakdown = z.infer<typeof MetricsBreakdown>;
 
 // ── Alertas e status ────────────────────────────────────────────
 
-export const ALERT_KINDS = ["messaging_down", "queue_stalled", "posts_failing"] as const;
+export const ALERT_KINDS = [
+  "messaging_down",
+  "queue_stalled",
+  "posts_failing",
+  "group_admin_lost",
+  "group_unavailable",
+] as const;
 
 export const Alert = z.object({
   id: z.string(),

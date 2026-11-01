@@ -5,7 +5,7 @@ import { AlertTriangle, ArrowRight, OctagonAlert } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { type PeriodKey, PeriodPicker, WEEKDAYS } from "@/components/metrics";
-import { PageHeader, Panel, PlatformBadge, StatCard, Tag } from "@/components/ui";
+import { Loading, PageHeader, Panel, PlatformBadge, StatCard, Tag } from "@/components/ui";
 import { api } from "@/lib/api";
 
 const SUBTITLE: Record<PeriodKey, string> = {
@@ -31,7 +31,7 @@ export default function OverviewPage() {
     api<Funnel>(`/metrics/funnel?period=${period}`).then(setFunnel);
   }, [period]);
 
-  if (!data) return <p className="text-sm text-neutral-500">Carregando…</p>;
+  if (!data) return <Loading />;
   const s = summary;
   const funnelMax = Math.max(1, ...(funnel?.stages.map((x) => x.value ?? 0) ?? [1]));
 

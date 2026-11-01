@@ -1,0 +1,1 @@
+ALTER TABLE "offers" ALTER COLUMN "affiliate_account_id" DROP NOT NULL;

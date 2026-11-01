@@ -5,13 +5,14 @@ import {
   InviteLink,
   LinkStats,
   LinkStatsQuery,
+  ListChannelsQuery,
   ListTrackedLinksQuery,
   Segment,
   TrackedLink,
   TrackedLinkPage,
+  UpdateChannelInput,
   UpdateInviteLinkInput,
   UpdateTrackedLinkInput,
-  UpsertChannelInput,
   UpsertSegmentInput,
 } from "@ofertas/contracts";
 import {
@@ -19,14 +20,15 @@ import {
   createInviteLink,
   createTrackedLink,
   type Deps,
+  deleteSegment,
   getLinkStats,
   listChannels,
   listInviteLinks,
   listSegments,
   listTrackedLinks,
+  updateChannel,
   updateInviteLink,
   updateTrackedLink,
-  upsertChannel,
   upsertSegment,
 } from "@ofertas/core";
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
@@ -46,20 +48,14 @@ export const linkRoutes: FastifyPluginAsyncZod<{ deps: Deps }> = async (app, { d
   // ── Canais ─────────────────────────────────────────────────────
   app.get(
     "/channels",
-    { schema: { tags: ["canais"], response: { 200: z.array(Channel), ...errors } } },
-    async (req) => listChannels(ctx(req)),
-  );
-  app.post(
-    "/channels",
     {
       schema: {
         tags: ["canais"],
-        body: UpsertChannelInput.omit({ id: true }),
-        ...mutationSchema,
-        response: { 200: MutationResult(Channel), ...errors },
+        querystring: ListChannelsQuery,
+        response: { 200: z.array(Channel), ...errors },
       },
     },
-    async (req) => upsertChannel(ctx(req), req.body, mutationOpts(req)),
+    async (req) => listChannels(ctx(req), req.query),
   );
   app.patch(
     "/channels/:id",
@@ -67,12 +63,12 @@ export const linkRoutes: FastifyPluginAsyncZod<{ deps: Deps }> = async (app, { d
       schema: {
         tags: ["canais"],
         params: IdParams,
-        body: UpsertChannelInput.omit({ id: true }),
+        body: UpdateChannelInput,
         ...mutationSchema,
         response: { 200: MutationResult(Channel), ...errors },
       },
     },
-    async (req) => upsertChannel(ctx(req), { ...req.body, id: req.params.id }, mutationOpts(req)),
+    async (req) => updateChannel(ctx(req), req.params.id, req.body, mutationOpts(req)),
   );
 
   // ── Segmentos ──────────────────────────────────────────────────
@@ -110,6 +106,28 @@ export const linkRoutes: FastifyPluginAsyncZod<{ deps: Deps }> = async (app, { d
       },
     },
     async (req) => upsertSegment(ctx(req), { ...req.body, id: req.params.id }, mutationOpts(req)),
+  );
+  app.delete(
+    "/segments/:id",
+    {
+      schema: {
+        tags: ["canais"],
+        params: IdParams,
+        ...mutationSchema,
+        response: {
+          200: MutationResult(
+            z.object({
+              deleted: z.literal(true),
+              id: z.string(),
+              name: z.string(),
+              channel_count: z.number(),
+            }),
+          ),
+          ...errors,
+        },
+      },
+    },
+    async (req) => deleteSegment(ctx(req), req.params.id, mutationOpts(req)),
   );
 
   // ── Links rastreados ───────────────────────────────────────────

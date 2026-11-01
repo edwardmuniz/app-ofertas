@@ -12,6 +12,11 @@ const Env = z.object({
   EVOLUTION_GO_API_KEY: z.string().optional(),
   /** URL pública base dos webhooks de WhatsApp (o redirecionamento de portas aponta para cá) */
   MESSAGING_WEBHOOK_URL: z.string().optional(),
+  /** "true" quando a API fica atrás de proxy reverso (Caddy em produção) */
+  TRUST_PROXY: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
   ALLOW_SIGNUP: z
     .enum(["true", "false"])
     .default("false")

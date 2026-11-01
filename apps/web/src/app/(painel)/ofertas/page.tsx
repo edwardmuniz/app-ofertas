@@ -1,70 +1,24 @@
 "use client";
 
-import type {
-  Offer,
-  OfferCandidate,
-  OfferLink,
-  SavedSearch,
-  SearchOffersResult,
-  ValidateOfferResult,
-} from "@ofertas/contracts";
+import type { Offer, SavedSearch, ValidateOfferResult } from "@ofertas/contracts";
 import { useCallback, useEffect, useState } from "react";
-import { CopyButton, ErrorText, Field, PageHeader } from "@/components/ui";
+import { Empty, ErrorText, Loading, LoadingButton, PageHeader, Tag } from "@/components/ui";
 import { ApiError, api, fmtDate } from "@/lib/api";
-import { FLAG_LABELS, money, scoreClass, TONE_CLASS } from "@/lib/format";
+import { money } from "@/lib/format";
+import { FromLinkPanel } from "./from-link";
+import { OfferLinkPanel } from "./link-panel";
+import { ProductCard } from "./parts";
+import { SearchTab } from "./search-tab";
 
-type Tab = "buscar" | "curadoria" | "aprovadas" | "buscas";
+type Tab = "buscar" | "curadoria" | "aprovadas" | "rejeitadas" | "buscas";
 type Mutation<T> = { status: string; result?: T };
-
-function Flags({ flags }: { flags: string[] }) {
-  if (flags.length === 0) return null;
-  return (
-    <div className="flex flex-wrap gap-1">
-      {flags.map((f) => {
-        const meta = FLAG_LABELS[f] ?? { label: f, tone: "info" as const };
-        return (
-          <span key={f} className={`rounded px-1.5 py-0.5 text-xs ${TONE_CLASS[meta.tone]}`}>
-            {meta.label}
-          </span>
-        );
-      })}
-    </div>
-  );
-}
-
-function Price({
-  price,
-  original,
-  discount,
-}: {
-  price: number;
-  original: number | null;
-  discount: number | null;
-}) {
-  return (
-    <div className="flex items-baseline gap-2">
-      <span className="text-lg font-semibold">{money(price)}</span>
-      {original && <span className="text-xs text-neutral-500 line-through">{money(original)}</span>}
-      {discount ? <span className="text-xs font-medium text-emerald-600">-{discount}%</span> : null}
-    </div>
-  );
-}
-
-function Score({ value }: { value: number }) {
-  return (
-    <span
-      className={`rounded-md px-2 py-0.5 text-sm font-semibold tabular-nums ${scoreClass(value)}`}
-      title="Nota 0–100"
-    >
-      {value}
-    </span>
-  );
-}
 
 export default function OfertasPage() {
   const [tab, setTab] = useState<Tab>("buscar");
   const [error, setError] = useState<string | null>(null);
   const [newCount, setNewCount] = useState(0);
+  const [pasting, setPasting] = useState(false);
+  const [listKey, setListKey] = useState(0);
 
   const refreshCount = useCallback(async () => {
     const page = await api<{ items: Offer[] }>("/offers?status=new&limit=100");
@@ -88,6 +42,7 @@ export default function OfertasPage() {
     { key: "buscar", label: "Buscar" },
     { key: "curadoria", label: `Curadoria${newCount ? ` (${newCount})` : ""}` },
     { key: "aprovadas", label: "Aprovadas" },
+    { key: "rejeitadas", label: "Rejeitadas" },
     { key: "buscas", label: "Buscas salvas" },
   ];
 
@@ -96,7 +51,25 @@ export default function OfertasPage() {
       <PageHeader
         title="Ofertas"
         subtitle="Busque, aprove e acompanhe ofertas das lojas conectadas"
+        actions={
+          !pasting && (
+            <button type="button" className="btn" onClick={() => setPasting(true)}>
+              Colar link
+            </button>
+          )
+        }
       />
+      {pasting && (
+        <FromLinkPanel
+          onClose={() => setPasting(false)}
+          onSaved={(o) => {
+            setPasting(false);
+            setTab(o.status === "approved" ? "aprovadas" : "curadoria");
+            setListKey((k) => k + 1);
+            refreshCount();
+          }}
+        />
+      )}
       <div className="flex gap-1 overflow-x-auto border-b border-neutral-200 dark:border-neutral-800">
         {tabs.map((t) => (
           <button
@@ -115,8 +88,15 @@ export default function OfertasPage() {
       </div>
       <ErrorText error={error} />
       {tab === "buscar" && <SearchTab run={run} onSaved={refreshCount} />}
-      {tab === "curadoria" && <OfferList status="new" run={run} onChange={refreshCount} />}
-      {tab === "aprovadas" && <OfferList status="approved" run={run} onChange={refreshCount} />}
+      {tab === "curadoria" && (
+        <OfferList key={`new-${listKey}`} status="new" run={run} onChange={refreshCount} />
+      )}
+      {tab === "aprovadas" && (
+        <OfferList key={`ok-${listKey}`} status="approved" run={run} onChange={refreshCount} />
+      )}
+      {tab === "rejeitadas" && (
+        <OfferList key={`rej-${listKey}`} status="rejected" run={run} onChange={refreshCount} />
+      )}
       {tab === "buscas" && <SavedSearchesTab run={run} />}
     </div>
   );
@@ -124,186 +104,31 @@ export default function OfertasPage() {
 
 type Runner = <T>(fn: () => Promise<T>) => Promise<T | null>;
 
-function SearchTab({ run, onSaved }: { run: Runner; onSaved: () => void }) {
-  const [query, setQuery] = useState<Record<string, unknown> | null>(null);
-  const [result, setResult] = useState<SearchOffersResult | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  async function search(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const f = new FormData(e.currentTarget);
-    const num = (k: string) => (f.get(k) ? Number(f.get(k)) : undefined);
-    const q = {
-      keyword: String(f.get("keyword") ?? "") || undefined,
-      min_discount: num("min_discount"),
-      price_max: num("price_max"),
-      sort: f.get("sort"),
-      limit: 24,
-    };
-    setLoading(true);
-    const res = await run(() =>
-      api<SearchOffersResult>("/offers/search", { method: "POST", body: q }),
-    );
-    setLoading(false);
-    if (res) {
-      setResult(res);
-      setQuery(q);
-    }
-  }
-
-  async function save(c: OfferCandidate, status: "approved" | "new") {
-    const res = await run(() =>
-      api<Mutation<Offer>>("/offers", {
-        method: "POST",
-        body: { product_id: c.product_id, status },
-      }),
-    );
-    if (res?.result && result) {
-      setResult({
-        ...result,
-        items: result.items.map((i) =>
-          i.product_id === c.product_id
-            ? { ...i, offer_id: res.result?.id ?? null, offer_status: res.result?.status ?? null }
-            : i,
-        ),
-      });
-      onSaved();
-    }
-  }
-
-  async function saveSearch() {
-    const name = prompt("Nome da busca salva (roda sozinha a cada hora):");
-    if (!name || !query) return;
-    const res = await run(() =>
-      api("/saved-searches", { method: "POST", body: { name, query, interval_minutes: 60 } }),
-    );
-    if (res) alert("Busca salva. As ofertas boas vão aparecer em Curadoria.");
-  }
-
-  return (
-    <div className="space-y-4">
-      <form
-        onSubmit={search}
-        className="card grid gap-3 md:grid-cols-[2fr_1fr_1fr_1fr_auto] md:items-end"
-      >
-        <Field label="Produto" htmlFor="keyword">
-          <input
-            className="input"
-            id="keyword"
-            name="keyword"
-            placeholder="air fryer, fone, panelas…"
-          />
-        </Field>
-        <Field label="Desconto mín. %" htmlFor="min_discount">
-          <input
-            className="input"
-            id="min_discount"
-            name="min_discount"
-            type="number"
-            min={0}
-            max={95}
-          />
-        </Field>
-        <Field label="Preço máx. R$" htmlFor="price_max">
-          <input className="input" id="price_max" name="price_max" type="number" min={0} />
-        </Field>
-        <Field label="Ordenar" htmlFor="sort">
-          <select className="input" id="sort" name="sort" defaultValue="relevance">
-            <option value="relevance">Melhor nota</option>
-            <option value="sales">Mais vendidos</option>
-            <option value="commission">Maior comissão</option>
-            <option value="price_asc">Menor preço</option>
-          </select>
-        </Field>
-        <button className="btn" type="submit" disabled={loading}>
-          {loading ? "Buscando…" : "Buscar"}
-        </button>
-      </form>
-
-      {result && (
-        <>
-          <div className="flex items-center justify-between text-sm text-neutral-500">
-            <span>{result.items.length} resultado(s)</span>
-            <button type="button" className="btn-ghost" onClick={saveSearch}>
-              Salvar esta busca
-            </button>
-          </div>
-          {result.errors.map((e) => (
-            <p key={e.platform} className="text-sm text-amber-700">
-              {e.platform}: {e.message}
-            </p>
-          ))}
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {result.items.map((c) => (
-              <div key={c.product_id} className="card flex flex-col gap-2 p-3">
-                <div className="flex gap-3">
-                  {c.image_url && (
-                    // biome-ignore lint/performance/noImgElement: imagens externas das plataformas
-                    <img
-                      src={c.image_url}
-                      alt=""
-                      className="h-20 w-20 shrink-0 rounded-lg object-cover"
-                    />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <div className="line-clamp-2 text-sm">{c.title}</div>
-                    <div className="mt-1 text-xs text-neutral-500">
-                      {c.rating ? `★ ${c.rating.toFixed(1)}` : ""}{" "}
-                      {c.sold_count ? `· ${c.sold_count} vendidos` : ""}
-                    </div>
-                  </div>
-                  <Score value={c.score} />
-                </div>
-                <Price price={c.price} original={c.original_price} discount={c.discount_pct} />
-                <div className="text-xs text-neutral-500">
-                  Comissão: {money(c.commission_value)}
-                </div>
-                <Flags flags={c.flags} />
-                <div className="mt-auto flex gap-2 pt-1">
-                  {c.offer_status ? (
-                    <span className="text-sm text-neutral-500">
-                      Na curadoria ({c.offer_status === "approved" ? "aprovada" : c.offer_status})
-                    </span>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        className="btn flex-1"
-                        onClick={() => save(c, "approved")}
-                      >
-                        Aprovar
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-ghost flex-1"
-                        onClick={() => save(c, "new")}
-                      >
-                        Revisar depois
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
+/** Motivos rápidos de rejeição: ajudam a calibrar as buscas salvas e as regras. */
+const REJECT_REASONS = [
+  "Fora do nicho",
+  "Preço não compensa",
+  "Desconto falso",
+  "Loja ou avaliação ruim",
+  "Já divulgada",
+];
 
 function OfferList({
   status,
   run,
   onChange,
 }: {
-  status: "new" | "approved";
+  status: "new" | "approved" | "rejected";
   run: Runner;
   onChange: () => void;
 }) {
-  const [items, setItems] = useState<Offer[]>([]);
+  const [items, setItems] = useState<Offer[] | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
-  const [links, setLinks] = useState<Record<string, string>>({});
+  /** Oferta com a escolha do motivo da rejeição aberta */
+  const [rejecting, setRejecting] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  /** Oferta com o painel "Gerar link" aberto */
+  const [linkFor, setLinkFor] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const page = await api<{ items: Offer[] }>(`/offers?status=${status}&limit=100`);
@@ -313,22 +138,25 @@ function OfferList({
     load();
   }, [load]);
 
-  async function setStatus(o: Offer, next: "approved" | "rejected") {
-    const reason =
-      next === "rejected" ? (prompt("Motivo da rejeição (opcional):") ?? undefined) : undefined;
+  async function setStatus(o: Offer, next: "approved" | "rejected", reason?: string) {
+    setBusy(`${next}:${o.id}`);
     const res = await run(() =>
       api(`/offers/${o.id}/status`, { method: "POST", body: { status: next, reason } }),
     );
+    setBusy(null);
     if (res) {
+      setRejecting(null);
       await load();
       onChange();
     }
   }
 
   async function validate(o: Offer) {
+    setBusy(`validate:${o.id}`);
     const res = await run(() =>
       api<Mutation<ValidateOfferResult>>(`/offers/${o.id}/validate`, { method: "POST" }),
     );
+    setBusy(null);
     const r = res?.result;
     if (r) {
       setNotes({ ...notes, [o.id]: r.ok ? `✓ Válida (${money(r.price_now)})` : `✗ ${r.reason}` });
@@ -336,96 +164,154 @@ function OfferList({
     }
   }
 
-  async function makeLink(o: Offer) {
-    const source = prompt("Onde vai divulgar? (wa, ig, story, bio, ads)", "wa");
-    if (!source) return;
-    const res = await run(() =>
-      api<Mutation<OfferLink>>(`/offers/${o.id}/links`, { method: "POST", body: { source } }),
-    );
-    if (res?.result) setLinks({ ...links, [o.id]: res.result.short_url });
-  }
-
+  if (!items) return <Loading />;
   if (items.length === 0) {
     return (
-      <p className="card text-sm text-neutral-500">
+      <Empty>
         {status === "new"
           ? "Nada para revisar. Ofertas de buscas salvas e as marcadas como “Revisar depois” aparecem aqui."
-          : "Nenhuma oferta aprovada ainda."}
-      </p>
+          : status === "rejected"
+            ? "Nenhuma oferta rejeitada."
+            : "Nenhuma oferta aprovada ainda. Busque em “Buscar” e aprove as boas."}
+      </Empty>
     );
   }
 
   return (
-    <div className="space-y-2">
-      {items.map((o) => (
-        <div key={o.id} className="card flex flex-col gap-3 p-3 md:flex-row md:items-center">
-          {o.image_url && (
-            // biome-ignore lint/performance/noImgElement: imagens externas das plataformas
-            <img src={o.image_url} alt="" className="h-16 w-16 shrink-0 rounded-lg object-cover" />
-          )}
-          <div className="min-w-0 flex-1 space-y-1">
-            <div className="flex items-start gap-2">
-              <Score value={o.score} />
-              <span className="line-clamp-1 text-sm">{o.title}</span>
-            </div>
-            <Price price={o.price} original={o.original_price} discount={o.discount_pct} />
-            <Flags flags={o.flags} />
-            <div className="text-xs text-neutral-500">
-              Comissão {money(o.commission_value)} · validada {fmtDate(o.last_validated_at)}
-            </div>
-            {notes[o.id] && <div className="text-sm">{notes[o.id]}</div>}
-            {links[o.id] && (
-              <div className="flex items-center gap-2 text-sm">
-                <code className="rounded bg-neutral-100 px-1 dark:bg-neutral-800">
-                  {links[o.id]}
-                </code>
-                <CopyButton value={links[o.id] ?? ""} />
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+      {items.map((o) => {
+        return (
+          <div key={o.id}>
+            <ProductCard
+              p={o}
+              overlay={
+                rejecting === o.id ? (
+                  <div className="flex h-full flex-col gap-1.5 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">Por que rejeitar?</span>
+                      <button
+                        type="button"
+                        className="text-xs text-neutral-500 hover:underline"
+                        onClick={() => setRejecting(null)}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                    {REJECT_REASONS.map((reason) => (
+                      <button
+                        key={reason}
+                        type="button"
+                        disabled={busy !== null}
+                        onClick={() => setStatus(o, "rejected", reason)}
+                        className="rounded-lg border border-neutral-200 px-3 py-1.5 text-left hover:border-neutral-400 disabled:opacity-50 dark:border-neutral-700"
+                      >
+                        {reason}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      disabled={busy !== null}
+                      onClick={() => setStatus(o, "rejected")}
+                      className="px-3 py-1 text-left text-neutral-500 hover:underline disabled:opacity-50"
+                    >
+                      {busy === `rejected:${o.id}` ? "Rejeitando…" : "Sem motivo"}
+                    </button>
+                  </div>
+                ) : linkFor === o.id ? (
+                  <OfferLinkPanel offerId={o.id} onClose={() => setLinkFor(null)} />
+                ) : null
+              }
+              badge={
+                o.origin === "link" ? (
+                  <Tag tone="info" dot>
+                    Por link
+                  </Tag>
+                ) : null
+              }
+              footer={
+                status === "rejected" ? (
+                  <LoadingButton
+                    className="flex-1 px-2"
+                    busy={busy === `approved:${o.id}`}
+                    onClick={() => setStatus(o, "approved")}
+                  >
+                    Aprovar de novo
+                  </LoadingButton>
+                ) : status === "new" ? (
+                  <>
+                    <LoadingButton
+                      className="flex-1 px-2"
+                      busy={busy === `approved:${o.id}`}
+                      onClick={() => setStatus(o, "approved")}
+                    >
+                      Aprovar
+                    </LoadingButton>
+                    <button
+                      type="button"
+                      className="btn-ghost flex-1 px-2"
+                      aria-expanded={rejecting === o.id}
+                      onClick={() => setRejecting(rejecting === o.id ? null : o.id)}
+                    >
+                      Rejeitar
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <a className="btn flex-1 px-2 text-center" href={`/publicacoes?offer=${o.id}`}>
+                      Publicar
+                    </a>
+                    <button
+                      type="button"
+                      className="btn-ghost flex-1 px-2"
+                      aria-expanded={linkFor === o.id}
+                      onClick={() => setLinkFor(linkFor === o.id ? null : o.id)}
+                    >
+                      Gerar link
+                    </button>
+                    <div className="flex w-full justify-between text-xs">
+                      {o.origin === "platform" ? (
+                        <button
+                          type="button"
+                          className="text-neutral-500 hover:underline disabled:opacity-50"
+                          disabled={busy === `validate:${o.id}`}
+                          onClick={() => validate(o)}
+                        >
+                          {busy === `validate:${o.id}` ? "Conferindo…" : "Conferir preço"}
+                        </button>
+                      ) : (
+                        <span />
+                      )}
+                      <button
+                        type="button"
+                        className="text-neutral-500 hover:text-red-600 hover:underline"
+                        aria-expanded={rejecting === o.id}
+                        onClick={() => setRejecting(rejecting === o.id ? null : o.id)}
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  </>
+                )
+              }
+            >
+              <div className="text-xs text-neutral-500">
+                {status === "rejected"
+                  ? `Rejeitada${o.reject_reason ? `: ${o.reject_reason}` : ""}`
+                  : o.origin === "link"
+                    ? `Criada por link · ${fmtDate(o.created_at)}`
+                    : `Conferida ${fmtDate(o.last_validated_at)}`}
               </div>
-            )}
+              {notes[o.id] && <div className="text-xs">{notes[o.id]}</div>}
+            </ProductCard>
           </div>
-          <div className="flex flex-wrap gap-1 md:justify-end">
-            {status === "new" ? (
-              <>
-                <button type="button" className="btn" onClick={() => setStatus(o, "approved")}>
-                  Aprovar
-                </button>
-                <button
-                  type="button"
-                  className="btn-ghost"
-                  onClick={() => setStatus(o, "rejected")}
-                >
-                  Rejeitar
-                </button>
-              </>
-            ) : (
-              <>
-                <a className="btn" href={`/publicacoes?offer=${o.id}`}>
-                  Publicar
-                </a>
-                <button type="button" className="btn-ghost" onClick={() => makeLink(o)}>
-                  Gerar link
-                </button>
-                <button type="button" className="btn-ghost" onClick={() => validate(o)}>
-                  Validar
-                </button>
-                <button
-                  type="button"
-                  className="btn-ghost"
-                  onClick={() => setStatus(o, "rejected")}
-                >
-                  Remover
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
 function SavedSearchesTab({ run }: { run: Runner }) {
-  const [items, setItems] = useState<SavedSearch[]>([]);
+  const [items, setItems] = useState<SavedSearch[] | null>(null);
   const load = useCallback(async () => setItems(await api<SavedSearch[]>("/saved-searches")), []);
   useEffect(() => {
     load();
@@ -438,12 +324,13 @@ function SavedSearchesTab({ run }: { run: Runner }) {
     if (res) await load();
   }
 
+  if (!items) return <Loading />;
   if (items.length === 0) {
     return (
-      <p className="card text-sm text-neutral-500">
+      <Empty>
         Nenhuma busca salva. Faça uma busca e clique em “Salvar esta busca”: ela vai rodar sozinha e
         mandar as ofertas boas para a Curadoria.
-      </p>
+      </Empty>
     );
   }
   return (

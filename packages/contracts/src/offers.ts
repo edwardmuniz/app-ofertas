@@ -2,7 +2,14 @@ import { z } from "zod";
 
 export const PLATFORMS = ["shopee", "amazon", "mercadolivre", "magalu"] as const;
 export const OFFER_STATUS = ["new", "approved", "rejected", "expired"] as const;
-export const OFFER_SORTS = ["relevance", "sales", "price_asc", "price_desc", "commission"] as const;
+export const OFFER_SORTS = [
+  "relevance",
+  "sales",
+  "price_asc",
+  "price_desc",
+  "commission",
+  "discount",
+] as const;
 
 export const QUALITY_FLAGS = [
   "fake_discount",
@@ -19,7 +26,7 @@ export const AffiliateAccount = z.object({
   id: z.string(),
   platform: z.enum(PLATFORMS),
   label: z.string(),
-  mode: z.enum(["live", "fake"]),
+  mode: z.enum(["live", "fake", "feed"]),
   status: z.enum(["active", "error", "disabled"]),
   last_error: z.string().nullable(),
   capabilities: z.object({
@@ -29,6 +36,25 @@ export const AffiliateAccount = z.object({
     subIds: z.number(),
     conversionsReport: z.boolean(),
   }),
+  feed: z
+    .object({
+      synced_at: z.string().nullable().describe("Última importação concluída."),
+      items: z.number().describe("Produtos com desconto no catálogo."),
+      read: z.number().describe("Linhas lidas na última importação."),
+      running: z.boolean(),
+      progress: z
+        .object({
+          file: z.number().describe("Arquivo atual (1 = primeiro)."),
+          files: z.number(),
+          bytes: z.number().describe("Bytes lidos do arquivo atual."),
+          total: z.number().nullable().describe("Tamanho do arquivo atual, se conhecido."),
+        })
+        .nullable()
+        .describe("Andamento da importação em curso."),
+      error: z.string().nullable(),
+    })
+    .nullable()
+    .describe("Só no modo feed."),
   created_at: z.string(),
 });
 export type AffiliateAccount = z.infer<typeof AffiliateAccount>;
@@ -37,15 +63,28 @@ export const ConnectAffiliateAccountInput = z.object({
   platform: z.enum(PLATFORMS),
   label: z.string().trim().min(1).max(80),
   mode: z
-    .enum(["live", "fake"])
+    .enum(["live", "fake", "feed"])
     .default("live")
-    .describe("fake = catálogo simulado, para testar sem credenciais."),
+    .describe(
+      "fake = catálogo simulado; feed = feed de produtos (CSV) da loja, importado todo dia.",
+    ),
   credentials: z
-    .record(z.string(), z.string().max(500))
+    .record(z.string(), z.string().max(4000))
     .optional()
-    .describe("Shopee: { app_id, secret }. Obrigatório no modo live."),
+    .describe(
+      "Shopee live: { app_id, secret }. Shopee feed: { affiliate_id, feed_urls (um link por linha) }.",
+    ),
 });
 export type ConnectAffiliateAccountInput = z.input<typeof ConnectAffiliateAccountInput>;
+
+export const UpdateAffiliateAccountInput = z.object({
+  label: z.string().trim().min(1).max(80).optional(),
+  credentials: z
+    .record(z.string(), z.string().max(4000))
+    .optional()
+    .describe("Só os campos que mudam; em branco mantém o atual. As novas são testadas."),
+});
+export type UpdateAffiliateAccountInput = z.infer<typeof UpdateAffiliateAccountInput>;
 
 // ── Busca ───────────────────────────────────────────────────────
 
@@ -59,6 +98,7 @@ export const SearchOffersInput = z.object({
   platforms: z.array(z.enum(PLATFORMS)).optional().describe("Padrão: todas as contas ativas."),
   sort: z.enum(OFFER_SORTS).default("relevance"),
   limit: z.coerce.number().int().min(1).max(50).default(20),
+  page: z.coerce.number().int().min(1).max(50).default(1).describe("Página (1 = primeira)."),
 });
 export type SearchOffersInput = z.input<typeof SearchOffersInput>;
 
@@ -98,6 +138,7 @@ export const SearchOffersResult = z.object({
   errors: z
     .array(z.object({ platform: z.string(), message: z.string() }))
     .describe("Plataformas que falharam nesta busca."),
+  has_more: z.boolean().describe("Há mais resultados: peça page + 1."),
 });
 export type SearchOffersResult = z.infer<typeof SearchOffersResult>;
 
@@ -106,6 +147,9 @@ export type SearchOffersResult = z.infer<typeof SearchOffersResult>;
 export const Offer = z.object({
   id: z.string(),
   status: z.enum(OFFER_STATUS),
+  origin: z
+    .enum(["platform", "link"])
+    .describe("platform = veio da API da loja; link = criada a partir de um link colado."),
   product_id: z.string(),
   platform: z.enum(PLATFORMS),
   title: z.string(),
@@ -200,6 +244,63 @@ export const FindSimilarInput = z.object({
 });
 export type FindSimilarInput = z.input<typeof FindSimilarInput>;
 
+// ── Oferta por link ─────────────────────────────────────────────
+
+export const OfferFromLinkInput = z.object({
+  url: z
+    .url()
+    .max(2000)
+    .describe("Link do produto, de preferência o link de afiliado (ex.: s.shopee.com.br/…)."),
+});
+export type OfferFromLinkInput = z.infer<typeof OfferFromLinkInput>;
+
+export const OfferLinkPreview = z.object({
+  platform: z.enum(PLATFORMS),
+  external_id: z.string().describe("Id do produto na loja (ou derivado do link)."),
+  product_url: z.string(),
+  affiliate_url: z.string().describe("Destino dos links curtos: o próprio link colado."),
+  is_affiliate_link: z
+    .boolean()
+    .describe(
+      "false = parece link comum da loja (sem comissão). Gere o link de afiliado no portal.",
+    ),
+  source: z
+    .enum(["platform", "page"])
+    .describe("platform = dados da API da loja (conta real); page = lidos da página."),
+  title: z.string().nullable(),
+  image_url: z.string().nullable(),
+  price: z.number().nullable(),
+  original_price: z.number().nullable(),
+  shop_name: z.string().nullable(),
+  missing: z
+    .array(z.enum(["title", "image", "price"]))
+    .describe("O que não foi encontrado e precisa ser informado."),
+  existing_offer_id: z.string().nullable().describe("Oferta aberta do mesmo produto, se houver."),
+});
+export type OfferLinkPreview = z.infer<typeof OfferLinkPreview>;
+
+export const ImportOfferFromLinkInput = z.object({
+  url: z.url().max(2000).describe("O link colado (de preferência o de afiliado)."),
+  title: z.string().trim().min(3).max(300),
+  image_url: z.url().max(2000).nullable().optional().describe("Foto do produto."),
+  price: z.number().positive().max(1_000_000).describe("Preço atual (R$)."),
+  original_price: z
+    .number()
+    .positive()
+    .max(1_000_000)
+    .nullable()
+    .optional()
+    .describe('Preço "de" (R$), se houver.'),
+  coupon_code: z.string().max(60).optional(),
+  coupon_description: z.string().max(200).optional(),
+  notes: z.string().max(1000).optional(),
+  status: z
+    .enum(["new", "approved"])
+    .default("approved")
+    .describe("approved = pronta para publicar; new = fica na curadoria."),
+});
+export type ImportOfferFromLinkInput = z.input<typeof ImportOfferFromLinkInput>;
+
 export const CreateOfferLinkInput = z.object({
   offer_id: z.uuid(),
   source: z.string().max(40).describe("Onde será divulgado: wa, ig, story, bio, ads..."),
@@ -241,3 +342,11 @@ export const UpsertSavedSearchInput = z.object({
   active: z.boolean().optional(),
 });
 export type UpsertSavedSearchInput = z.input<typeof UpsertSavedSearchInput>;
+
+export const OfferCategory = z.object({
+  id: z.string().describe("Use em search_offers.category_id."),
+  name: z.string(),
+  platform: z.enum(PLATFORMS),
+  count: z.number().nullable().describe("Produtos no catálogo (feed); null se desconhecido."),
+});
+export type OfferCategory = z.infer<typeof OfferCategory>;

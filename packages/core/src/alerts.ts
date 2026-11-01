@@ -7,7 +7,7 @@ import {
   type SystemStatus,
 } from "@ofertas/contracts";
 import { alerts, channels, messagingAccounts, posts, workspaces } from "@ofertas/db";
-import { and, desc, eq, gte, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, lt, ne, or, sql } from "drizzle-orm";
 import { requireScope } from "./authz";
 import { type Ctx, type Deps, now } from "./context";
 
@@ -109,6 +109,58 @@ async function collectFindings(deps: Deps): Promise<Finding[]> {
       severity: "critical",
       message: `${s.n} publicação(ões) atrasada(s) há mais de 10 min: a fila de envio parou.`,
       details: { overdue: s.n, oldest_scheduled_at: new Date(s.oldest).toISOString() },
+    });
+  }
+
+  // Grupo em que o número perdeu admin (e só admins enviam): as publicações vão falhar.
+  const noAdmin = await deps.db
+    .select({ id: channels.id, workspaceId: channels.workspaceId, name: channels.name })
+    .from(channels)
+    .where(
+      and(
+        eq(channels.status, "active"),
+        isNotNull(channels.messagingAccountId),
+        eq(channels.adminOnly, true),
+        eq(channels.numberIsAdmin, false),
+      ),
+    );
+  for (const c of noAdmin) {
+    findings.push({
+      workspaceId: c.workspaceId,
+      kind: "group_admin_lost",
+      subject: c.id,
+      severity: "warning",
+      message: `O número não é mais admin de "${c.name}", onde só admins enviam: as ofertas não saem. Peça a um admin para promovê-lo de novo.`,
+      details: { channel_id: c.id },
+    });
+  }
+
+  // Grupo apagado ou suspenso pelo WhatsApp.
+  const gone = await deps.db
+    .select({
+      id: channels.id,
+      workspaceId: channels.workspaceId,
+      name: channels.name,
+      state: channels.providerState,
+    })
+    .from(channels)
+    .where(
+      and(
+        inArray(channels.providerState, ["deleted", "suspended"]),
+        ne(channels.status, "archived"),
+      ),
+    );
+  for (const c of gone) {
+    findings.push({
+      workspaceId: c.workspaceId,
+      kind: "group_unavailable",
+      subject: c.id,
+      severity: "critical",
+      message:
+        c.state === "deleted"
+          ? `O grupo "${c.name}" foi apagado no WhatsApp. Remova-o da plataforma em Grupos.`
+          : `O grupo "${c.name}" foi suspenso pelo WhatsApp. As publicações nele estão pausadas.`,
+      details: { channel_id: c.id, state: c.state },
     });
   }
 

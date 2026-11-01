@@ -4,7 +4,7 @@ import type { Db, DbOrTx } from "@ofertas/db";
 import type { AlertNotifier } from "./alerts";
 import type { KeyValueCache } from "./cache";
 import type { CounterStore } from "./limits";
-import type { MediaFetcher } from "./safe-fetch";
+import type { MediaFetcher, PageFetcher, StreamOpener } from "./safe-fetch";
 import type { SecretBox } from "./secrets";
 import type { ObjectStorage } from "./storage";
 
@@ -40,6 +40,10 @@ export type Deps = {
   storage: ObjectStorage;
   /** Baixa mídia de URLs públicas com proteção contra endereços internos */
   fetchMedia: MediaFetcher;
+  /** Baixa páginas de produto (oferta por link). */
+  fetchPage: PageFetcher;
+  /** Baixa arquivos grandes em fluxo (feed de produtos). */
+  openStream: StreamOpener;
   /** URL pública da API: links de upload e de imagens (precisa ser acessível pela Evolution Go) */
   publicApiUrl: string;
   /** Envia alertas ao webhook do workspace (ausente = não notifica) */

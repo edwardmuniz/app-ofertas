@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Channel } from "./channels";
+import { CHANNEL_STATUS, Channel } from "./channels";
 import { CREATIVE_TEMPLATES } from "./creatives";
 import { PLATFORMS } from "./offers";
 
@@ -40,13 +40,60 @@ export const ConnectionState = z.object({
 });
 export type ConnectionState = z.infer<typeof ConnectionState>;
 
+export const SyncGroupsInput = z.object({
+  group_jids: z
+    .array(z.string().min(1))
+    .max(1000)
+    .optional()
+    .describe(
+      "Grupos a importar (JIDs vindos do dry_run). Sem esta lista, só atualiza os grupos já importados.",
+    ),
+  segment_ids: z
+    .array(z.uuid())
+    .max(50)
+    .optional()
+    .describe("Segmentos adicionados aos grupos escolhidos (os que eles já têm são mantidos)."),
+});
+export type SyncGroupsInput = z.infer<typeof SyncGroupsInput>;
+
+export const AvailableGroup = z.object({
+  jid: z.string(),
+  name: z.string(),
+  participant_count: z.number(),
+  admin_only: z.boolean().nullable(),
+  number_is_admin: z.boolean().nullable(),
+  channel_id: z.string().nullable().describe("Canal correspondente, se o grupo já foi importado."),
+  channel_status: z.enum(CHANNEL_STATUS).nullable(),
+});
+export type AvailableGroup = z.infer<typeof AvailableGroup>;
+
+/** Prévia (dry_run) da importação: o que o número tem e o que vai mudar. */
+export const SyncGroupsPreview = z.object({
+  groups: z.array(AvailableGroup),
+  left: z
+    .array(z.object({ channel_id: z.string(), name: z.string() }))
+    .describe("Canais ligados ao número cujo grupo ele não está mais."),
+  selected: z.array(z.string()),
+  to_create: z.number(),
+  to_update: z.number(),
+});
+export type SyncGroupsPreview = z.infer<typeof SyncGroupsPreview>;
+
 export const SyncGroupsResult = z.object({
   created: z.number(),
   updated: z.number(),
   invite_errors: z.number().describe("Grupos sem link de convite (o número precisa ser admin)."),
+  no_invite: z.array(z.string()).describe("Nomes dos grupos que ficaram sem link de convite."),
   channels: z.array(Channel),
 });
 export type SyncGroupsResult = z.infer<typeof SyncGroupsResult>;
+
+export const RemoveMessagingAccountResult = z.object({
+  removed: z.literal(true),
+  channels_kept: z.number().describe("Grupos que continuam como canais, sem número ligado."),
+  scheduled_posts_canceled: z.number(),
+});
+export type RemoveMessagingAccountResult = z.infer<typeof RemoveMessagingAccountResult>;
 
 // ── Modelos de mensagem ─────────────────────────────────────────
 
@@ -180,6 +227,8 @@ export const ListPostsQuery = z.object({
   status: z.enum(POST_STATUS).optional(),
   channel_id: z.uuid().optional(),
   offer_id: z.uuid().optional(),
+  from: isoDate.optional().describe("Envio (ou agendamento) a partir de (ISO)."),
+  to: isoDate.optional().describe("Envio (ou agendamento) antes de (ISO)."),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.string().optional(),
 });
@@ -231,7 +280,7 @@ export const UpsertAutomationRuleInput = z.object({
   min_interval_minutes: z
     .number()
     .int()
-    .min(5)
+    .min(1)
     .max(720)
     .optional()
     .describe("Intervalo mínimo entre posts da regra no mesmo grupo. Padrão: 30."),

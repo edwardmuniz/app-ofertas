@@ -10,8 +10,10 @@ import {
   PostPage,
   PostPreview,
   PreviewPostInput,
+  RemoveMessagingAccountResult,
   SchedulePostsInput,
   ScheduleResult,
+  SyncGroupsInput,
   SyncGroupsResult,
   UpsertAutomationRuleInput,
   UpsertMessageTemplateInput,
@@ -30,6 +32,7 @@ import {
   listPosts,
   logoutMessagingAccount,
   previewPost,
+  removeMessagingAccount,
   requestPairingCode,
   schedulePosts,
   setChannelAdminOnly,
@@ -107,17 +110,30 @@ export const publishingRoutes: FastifyPluginAsyncZod<{ deps: Deps }> = async (ap
     },
     async (req) => logoutMessagingAccount(ctx(req), req.params.id, mutationOpts(req)),
   );
+  app.delete(
+    "/whatsapp/accounts/:id",
+    {
+      schema: {
+        tags: ["whatsapp"],
+        params: IdParams,
+        ...mutationSchema,
+        response: { 200: MutationResult(RemoveMessagingAccountResult), ...errors },
+      },
+    },
+    async (req) => removeMessagingAccount(ctx(req), req.params.id, mutationOpts(req)),
+  );
   app.post(
     "/whatsapp/accounts/:id/sync-groups",
     {
       schema: {
         tags: ["whatsapp"],
         params: IdParams,
+        body: SyncGroupsInput.optional(),
         ...mutationSchema,
         response: { 200: MutationResult(SyncGroupsResult), ...errors },
       },
     },
-    async (req) => syncGroups(ctx(req), req.params.id, mutationOpts(req)),
+    async (req) => syncGroups(ctx(req), req.params.id, req.body ?? {}, mutationOpts(req)),
   );
   app.post(
     "/channels/:id/admin-only",

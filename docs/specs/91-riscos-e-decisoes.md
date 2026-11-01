@@ -24,7 +24,6 @@
 | **Preço no criativo desatualizado**                                                           | Médio: reclamação/termos       | Revalidar antes de enviar; regenerar ou bloquear                                                                                |
 | **LGPD**                                                                                      | Médio                          | Hash de identificadores, política de privacidade, retenção                                                                      |
 | **Agente executar ação errada em massa**                                                      | Médio                          | `dry_run`, limites no servidor, aprovação, idempotência, auditoria, desfazer                                                    |
-| **Prazo da BF (27/11)**                                                                       | Médio                          | Escopo MVP enxuto (fases 0–5); vídeo, IG e ads depois                                                                           |
 
 ## A verificar (pesquisa antes da fase correspondente)
 

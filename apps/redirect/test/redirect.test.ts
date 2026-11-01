@@ -15,10 +15,9 @@ import {
   SecretBox,
   signup,
   updateTrackedLink,
-  upsertChannel,
   upsertSegment,
 } from "@ofertas/core";
-import { createDb, runMigrations } from "@ofertas/db";
+import { channelSegments, channels, createDb, runMigrations } from "@ofertas/db";
 import { resetDb } from "@ofertas/db/testing";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -55,6 +54,12 @@ beforeAll(async () => {
     messagingWebhookUrl: "http://api.test/webhooks/whatsapp",
     storage: new MemoryStorage(),
     fetchMedia: async () => {
+      throw new Error("sem rede nos testes");
+    },
+    fetchPage: async () => {
+      throw new Error("sem rede nos testes");
+    },
+    openStream: async () => {
       throw new Error("sem rede nos testes");
     },
     publicApiUrl: "http://localhost",
@@ -127,16 +132,28 @@ describe("links", () => {
   });
 });
 
+/** Grupo direto no banco (não há cadastro manual de canais). */
+async function insertChannel(
+  workspaceId: string,
+  v: { name: string; inviteUrl: string; memberCount?: number; segmentId: string },
+) {
+  const [row] = await deps.db
+    .insert(channels)
+    .values({ workspaceId, name: v.name, inviteUrl: v.inviteUrl, memberCount: v.memberCount ?? 0 })
+    .returning();
+  if (!row) throw new Error("canal");
+  await deps.db.insert(channelSegments).values({ channelId: row.id, segmentId: v.segmentId });
+  return row;
+}
+
 describe("convites", () => {
   it("manda para o grupo com vaga e registra o canal do clique", async () => {
     const seg = done(await upsertSegment(ctx, { name: "tech" }));
-    const g = done(
-      await upsertChannel(ctx, {
-        name: "Tech 1",
-        invite_url: "https://chat.whatsapp.com/AAA",
-        segment_ids: [seg.id],
-      }),
-    );
+    const g = await insertChannel(ctx.actor.workspaceId, {
+      name: "Tech 1",
+      inviteUrl: "https://chat.whatsapp.com/AAA",
+      segmentId: seg.id,
+    });
     const inv = done(
       await createInviteLink(ctx, { segment_id: seg.id, name: "Tech", slug: "tech" }),
     );
@@ -154,11 +171,11 @@ describe("convites", () => {
 
   it("grupos lotados sem fallback → página de lotado", async () => {
     const seg = done(await upsertSegment(ctx, { name: "cheio" }));
-    await upsertChannel(ctx, {
+    await insertChannel(ctx.actor.workspaceId, {
       name: "Lotado",
-      invite_url: "https://chat.whatsapp.com/BBB",
-      member_count: 1024,
-      segment_ids: [seg.id],
+      inviteUrl: "https://chat.whatsapp.com/BBB",
+      memberCount: 1024,
+      segmentId: seg.id,
     });
     await createInviteLink(ctx, { segment_id: seg.id, name: "Cheio", slug: "cheio" });
     const res = await app.inject({ url: "/entrar/cheio", headers: { "user-agent": BROWSER_UA } });

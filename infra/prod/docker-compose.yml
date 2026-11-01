@@ -14,6 +14,8 @@ x-app: &app
     REDIS_URL: redis://redis:6379
     MEDIA_DIR: /data/media
     API_INTERNAL_URL: http://api:3001
+    # Tudo fica atrás do Caddy: o IP real do cliente vem no X-Forwarded-For.
+    TRUST_PROXY: "true"
   restart: unless-stopped
   depends_on:
     postgres: { condition: service_healthy }

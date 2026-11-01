@@ -1,8 +1,20 @@
 "use client";
 
 import type { Channel, LinkStats, TrackedLink } from "@ofertas/contracts";
-import { useCallback, useEffect, useState } from "react";
-import { Badge, CopyButton, ErrorText, Field, PageHeader, Stat } from "@/components/ui";
+import { Fragment, useCallback, useEffect, useState } from "react";
+import {
+  Badge,
+  Chip,
+  CopyButton,
+  Empty,
+  ErrorText,
+  Field,
+  InlineInput,
+  Loading,
+  LoadingButton,
+  PageHeader,
+  Stat,
+} from "@/components/ui";
 import { ApiError, api, fmtDate } from "@/lib/api";
 
 const SOURCES = [
@@ -16,8 +28,16 @@ const SOURCES = [
 
 type Page = { items: TrackedLink[]; next_cursor: string | null };
 
+const sourceLabel = (v: string | null) =>
+  v ? (SOURCES.find((s) => s.value === v)?.label ?? v) : "—";
+
 export default function LinksPage() {
-  const [links, setLinks] = useState<TrackedLink[]>([]);
+  const [links, setLinks] = useState<TrackedLink[] | null>(null);
+  const [source, setSource] = useState("wa");
+  const [more, setMore] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [created, setCreated] = useState<TrackedLink | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [totals, setTotals] = useState<LinkStats["totals"] | null>(null);
   const [clicksByLink, setClicksByLink] = useState<Record<string, number>>({});
@@ -57,26 +77,35 @@ export default function LinksPage() {
     const form = e.currentTarget;
     const f = new FormData(form);
     const opt = (k: string) => String(f.get(k) ?? "").trim() || undefined;
-    await run(() =>
-      api("/links", {
+    setCreating(true);
+    setCreated(null);
+    await run(async () => {
+      const res = await api<{ result?: TrackedLink }>("/links", {
         method: "POST",
         body: {
           destination_url: f.get("destination_url"),
           title: opt("title"),
-          source: opt("source"),
+          source,
           campaign: opt("campaign"),
           channel_id: opt("channel_id"),
           slug: opt("slug"),
         },
-      }),
-    );
-    form.reset();
+      });
+      if (res.result) {
+        setCreated(res.result);
+        form.reset();
+      }
+    });
+    setCreating(false);
   }
 
-  function changeDestination(l: TrackedLink) {
-    const url = prompt("Novo destino (o link curto continua o mesmo):", l.destination_url);
-    if (!url || url === l.destination_url) return;
-    run(() => api(`/links/${l.id}`, { method: "PATCH", body: { destination_url: url } }));
+  async function changeDestination(l: TrackedLink, url: string) {
+    if (!url || url === l.destination_url) {
+      setEditing(null);
+      return;
+    }
+    await run(() => api(`/links/${l.id}`, { method: "PATCH", body: { destination_url: url } }));
+    setEditing(null);
   }
 
   return (
@@ -116,38 +145,60 @@ export default function LinksPage() {
         <Field label="Título" htmlFor="title">
           <input className="input" id="title" name="title" placeholder="Ex.: Air fryer 40% OFF" />
         </Field>
-        <Field label="Onde vai ser divulgado" htmlFor="source">
-          <select className="input" id="source" name="source" defaultValue="wa">
+        <div className="space-y-1.5">
+          <div className="label">Onde vai ser divulgado</div>
+          <div className="flex flex-wrap gap-2">
             {SOURCES.map((s) => (
-              <option key={s.value} value={s.value}>
+              <Chip key={s.value} on={source === s.value} onClick={() => setSource(s.value)}>
                 {s.label}
-              </option>
+              </Chip>
             ))}
-          </select>
-        </Field>
-        <Field label="Grupo (opcional)" htmlFor="channel_id">
-          <select className="input" id="channel_id" name="channel_id">
-            <option value="">—</option>
-            {channels.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Campanha" htmlFor="campaign">
-            <input className="input" id="campaign" name="campaign" placeholder="black-friday" />
-          </Field>
-          <Field label="Slug (opcional)" htmlFor="slug">
-            <input className="input" id="slug" name="slug" placeholder="gerado" />
-          </Field>
+          </div>
         </div>
-        <div className="md:col-span-2">
-          <ErrorText error={error} />
-          <button className="btn mt-2" type="submit">
-            Criar link
+        {more ? (
+          <>
+            <Field label="Grupo (opcional)" htmlFor="channel_id">
+              <select className="input" id="channel_id" name="channel_id">
+                <option value="">Nenhum</option>
+                {channels
+                  .filter((c) => c.status !== "archived")
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+              </select>
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Campanha" htmlFor="campaign">
+                <input className="input" id="campaign" name="campaign" placeholder="black-friday" />
+              </Field>
+              <Field label="Final do link (opcional)" htmlFor="slug">
+                <input className="input" id="slug" name="slug" placeholder="gerado sozinho" />
+              </Field>
+            </div>
+          </>
+        ) : (
+          <button
+            type="button"
+            className="justify-self-start text-sm text-neutral-500 hover:underline md:col-span-2"
+            onClick={() => setMore(true)}
+          >
+            + Grupo, campanha e final do link
           </button>
+        )}
+        <div className="space-y-3 md:col-span-2">
+          <ErrorText error={error} />
+          <LoadingButton busy={creating} type="submit">
+            Criar link
+          </LoadingButton>
+          {created && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm dark:bg-emerald-500/10">
+              <span>Link criado:</span>
+              <code className="font-mono">{created.short_url}</code>
+              <CopyButton value={created.short_url} />
+            </div>
+          )}
         </div>
       </form>
 
@@ -161,8 +212,12 @@ export default function LinksPage() {
             onChange={(e) => setQ(e.target.value)}
           />
         </div>
-        {links.length === 0 ? (
-          <p className="text-sm text-neutral-500">Nenhum link ainda.</p>
+        {!links ? (
+          <Loading />
+        ) : links.length === 0 ? (
+          <Empty>
+            {q ? `Nenhum link com “${q}”.` : "Nenhum link ainda. Crie o primeiro acima."}
+          </Empty>
         ) : (
           <table className="w-full text-left text-sm">
             <thead className="text-neutral-500">
@@ -177,42 +232,61 @@ export default function LinksPage() {
             </thead>
             <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
               {links.map((l) => (
-                <tr key={l.id}>
-                  <td className="py-2">
-                    <div>{l.title ?? l.slug}</div>
-                    <div className="font-mono text-xs text-neutral-500">{l.short_url}</div>
-                    <div className="text-xs text-neutral-400">{fmtDate(l.created_at)}</div>
-                  </td>
-                  <td className="max-w-56 truncate py-2 text-neutral-500" title={l.destination_url}>
-                    {l.destination_url}
-                  </td>
-                  <td className="py-2">{l.source ?? "—"}</td>
-                  <td className="py-2 tabular-nums">{clicksByLink[l.id] ?? 0}</td>
-                  <td className="py-2">
-                    <Badge on={l.active} onLabel="Ativo" offLabel="Inativo" />
-                  </td>
-                  <td className="space-x-1 py-2 text-right whitespace-nowrap">
-                    <CopyButton value={l.short_url} />
-                    <button
-                      type="button"
-                      className="btn-ghost"
-                      onClick={() => changeDestination(l)}
+                <Fragment key={l.id}>
+                  <tr>
+                    <td className="py-2">
+                      <div>{l.title ?? l.slug}</div>
+                      <div className="font-mono text-xs text-neutral-500">{l.short_url}</div>
+                      <div className="text-xs text-neutral-400">{fmtDate(l.created_at)}</div>
+                    </td>
+                    <td
+                      className="max-w-56 truncate py-2 text-neutral-500"
+                      title={l.destination_url}
                     >
-                      Destino
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-ghost"
-                      onClick={() =>
-                        run(() =>
-                          api(`/links/${l.id}`, { method: "PATCH", body: { active: !l.active } }),
-                        )
-                      }
-                    >
-                      {l.active ? "Desativar" : "Ativar"}
-                    </button>
-                  </td>
-                </tr>
+                      {l.destination_url}
+                    </td>
+                    <td className="py-2">{sourceLabel(l.source)}</td>
+                    <td className="py-2 tabular-nums">{clicksByLink[l.id] ?? 0}</td>
+                    <td className="py-2">
+                      <Badge on={l.active} onLabel="Ativo" offLabel="Inativo" />
+                    </td>
+                    <td className="space-x-1 py-2 text-right whitespace-nowrap">
+                      <CopyButton value={l.short_url} />
+                      <button
+                        type="button"
+                        className="btn-ghost"
+                        aria-expanded={editing === l.id}
+                        onClick={() => setEditing(editing === l.id ? null : l.id)}
+                      >
+                        Trocar destino
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost"
+                        onClick={() =>
+                          run(() =>
+                            api(`/links/${l.id}`, { method: "PATCH", body: { active: !l.active } }),
+                          )
+                        }
+                      >
+                        {l.active ? "Desativar" : "Ativar"}
+                      </button>
+                    </td>
+                  </tr>
+                  {editing === l.id && (
+                    <tr>
+                      <td colSpan={6} className="pb-3">
+                        <InlineInput
+                          label="Novo destino (o link curto continua o mesmo)"
+                          initial={l.destination_url}
+                          submitLabel="Trocar"
+                          onSubmit={(url) => changeDestination(l, url)}
+                          onCancel={() => setEditing(null)}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>

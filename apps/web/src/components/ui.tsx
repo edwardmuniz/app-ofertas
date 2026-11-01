@@ -1,5 +1,6 @@
 "use client";
 
+import { Check, Loader2 } from "lucide-react";
 import { useState } from "react";
 
 export function CopyButton({ value, label = "Copiar" }: { value: string; label?: string }) {
@@ -292,4 +293,234 @@ export function ErrorText({ error }: { error: string | null }) {
 
 export function Stat({ label, value }: { label: string; value: number | string }) {
   return <StatCard label={label} value={value} />;
+}
+
+/** Botão de escolha em formato de pílula (seleção única ou múltipla). */
+export function Chip({
+  on,
+  onClick,
+  children,
+  disabled,
+}: {
+  on: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      disabled={disabled}
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors disabled:opacity-40 ${
+        on
+          ? "border-neutral-900 bg-neutral-900 text-white dark:border-white dark:bg-white dark:text-neutral-900"
+          : "border-neutral-300 hover:border-neutral-400 dark:border-neutral-700 dark:hover:border-neutral-500"
+      }`}
+    >
+      {on && <Check className="h-3.5 w-3.5" />}
+      {children}
+    </button>
+  );
+}
+
+/** Opções lado a lado com título e explicação (substitui <select> com textos longos). */
+export function ChoiceCards<T extends string>({
+  options,
+  value,
+  onChange,
+  columns = 3,
+}: {
+  options: readonly { value: T; label: string; hint?: string }[];
+  value: T;
+  onChange: (v: T) => void;
+  columns?: 2 | 3 | 4;
+}) {
+  const cols = { 2: "sm:grid-cols-2", 3: "sm:grid-cols-3", 4: "sm:grid-cols-2 lg:grid-cols-4" }[
+    columns
+  ];
+  return (
+    <div className={`grid gap-2 ${cols}`}>
+      {options.map((o) => {
+        const on = o.value === value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            aria-pressed={on}
+            onClick={() => onChange(o.value)}
+            className={`rounded-lg border p-3 text-left transition-colors ${
+              on
+                ? "border-brand-500 bg-brand-50/60 dark:bg-brand-500/10"
+                : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-800 dark:hover:border-neutral-700"
+            }`}
+          >
+            <span className="block text-sm font-medium">{o.label}</span>
+            {o.hint && <span className="block text-xs text-neutral-500">{o.hint}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Botão que mostra "carregando" e fica desativado enquanto a ação roda. */
+export function LoadingButton({
+  busy,
+  children,
+  variant = "btn",
+  type = "button",
+  disabled,
+  onClick,
+  className = "",
+}: {
+  busy: boolean;
+  children: React.ReactNode;
+  variant?: "btn" | "btn-ghost" | "btn-accent";
+  type?: "button" | "submit";
+  disabled?: boolean;
+  onClick?: () => void;
+  className?: string;
+}) {
+  return (
+    <button
+      type={type}
+      className={`${variant} inline-flex items-center justify-center gap-1.5 ${className}`}
+      disabled={busy || disabled}
+      onClick={onClick}
+    >
+      {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+      {children}
+    </button>
+  );
+}
+
+/** Indicador de carregamento de página ou seção. */
+export function Loading({ label = "Carregando…" }: { label?: string }) {
+  return (
+    <p className="flex items-center gap-2 text-sm text-neutral-500">
+      <Loader2 className="h-4 w-4 animate-spin" /> {label}
+    </p>
+  );
+}
+
+/**
+ * Campo curto que aparece no lugar de um prompt() do navegador: digita, Enter salva, Esc cancela.
+ */
+export function InlineInput({
+  label,
+  placeholder,
+  initial = "",
+  submitLabel = "Salvar",
+  maxLength,
+  required = true,
+  onSubmit,
+  onCancel,
+}: {
+  label: string;
+  placeholder?: string;
+  initial?: string;
+  submitLabel?: string;
+  maxLength?: number;
+  required?: boolean;
+  onSubmit: (value: string) => Promise<unknown> | unknown;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(initial);
+  const [busy, setBusy] = useState(false);
+  return (
+    <form
+      className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 p-2 dark:border-neutral-800"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        try {
+          await onSubmit(value.trim());
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <label className="text-sm text-neutral-600 dark:text-neutral-400">
+        {label}
+        <input
+          className="input mt-1 min-w-64"
+          // biome-ignore lint/a11y/noAutofocus: campo aberto por ação do usuário
+          autoFocus
+          value={value}
+          maxLength={maxLength}
+          placeholder={placeholder}
+          required={required}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => e.key === "Escape" && onCancel()}
+        />
+      </label>
+      <div className="flex gap-2 self-end">
+        <LoadingButton busy={busy} type="submit">
+          {submitLabel}
+        </LoadingButton>
+        <button type="button" className="btn-ghost" disabled={busy} onClick={onCancel}>
+          Cancelar
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * Ação destrutiva com confirmação na própria tela: o primeiro clique mostra o aviso e os
+ * botões Confirmar/Cancelar (sem janela do navegador).
+ */
+export function ConfirmButton({
+  children,
+  message,
+  confirmLabel = "Remover",
+  onConfirm,
+  busy = false,
+  className = "",
+}: {
+  children: React.ReactNode;
+  message: React.ReactNode;
+  confirmLabel?: string;
+  onConfirm: () => void | Promise<void>;
+  busy?: boolean;
+  className?: string;
+}) {
+  const [asking, setAsking] = useState(false);
+  if (!asking) {
+    return (
+      <button type="button" className={`btn-ghost ${className}`} onClick={() => setAsking(true)}>
+        {children}
+      </button>
+    );
+  }
+  return (
+    <span
+      role="alertdialog"
+      className="inline-flex flex-wrap items-center gap-2 rounded-lg bg-red-50 px-2.5 py-1.5 text-left text-sm text-red-800 dark:bg-red-500/15 dark:text-red-200"
+    >
+      <span className="max-w-xs">{message}</span>
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 rounded-md bg-red-600 px-2.5 py-1 font-medium text-white hover:bg-red-700 disabled:opacity-60"
+        disabled={busy}
+        onClick={async () => {
+          await onConfirm();
+          setAsking(false);
+        }}
+      >
+        {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+        {confirmLabel}
+      </button>
+      <button
+        type="button"
+        className="rounded-md px-2 py-1 hover:bg-red-100 dark:hover:bg-red-500/20"
+        disabled={busy}
+        onClick={() => setAsking(false)}
+      >
+        Cancelar
+      </button>
+    </span>
+  );
 }

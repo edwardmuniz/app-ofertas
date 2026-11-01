@@ -16,6 +16,7 @@ import {
   type Ctx,
   completeUpload,
   type Deps,
+  deleteCreative,
   generateCreative,
   getBrandKit,
   getCreative,
@@ -134,6 +135,22 @@ export const creativeRoutes: FastifyPluginAsyncZod<{ deps: Deps }> = async (app,
     "/creatives/:id",
     { schema: { tags: ["criativos"], params: IdParams, response: { 200: Creative, ...errors } } },
     async (req) => getCreative(ctx(req), req.params.id),
+  );
+  app.delete(
+    "/creatives/:id",
+    {
+      schema: {
+        tags: ["criativos"],
+        description: "Remove o criativo e seus arquivos.",
+        params: IdParams,
+        ...mutationSchema,
+        response: {
+          200: MutationResult(z.object({ id: z.string(), deleted: z.literal(true) })),
+          ...errors,
+        },
+      },
+    },
+    async (req) => deleteCreative(ctx(req), req.params.id, mutationOpts(req)),
   );
   app.post(
     "/creatives/:id/validate",

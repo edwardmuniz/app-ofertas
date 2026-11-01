@@ -209,11 +209,43 @@ export const channels = pgTable(
     messagingAccountId: uuid().references(() => messagingAccounts.id, { onDelete: "set null" }),
     /** Só administradores enviam mensagens (recomendado para grupos de ofertas) */
     adminOnly: boolean(),
+    /** O número ligado é admin do grupo (sem isso não publica em grupo "só admins") */
+    numberIsAdmin: boolean(),
+    description: text(),
+    /** Só admins editam nome, descrição e foto */
+    locked: boolean(),
+    /** Entrada precisa de aprovação de um admin */
+    approvalRequired: boolean(),
+    /** Só admins adicionam membros */
+    adminsAddMembers: boolean(),
+    /** Estado do grupo no WhatsApp (via webhook): apagado ou suspenso pausa o canal */
+    providerState: text({ enum: ["ok", "deleted", "suspended"] })
+      .notNull()
+      .default("ok"),
+    /** Comunidade a que o grupo está ligado (JID) */
+    communityJid: text(),
     lastSyncedAt: timestamp({ withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [index().on(t.workspaceId), uniqueIndex().on(t.workspaceId, t.externalId)],
+);
+
+/**
+ * Telefones da equipe (dono, número reserva, moderadores). Só eles podem ser adicionados a
+ * grupos pela plataforma: adicionar clientes sem consentimento é spam (banimento e LGPD).
+ */
+export const teamContacts = pgTable(
+  "team_contacts",
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    /** Só dígitos, com DDI (ex.: 5511999998888) */
+    phone: text().notNull(),
+    label: text().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex().on(t.workspaceId, t.phone)],
 );
 
 export const segments = pgTable(
@@ -344,8 +376,8 @@ export const affiliateAccounts = pgTable(
     workspaceId: workspaceId(),
     platform: platform(),
     label: text().notNull(),
-    /** live = API real; fake = catálogo simulado (desenvolvimento e sandbox) */
-    mode: text({ enum: ["live", "fake"] })
+    /** live = API real; fake = catálogo simulado; feed = feed de produtos (CSV) da loja */
+    mode: text({ enum: ["live", "fake", "feed"] })
       .notNull()
       .default("live"),
     /** JSON das credenciais cifrado com AES-256-GCM */
@@ -354,10 +386,65 @@ export const affiliateAccounts = pgTable(
       .notNull()
       .default("active"),
     lastError: text(),
+    /** Modo feed: última importação concluída (vazio = importar na próxima rodada do worker) */
+    feedSyncedAt: timestamp({ withTimezone: true }),
+    feedInfo: jsonb().$type<FeedInfo>(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [index().on(t.workspaceId)],
+);
+
+export type FeedInfo = {
+  /** Produtos guardados (com desconto) e lidos no total */
+  items: number;
+  read: number;
+  files: number;
+  seconds: number;
+  error?: string | null;
+  /** Importação em andamento desde */
+  running_since?: string | null;
+  /** Andamento da importação atual (arquivo n de N, bytes lidos do arquivo atual) */
+  progress?: {
+    file: number;
+    files: number;
+    bytes: number;
+    total: number | null;
+    /** Última atualização (sinal de vida: parada há minutos = importação interrompida) */
+    at?: string;
+  } | null;
+};
+
+/**
+ * Catálogo local do feed de produtos (só itens em desconto). A busca e a validação das contas
+ * em modo feed consultam esta tabela; o worker a recria todo dia.
+ */
+export const feedItems = pgTable(
+  "feed_items",
+  {
+    accountId: uuid()
+      .notNull()
+      .references(() => affiliateAccounts.id, { onDelete: "cascade" }),
+    externalId: text().notNull(),
+    title: text().notNull(),
+    url: text().notNull(),
+    imageUrls: text().array().notNull().default([]),
+    price: money().notNull(),
+    originalPrice: money(),
+    discountPct: integer(),
+    rating: numeric({ precision: 3, scale: 2, mode: "number" }),
+    likes: integer(),
+    shopName: text(),
+    categoryIds: text().array().notNull().default([]),
+    categoryName: text(),
+    /** Categoria principal (nome); o id é categoryIds[1] */
+    topCategory: text(),
+    seenAt: timestamp({ withTimezone: true }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.accountId, t.externalId] }),
+    index().on(t.accountId, t.discountPct),
+  ],
 );
 
 export const products = pgTable(
@@ -407,9 +494,8 @@ export const offers = pgTable(
     productId: uuid()
       .notNull()
       .references(() => products.id, { onDelete: "cascade" }),
-    affiliateAccountId: uuid()
-      .notNull()
-      .references(() => affiliateAccounts.id, { onDelete: "cascade" }),
+    /** Vazio = oferta criada a partir de um link colado (sem API da loja; o link colado é o destino). */
+    affiliateAccountId: uuid().references(() => affiliateAccounts.id, { onDelete: "cascade" }),
     status: text({ enum: ["new", "approved", "rejected", "expired"] })
       .notNull()
       .default("new"),
@@ -562,6 +648,11 @@ export const posts = pgTable(
       .default("scheduled"),
     scheduledAt: timestamp({ withTimezone: true }).notNull(),
     sentAt: timestamp({ withTimezone: true }),
+    /**
+     * Momento em que a chamada de envio ao provedor começou (limpo quando a tentativa falha sem
+     * enviar). Se o processo cair com isso preenchido, a mensagem pode ter saído: não reenvia.
+     */
+    sendStartedAt: timestamp({ withTimezone: true }),
     /** Mensagem final enviada */
     body: text(),
     trackedLinkId: uuid().references(() => trackedLinks.id, { onDelete: "set null" }),
@@ -703,7 +794,15 @@ export const alerts = pgTable(
   {
     id: id(),
     workspaceId: workspaceId(),
-    kind: text({ enum: ["messaging_down", "queue_stalled", "posts_failing"] }).notNull(),
+    kind: text({
+      enum: [
+        "messaging_down",
+        "queue_stalled",
+        "posts_failing",
+        "group_admin_lost",
+        "group_unavailable",
+      ],
+    }).notNull(),
     /** Objeto afetado (ex.: id do número); vazio quando é do workspace todo */
     subject: text().notNull().default(""),
     severity: text({ enum: ["warning", "critical"] }).notNull(),

@@ -6,6 +6,8 @@ export interface ObjectStorage {
   put(key: string, data: Buffer): Promise<void>;
   get(key: string): Promise<Buffer | null>;
   delete(key: string): Promise<void>;
+  /** Link direto e temporário, acessível de fora da rede (S3). Sem ele, usa a rota /media da API. */
+  signedUrl?(key: string, expiresSeconds: number): Promise<string>;
 }
 
 export class LocalStorage implements ObjectStorage {

@@ -4,6 +4,12 @@ import { AppError } from "./errors";
 
 export type FetchedMedia = { data: Buffer; contentType: string | null };
 export type MediaFetcher = (url: string) => Promise<FetchedMedia>;
+/** Página HTML já com os redirecionamentos seguidos (url = endereço final). */
+export type FetchedPage = { url: string; status: number; html: string };
+export type PageFetcher = (url: string) => Promise<FetchedPage>;
+/** Abre um arquivo grande em fluxo (o feed de produtos tem centenas de MB). */
+export type OpenedStream = { body: AsyncIterable<Uint8Array>; size: number | null };
+export type StreamOpener = (url: string) => Promise<OpenedStream>;
 
 function isPrivateIp(ip: string) {
   if (isIP(ip) === 4) {
@@ -86,6 +92,89 @@ export function createSafeFetcher(
       if (data.length > maxBytes)
         throw new AppError("VALIDATION_ERROR", "Arquivo grande demais (máx. 10 MB).");
       return { data, contentType: res.headers.get("content-type") };
+    }
+    throw new AppError("VALIDATION_ERROR", "Redirecionamentos demais.");
+  };
+}
+
+/**
+ * As lojas bloqueiam robôs, mas liberam os de prévia de link: a página é pedida como o WhatsApp
+ * pede para montar a prévia (Open Graph).
+ */
+const PREVIEW_UA = "WhatsApp/2.23.20.0 A";
+
+/**
+ * Baixa a página de um produto para ler título, foto e preço. Segue redirecionamentos (links
+ * curtos de afiliado), inclusive meta refresh, sempre bloqueando endereços internos.
+ */
+export function createSafePageFetcher(
+  opts: { maxBytes?: number; timeoutMs?: number } = {},
+): PageFetcher {
+  const maxBytes = opts.maxBytes ?? 3 * 1024 * 1024;
+  return async (raw) => {
+    let current = raw;
+    for (let hop = 0; hop < 8; hop++) {
+      const url = await assertPublicUrl(current);
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          redirect: "manual",
+          headers: { "user-agent": PREVIEW_UA, accept: "text/html", "accept-language": "pt-BR" },
+          signal: AbortSignal.timeout(opts.timeoutMs ?? 12_000),
+        });
+      } catch (err) {
+        throw new AppError("PROVIDER_ERROR", `Não foi possível abrir o link: ${String(err)}`);
+      }
+      const location = res.headers.get("location");
+      if (res.status >= 300 && res.status < 400 && location) {
+        current = new URL(location, url).toString();
+        continue;
+      }
+      const buf = Buffer.from(await res.arrayBuffer());
+      const html = buf.subarray(0, maxBytes).toString("utf8");
+      const refresh = html.match(
+        /<meta[^>]+http-equiv=["']?refresh["']?[^>]+content=["']?\d+\s*;\s*url=([^"'>\s]+)/i,
+      )?.[1];
+      if (refresh && res.ok) {
+        current = new URL(refresh.replace(/&amp;/g, "&"), url).toString();
+        continue;
+      }
+      return { url: url.toString(), status: res.status, html };
+    }
+    throw new AppError("VALIDATION_ERROR", "Redirecionamentos demais.");
+  };
+}
+
+/**
+ * Baixa arquivos grandes em fluxo (feed de produtos), seguindo redirecionamentos e bloqueando
+ * endereços internos. O tempo limite vale para a conexão; a leitura pode levar minutos.
+ */
+export function createSafeStreamOpener(opts: { connectTimeoutMs?: number } = {}): StreamOpener {
+  return async (raw) => {
+    let current = raw;
+    for (let hop = 0; hop < 6; hop++) {
+      const url = await assertPublicUrl(current);
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), opts.connectTimeoutMs ?? 30_000);
+      let res: Response;
+      try {
+        res = await fetch(url, { redirect: "manual", signal: ctrl.signal });
+      } finally {
+        clearTimeout(timer);
+      }
+      const location = res.headers.get("location");
+      if (res.status >= 300 && res.status < 400 && location) {
+        current = new URL(location, url).toString();
+        continue;
+      }
+      if (!res.ok || !res.body) {
+        throw new AppError("PROVIDER_ERROR", `O link respondeu ${res.status}.`);
+      }
+      const size = Number(res.headers.get("content-length"));
+      return {
+        body: res.body as unknown as AsyncIterable<Uint8Array>,
+        size: Number.isFinite(size) && size > 0 ? size : null,
+      };
     }
     throw new AppError("VALIDATION_ERROR", "Redirecionamentos demais.");
   };

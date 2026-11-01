@@ -233,6 +233,30 @@ describe("curadoria", () => {
   });
 });
 
+describe("rejeitada pode voltar", () => {
+  it("aprovar de novo ou salvar pela busca reaproveita a mesma oferta", async () => {
+    const ctx = await shopCtx();
+    const c = await firstCandidate(ctx, "panelas");
+    const offer = done(await saveOffer(ctx, { product_id: c.product_id }));
+    done(
+      await setOfferStatus(ctx, {
+        offer_id: offer.id,
+        status: "rejected",
+        reason: "Fora do nicho",
+      }),
+    );
+    const { items } = await searchOffers(ctx, { keyword: "panelas", limit: 5 });
+    expect(items.find((i) => i.product_id === c.product_id)?.offer_status).toBe("rejected");
+
+    const again = done(await saveOffer(ctx, { product_id: c.product_id }));
+    expect(again).toMatchObject({ id: offer.id, status: "approved", reject_reason: null });
+    done(await setOfferStatus(ctx, { offer_id: offer.id, status: "rejected" }));
+    expect(done(await setOfferStatus(ctx, { offer_id: offer.id, status: "approved" })).status).toBe(
+      "approved",
+    );
+  });
+});
+
 describe("validação", () => {
   it("preço estável continua válido; alta acima de 5% expira e emite evento", async () => {
     const ctx = await shopCtx();

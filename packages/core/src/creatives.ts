@@ -68,6 +68,15 @@ function checkSignature(deps: MediaDeps, payload: string, exp: number, sig: stri
   return deps.secrets.verifyMac(payload, sig);
 }
 
+/**
+ * Link da imagem para quem está fora (Evolution Go baixa a imagem do post).
+ * Com S3, link direto do bucket; sem S3, a rota /media da API (precisa de API_PUBLIC_URL acessível).
+ */
+async function externalMediaUrl(deps: Deps, asset: AssetRow) {
+  if (deps.storage.signedUrl) return deps.storage.signedUrl(asset.storageKey, DAY_S);
+  return mediaUrl(deps, asset.id);
+}
+
 /** Entrega um arquivo se a assinatura for válida. */
 export async function serveMedia(deps: Deps, assetId: string, exp: number, sig: string) {
   if (!checkSignature(deps, `media:${assetId}:${exp}`, exp, sig)) return null;
@@ -615,7 +624,7 @@ export async function creativeImageForPost(
       if (!stale) {
         const variants = (await variantsOf(deps.db, [row.id])).get(row.id) ?? [];
         const v = variants.find((x) => x.v.format === "wa_image") ?? variants[0];
-        if (v) return { url: mediaUrl(deps, v.asset.id), creativeId: row.id };
+        if (v) return { url: await externalMediaUrl(deps, v.asset), creativeId: row.id };
       }
       if (stale && row.templateKey && row.templateKey in CREATIVE_TEMPLATES) {
         input = { ...input, creativeTemplate: row.templateKey };
@@ -632,7 +641,56 @@ export async function creativeImageForPost(
       createdBy: input.createdBy,
     });
     const v = variants[0];
-    if (v) return { url: mediaUrl(deps, v.asset.id), creativeId: row.id };
+    if (v) return { url: await externalMediaUrl(deps, v.asset), creativeId: row.id };
   }
   return null;
+}
+
+// ── Remoção ─────────────────────────────────────────────────────
+
+/**
+ * Remove um criativo e seus arquivos. Posts agendados que usavam o criativo passam a gerar
+ * o card na hora (ou usar a foto do produto).
+ */
+export async function deleteCreative(ctx: Ctx, id: string, opts: MutationOptions = {}) {
+  const wsId = ctx.actor.workspaceId;
+  const res = await runMutation(ctx, {
+    action: "creatives.delete",
+    scope: "creatives:write",
+    input: { id },
+    opts,
+    target: (i) => ({ type: "creative", id: i.id }),
+    preview: async (c, i) => {
+      const row = await loadCreative(c.db, wsId, i.id);
+      const variants = (await variantsOf(c.db, [row.id])).get(row.id) ?? [];
+      const assetIds = variants
+        .flatMap(({ v }) => [v.assetId, v.previewAssetId ?? ""])
+        .filter(Boolean);
+      const files = assetIds.length
+        ? await c.db
+            .select({ id: assets.id, key: assets.storageKey })
+            .from(assets)
+            .where(inArray(assets.id, assetIds))
+        : [];
+      return { id: row.id, title: row.title, files };
+    },
+    execute: async (tx, _i, p) => {
+      await tx.db.delete(creatives).where(eq(creatives.id, p.id));
+      if (p.files.length) {
+        await tx.db.delete(assets).where(
+          inArray(
+            assets.id,
+            p.files.map((f) => f.id),
+          ),
+        );
+      }
+      return { id: p.id, deleted: true as const, files: p.files.map((f) => f.key) };
+    },
+  });
+  if (res.status === "done") {
+    // Arquivos saem depois do banco: se falhar, só sobra arquivo órfão (não quebra nada).
+    await Promise.all(res.result.files.map((k) => ctx.storage.delete(k).catch(() => undefined)));
+    return { status: "done" as const, result: { id: res.result.id, deleted: true as const } };
+  }
+  return res;
 }

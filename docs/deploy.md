@@ -4,7 +4,7 @@ Tudo roda em Docker numa VPS: Postgres, Redis, API, worker, redirecionador, pain
 
 ## VPS recomendada
 
-| Item      | Mínimo                 | Recomendado para a BF                    |
+| Item      | Mínimo                 | Recomendado para operação real           |
 | --------- | ---------------------- | ---------------------------------------- |
 | CPU / RAM | 2 vCPU / 4 GB          | 2–4 vCPU / 8 GB (com Evolution Go junto) |
 | Disco     | 40 GB SSD              | 80 GB NVMe                               |
@@ -15,6 +15,23 @@ Por que Brasil: o número de WhatsApp conecta pelo IP do servidor onde roda a Ev
 
 Opções com datacenter em São Paulo: Hostinger (KVM 2), Vultr, Magalu Cloud, AWS Lightsail. Fora do Brasil (Hetzner, por exemplo) é mais barato, mas tem a desvantagem acima.
 
+## Testar sem domínio
+
+Use o [sslip.io](https://sslip.io): qualquer nome terminado em `<IP>.sslip.io` aponta para esse IP, sem cadastro, e o Caddy consegue o certificado HTTPS normalmente. HTTPS é obrigatório: em produção o cookie de login é `Secure` e não funciona por `http://IP`.
+
+Com a VPS no IP `203.0.113.10`, pule o passo 1 e preencha no `.env`:
+
+```env
+APP_DOMAIN=painel.203-0-113-10.sslip.io
+API_DOMAIN=api.203-0-113-10.sslip.io
+GO_DOMAIN=go.203-0-113-10.sslip.io
+API_PUBLIC_URL=https://api.203-0-113-10.sslip.io
+REDIRECT_PUBLIC_URL=https://go.203-0-113-10.sslip.io
+MESSAGING_WEBHOOK_URL=https://api.203-0-113-10.sslip.io/webhooks/whatsapp
+```
+
+Quando o domínio chegar, troque esses valores e suba de novo. Os links curtos já enviados continuam apontando para o endereço do sslip.io, então não envie para grupos de verdade enquanto estiver nesse modo. O número de WhatsApp registra o webhook só ao ser criado: depois de trocar `MESSAGING_WEBHOOK_URL`, remova e conecte o número de novo.
+
 ## Passo a passo
 
 1. **DNS:** crie 3 registros A apontando para o IP da VPS: `painel.`, `api.` e `go.` do seu domínio.
@@ -22,7 +39,7 @@ Opções com datacenter em São Paulo: Hostinger (KVM 2), Vultr, Magalu Cloud, A
 3. **Código:** `git clone https://github.com/edwardmuniz/app-ofertas.git && cd app-ofertas`
 4. **Configuração:** `cp infra/prod/.env.production.example infra/prod/.env` e preencha.
    - `ENCRYPTION_KEY`: use a **mesma** do ambiente onde as contas foram conectadas; se for uma instalação nova, gere com `openssl rand -base64 32`.
-   - `POSTGRES_PASSWORD` e `IP_HASH_SALT`: `openssl rand -hex 24`.
+   - `POSTGRES_PASSWORD` e `IP_HASH_SALT`: `openssl rand -hex 24` (hex, não base64: a senha entra na URL do banco).
 5. **Subir:** `docker compose -f infra/prod/docker-compose.yml --env-file infra/prod/.env up -d --build`
 6. Acesse `https://painel.seudominio`, crie a conta (o primeiro cadastro vira dono) e conecte o número.
 
@@ -56,5 +73,6 @@ O serviço `backup` faz, todo dia às `BACKUP_HOUR` (padrão 4h), um dump do ban
 ## Segurança
 
 - Firewall: libere só 22, 80 e 443 (`ufw allow OpenSSH && ufw allow 80,443/tcp && ufw enable`).
-- `ALLOW_SIGNUP=false` depois de criar a conta.
+- `ALLOW_SIGNUP=false` (padrão): o primeiro cadastro funciona mesmo assim e vira dono; os demais ficam bloqueados.
+- Login limitado a 10 tentativas por e-mail e 20 por IP a cada 15 min. O compose liga `TRUST_PROXY=true` para a API e o redirecionador lerem o IP real atrás do Caddy.
 - Postgres e Redis não ficam expostos (só na rede interna do Docker).

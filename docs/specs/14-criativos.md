@@ -67,6 +67,7 @@ Permite o ciclo: gerar → ver → ajustar parâmetros → gerar de novo.
 ## Biblioteca
 
 - Busca por oferta, tags, formato, origem, status.
+- **Remover** (`DELETE /v1/creatives/:id`, `delete_creative`): apaga o criativo, os registros e os arquivos (no S3 ou no disco). Posts agendados com ele passam a gerar o card na hora, ou a usar a foto do produto. No painel, a galeria pede confirmação na própria tela.
 - Versões e variantes (para A/B).
 - Desempenho por criativo (`creative_stats_daily`): uso em posts/anúncios, cliques, CTR, conversões.
 - **Fadiga**: CTR em queda > X% vs. primeiros dias → recomendação "gerar variações".
@@ -81,7 +82,8 @@ Permite o ciclo: gerar → ver → ajustar parâmetros → gerar de novo.
 
 - **Render:** Satori não desenha emoji sem imagens extras, então os templates usam só texto e formas; o selo da oferta vai sem emoji. A raiz usa `box-sizing: border-box` (sem isso o Satori soma o padding à largura).
 - **URLs assinadas:** `/media/:id?e=<expira>&s=<hmac>`, validade de 30 dias arredondada para o dia (URL estável para o WhatsApp). Prévias valem 7 dias. Uploads: `PUT /uploads/:id?e&s`, válido por 15 min, conteúdo conferido pelos bytes (PNG, JPEG ou WebP).
-- **`API_PUBLIC_URL` precisa ser acessível pela Evolution Go**: é dela que o WhatsApp baixa a imagem do card.
+- **Armazenamento:** disco local (`MEDIA_DIR`) ou **S3**, quando `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` e `AWS_S3_BUCKET` estão definidos (`AWS_REGION` é opcional: a região é descoberta pelo bucket). A assinatura AWS (SigV4) é feita no próprio código, sem SDK. Com S3, os arquivos antigos do disco continuam sendo lidos e sobem para o bucket quando forem enviados.
+- **Imagem enviada ao WhatsApp:** com S3, a Evolution Go recebe um link pré-assinado do bucket, válido por 1 dia e gerado na hora do envio. Funciona mesmo com a API em `localhost`. Sem S3, recebe a URL `/media`, e aí **`API_PUBLIC_URL` precisa ser acessível pela Evolution Go**. O painel continua usando `/media`.
 - **Importação por URL:** só http(s) públicos; IPs internos (10/8, 172.16/12, 192.168/16, 127/8, 169.254/16, ::1, fc00::/7) bloqueados, inclusive após redirecionamento; limite de 10 MB.
 - **CLI:** `pnpm ofertas --help`. Login salvo em `~/.ofertas/config.json` (ou `OFERTAS_URL` + `OFERTAS_TOKEN`). As ações aparecem na auditoria com origem `cli`.
 

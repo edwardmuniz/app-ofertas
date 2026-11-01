@@ -33,6 +33,7 @@ export const SEARCH_SORTS = [
   "price_asc",
   "price_desc",
   "commission",
+  "discount",
 ] as const;
 export type SearchSort = (typeof SEARCH_SORTS)[number];
 
@@ -42,6 +43,11 @@ export type SearchQuery = {
   sort?: SearchSort;
   page?: number;
   limit?: number;
+  /** Filtros que o conector pode aplicar na origem (os demais são aplicados depois) */
+  minDiscount?: number;
+  priceMin?: number;
+  priceMax?: number;
+  minRating?: number;
 };
 
 export type SearchResult = { items: ProductOffer[]; hasMore: boolean };

@@ -9,8 +9,10 @@ import {
   FindSimilarInput,
   GenerateCreativeInput,
   ImportMediaInput,
+  ImportOfferFromLinkInput,
   LinkStatsQuery,
   ListAlertsQuery,
+  ListChannelsQuery,
   ListCreativesQuery,
   ListOffersQuery,
   ListPostsQuery,
@@ -18,6 +20,7 @@ import {
   MetricsBreakdownQuery,
   MetricsPeriodQuery,
   MutationOptions,
+  OfferFromLinkInput,
   Preferences,
   PreviewPostInput,
   RequestUploadInput,
@@ -25,12 +28,15 @@ import {
   SchedulePostsInput,
   SearchOffersInput,
   SeasonalCalendarQuery,
+  SyncGroupsInput,
   UpdateBrandKitInput,
+  UpdateChannelInput,
+  UpdateGroupInput,
+  UpdateGroupSettingsInput,
   UpdateInviteLinkInput,
   UpdateOfferStatusInput,
   UpdateTrackedLinkInput,
   UpsertAutomationRuleInput,
-  UpsertChannelInput,
   UpsertMessageTemplateInput,
   UpsertSavedSearchInput,
   UpsertSegmentInput,
@@ -44,12 +50,15 @@ import {
   createInviteLink,
   createOfferLink,
   createTrackedLink,
+  deleteCreative,
+  deleteSegment,
   deleteSentPost,
   findSimilarOffers,
   generateCreative,
   getBrandKit,
   getCreative,
   getFunnel,
+  getGroup,
   getLinkStats,
   getMetricsBreakdown,
   getOffer,
@@ -59,6 +68,7 @@ import {
   getSeasonalCalendar,
   getSystemStatus,
   importMediaFromUrl,
+  importOfferFromLink,
   isAppError,
   listAffiliateAccounts,
   listAlerts,
@@ -70,12 +80,16 @@ import {
   listInviteLinks,
   listMessageTemplates,
   listMessagingAccounts,
+  listOfferCategories,
   listOffers,
   listPosts,
   listSavedSearches,
   listSegments,
+  listTeamContacts,
   listTrackedLinks,
+  previewOfferFromLink,
   previewPost,
+  requestFeedSync,
   requestUpload,
   saveOffer,
   schedulePosts,
@@ -84,11 +98,13 @@ import {
   setOfferStatus,
   syncGroups,
   updateBrandKit,
+  updateChannel,
+  updateGroup,
+  updateGroupSettings,
   updateInviteLink,
   updatePreferences,
   updateTrackedLink,
   upsertAutomationRule,
-  upsertChannel,
   upsertMessageTemplate,
   upsertSavedSearch,
   upsertSegment,
@@ -218,22 +234,26 @@ export function createMcpServer(ctx: Ctx): McpServer {
     {
       title: "Listar canais",
       description:
-        "Grupos e canais cadastrados, com membros, limite, link de convite e segmentos. Nesta fase o cadastro é manual; a importação do WhatsApp chega na Fase 3.",
+        "Grupos e canais com membros, limite, link de convite, segmentos e se o número é admin (number_is_admin). Arquivados (removidos) só com include_archived.",
+      inputSchema: ListChannelsQuery.shape,
       annotations: READ,
     },
-    safe(async () => listChannels(ctx)),
+    safe(async (args) => listChannels(ctx, args)),
   );
 
   server.registerTool(
-    "upsert_channel",
+    "update_channel",
     {
-      title: "Criar ou editar canal",
+      title: "Editar canal",
       description:
-        "Sem id cria um canal (name obrigatório); com id edita só os campos enviados. segment_ids substitui a lista de segmentos.",
-      inputSchema: { ...UpsertChannelInput.shape, ...MutationOptions.shape },
+        "Muda status ('paused' para de publicar; 'archived' remove o grupo da plataforma e cancela os agendamentos dele; 'active' volta), limite de membros (usado pelos links de convite) e segmentos (segment_ids substitui a lista). Grupos entram pela importação (sync_whatsapp_groups); não há cadastro manual.",
+      inputSchema: { channel_id: z.uuid(), ...UpdateChannelInput.shape, ...MutationOptions.shape },
       annotations: WRITE,
     },
-    safe(async (args) => upsertChannel(ctx, ...splitOpts(args))),
+    safe(async (args) => {
+      const [{ channel_id, ...rest }, opts] = splitOpts(args);
+      return updateChannel(ctx, channel_id, rest, opts);
+    }),
   );
 
   server.registerTool(
@@ -255,6 +275,21 @@ export function createMcpServer(ctx: Ctx): McpServer {
       annotations: WRITE,
     },
     safe(async (args) => upsertSegment(ctx, ...splitOpts(args))),
+  );
+
+  server.registerTool(
+    "delete_segment",
+    {
+      title: "Apagar segmento",
+      description:
+        "Apaga o segmento; os canais continuam, só perdem a etiqueta. Recusa (CONFLICT) se alguma regra automática ou link de convite usa o segmento.",
+      inputSchema: { segment_id: z.uuid(), ...MutationOptions.shape },
+      annotations: { ...WRITE, destructiveHint: true },
+    },
+    safe(async (args) => {
+      const [rest, opts] = splitOpts(args);
+      return deleteSegment(ctx, rest.segment_id, opts);
+    }),
   );
 
   // ── Links rastreados ───────────────────────────────────────────
@@ -348,10 +383,36 @@ export function createMcpServer(ctx: Ctx): McpServer {
     {
       title: "Contas de afiliado",
       description:
-        "Contas conectadas (Shopee etc.), modo real ou simulado, status e o que cada uma suporta. Conectar contas é feito só pelo humano no painel.",
+        "Contas conectadas (Shopee etc.): modo real (API), feed (catálogo do feed de produtos, importado todo dia, só itens com desconto) ou simulado; status e o que cada uma suporta. Conectar contas é feito só pelo humano no painel.",
       annotations: READ,
     },
     safe(async () => listAffiliateAccounts(ctx)),
+  );
+
+  server.registerTool(
+    "refresh_affiliate_feed",
+    {
+      title: "Atualizar feed de produtos",
+      description:
+        "Pede nova importação do feed de produtos de uma conta em modo feed. O worker importa em até 1 minuto; a importação pode levar alguns minutos.",
+      inputSchema: { account_id: z.uuid(), ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async (args) => {
+      const [rest, opts] = splitOpts(args);
+      return requestFeedSync(ctx, rest.account_id, opts);
+    }),
+  );
+
+  server.registerTool(
+    "list_offer_categories",
+    {
+      title: "Categorias de ofertas",
+      description:
+        "Categorias disponíveis para filtrar search_offers (category_id), com quantos produtos em desconto há em cada uma.",
+      annotations: READ,
+    },
+    safe(async () => listOfferCategories(ctx)),
   );
 
   server.registerTool(
@@ -376,6 +437,30 @@ export function createMcpServer(ctx: Ctx): McpServer {
       annotations: WRITE,
     },
     safe(async (args) => saveOffer(ctx, ...splitOpts(args))),
+  );
+
+  server.registerTool(
+    "preview_offer_from_link",
+    {
+      title: "Ler link de produto",
+      description:
+        "Abre um link de produto (Shopee, Mercado Livre, Amazon, Magalu; aceita link curto de afiliado) e devolve título, foto e preço encontrados, e o que falta (missing). Não grava nada. Use antes de import_offer_from_link.",
+      inputSchema: OfferFromLinkInput.shape,
+      annotations: READ,
+    },
+    safe(async (args) => previewOfferFromLink(ctx, args)),
+  );
+
+  server.registerTool(
+    "import_offer_from_link",
+    {
+      title: "Criar oferta por link",
+      description:
+        "Cria uma oferta a partir de um link colado, com título, foto e preço (confira com preview_offer_from_link e pergunte ao usuário o que faltar; não invente preço). O link vira o destino dos links curtos. Sem conta real da loja, o preço não é revalidado antes do envio.",
+      inputSchema: { ...ImportOfferFromLinkInput.shape, ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async (args) => importOfferFromLink(ctx, ...splitOpts(args))),
   );
 
   server.registerTool(
@@ -507,7 +592,7 @@ export function createMcpServer(ctx: Ctx): McpServer {
     {
       title: "Números de WhatsApp",
       description:
-        "Números conectados à plataforma, status (connected, disconnected, logged_out) e quantos grupos cada um tem. Conectar/desconectar número é feito pelo humano no painel (QR ou código).",
+        "Números conectados à plataforma, status (connected, disconnected, logged_out) e quantos grupos cada um tem. Conectar, desconectar e remover número é feito pelo humano no painel (QR ou código).",
       annotations: READ,
     },
     safe(async () => listMessagingAccounts(ctx)),
@@ -518,13 +603,13 @@ export function createMcpServer(ctx: Ctx): McpServer {
     {
       title: "Importar grupos do número",
       description:
-        "Importa/atualiza os grupos do número como canais (nome, membros, link de convite). Rode depois de criar grupos novos no celular.",
-      inputSchema: { account_id: z.uuid(), ...MutationOptions.shape },
+        "Importa grupos do número como canais. Rode primeiro com dry_run=true: a prévia lista todos os grupos do número (groups, com channel_id se já importado e number_is_admin) e os que ele deixou (left). Depois envie group_jids com os grupos escolhidos (e segment_ids opcionais). Sem group_jids só atualiza os já importados. Não importe grupos pessoais: pergunte ao humano quais usar.",
+      inputSchema: { account_id: z.uuid(), ...SyncGroupsInput.shape, ...MutationOptions.shape },
       annotations: WRITE,
     },
     safe(async (args) => {
-      const [rest, opts] = splitOpts(args);
-      return syncGroups(ctx, rest.account_id, opts);
+      const [{ account_id, ...rest }, opts] = splitOpts(args);
+      return syncGroups(ctx, account_id, rest, opts);
     }),
   );
 
@@ -541,6 +626,63 @@ export function createMcpServer(ctx: Ctx): McpServer {
       const [rest, opts] = splitOpts(args);
       return setChannelAdminOnly(ctx, rest.channel_id, rest.admin_only, opts);
     }),
+  );
+
+  server.registerTool(
+    "get_group",
+    {
+      title: "Detalhes do grupo",
+      description:
+        "Lê o grupo no WhatsApp na hora: nome, descrição, as 4 configurações, admins (telefones de fora da equipe mascarados), números da equipe no grupo e comunidade. Também atualiza o canal.",
+      inputSchema: { channel_id: z.uuid() },
+      annotations: READ,
+    },
+    safe(async (args) => getGroup(ctx, args.channel_id)),
+  );
+
+  server.registerTool(
+    "update_group",
+    {
+      title: "Editar grupo",
+      description:
+        "Muda nome (até 25 caracteres), descrição (vazio limpa) e/ou foto (URL pública de imagem; a plataforma converte para JPEG) do grupo no WhatsApp.",
+      inputSchema: { channel_id: z.uuid(), ...UpdateGroupInput.shape, ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async (args) => {
+      const [{ channel_id, ...rest }, opts] = splitOpts(args);
+      return updateGroup(ctx, channel_id, rest, opts);
+    }),
+  );
+
+  server.registerTool(
+    "update_group_settings",
+    {
+      title: "Configurações do grupo",
+      description:
+        "Liga/desliga: admin_only (só admins enviam), locked (só admins editam dados), approval_required (entrada com aprovação), admins_add_members (só admins adicionam). Recomendado para ofertas: true, true, false, true. O número precisa ser admin.",
+      inputSchema: {
+        channel_id: z.uuid(),
+        ...UpdateGroupSettingsInput.shape,
+        ...MutationOptions.shape,
+      },
+      annotations: WRITE,
+    },
+    safe(async (args) => {
+      const [{ channel_id, ...rest }, opts] = splitOpts(args);
+      return updateGroupSettings(ctx, channel_id, rest, opts);
+    }),
+  );
+
+  server.registerTool(
+    "list_team_contacts",
+    {
+      title: "Números da equipe",
+      description:
+        "Telefones da equipe (dono, número reserva, moderadores). Só eles podem ser adicionados a grupos. Criar grupo, entrar/sair, participantes, novo link de convite e comunidades são feitos pelo humano no painel.",
+      annotations: READ,
+    },
+    safe(async () => listTeamContacts(ctx)),
   );
 
   server.registerTool(
@@ -752,6 +894,21 @@ export function createMcpServer(ctx: Ctx): McpServer {
       annotations: READ,
     },
     safe(async ({ creative_id }) => getCreative(ctx, creative_id)),
+  );
+
+  server.registerTool(
+    "delete_creative",
+    {
+      title: "Remover criativo",
+      description:
+        "Remove um criativo e seus arquivos. Posts agendados com ele passam a gerar o card na hora.",
+      inputSchema: { creative_id: z.uuid(), ...MutationOptions.shape },
+      annotations: { readOnlyHint: false, destructiveHint: true },
+    },
+    safe(async (args) => {
+      const [rest, opts] = splitOpts(args);
+      return deleteCreative(ctx, rest.creative_id, opts);
+    }),
   );
 
   server.registerTool(

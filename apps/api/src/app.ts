@@ -12,6 +12,7 @@ import {
 import { enforceRateLimit, resolveActor } from "./auth";
 import { mcpRoutes } from "./mcp/route";
 import { creativeRoutes, mediaRoutes } from "./routes/creatives";
+import { groupRoutes } from "./routes/groups";
 import { linkRoutes } from "./routes/links";
 import { metricsRoutes } from "./routes/metrics";
 import { offerRoutes } from "./routes/offers";
@@ -24,11 +25,14 @@ export type AppOptions = {
   publicUrl: string;
   secureCookies?: boolean;
   logger?: boolean;
+  /** Atrás de proxy (Caddy): usa X-Forwarded-For para o IP real do cliente. */
+  trustProxy?: boolean;
 };
 
 export async function buildApp(opts: AppOptions) {
   const app = Fastify({
     logger: opts.logger ?? false,
+    trustProxy: opts.trustProxy ?? false,
     // API sem estado: ao desligar, encerra conexões keep-alive em vez de esperar os clientes.
     forceCloseConnections: true,
   }).withTypeProvider<ZodTypeProvider>();
@@ -100,6 +104,7 @@ export async function buildApp(opts: AppOptions) {
     secureCookies: opts.secureCookies ?? false,
   });
   await app.register(linkRoutes, { prefix: "/v1", deps: opts.deps });
+  await app.register(groupRoutes, { prefix: "/v1", deps: opts.deps });
   await app.register(offerRoutes, { prefix: "/v1", deps: opts.deps });
   await app.register(publishingRoutes, { prefix: "/v1", deps: opts.deps });
   await app.register(webhookRoutes, { deps: opts.deps });

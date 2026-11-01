@@ -16,11 +16,11 @@ import {
   resolveInvite,
   resolveLink,
   resolveSession,
+  updateChannel,
   updateTrackedLink,
-  upsertChannel,
   upsertSegment,
 } from "../src";
-import { createOwner, setupTestDeps } from "./helpers";
+import { createOwner, insertChannel, setupTestDeps } from "./helpers";
 
 let deps: Deps & { close: () => Promise<void> };
 
@@ -48,30 +48,36 @@ async function segmentWithGroups(ctx: Ctx, groups: { name: string; members: numb
   const channels = [];
   for (const g of groups) {
     channels.push(
-      done(
-        await upsertChannel(ctx, {
-          name: g.name,
-          invite_url: `https://chat.whatsapp.com/${g.name}`,
-          member_count: g.members,
-          member_limit: 100,
-          segment_ids: [seg.id],
-        }),
-      ),
+      await insertChannel(ctx, ctx.actor.workspaceId, {
+        name: g.name,
+        invite_url: `https://chat.whatsapp.com/${g.name}`,
+        member_count: g.members,
+        member_limit: 100,
+        segment_ids: [seg.id],
+      }),
     );
   }
   return { seg, channels };
 }
 
 describe("canais e segmentos", () => {
-  it("cria canal com segmento e edita parcialmente", async () => {
+  it("edita status, limite e segmentos do canal", async () => {
     const ctx = await ownerCtx();
     const seg = done(await upsertSegment(ctx, { name: "tech" }));
-    const ch = done(await upsertChannel(ctx, { name: "Tech #1", segment_ids: [seg.id] }));
-    expect(ch.segment_ids).toEqual([seg.id]);
-    expect(ch.member_limit).toBe(1024);
-
-    const edited = done(await upsertChannel(ctx, { id: ch.id, member_count: 50 }));
-    expect(edited).toMatchObject({ name: "Tech #1", member_count: 50, segment_ids: [seg.id] });
+    const ch = await insertChannel(ctx, ctx.actor.workspaceId, { name: "Tech #1" });
+    const edited = done(
+      await updateChannel(ctx, ch.id, {
+        member_limit: 500,
+        segment_ids: [seg.id],
+        status: "paused",
+      }),
+    );
+    expect(edited).toMatchObject({
+      name: "Tech #1",
+      member_limit: 500,
+      status: "paused",
+      segment_ids: [seg.id],
+    });
     expect(await listChannels(ctx)).toHaveLength(1);
   });
 
@@ -85,7 +91,8 @@ describe("canais e segmentos", () => {
     const a = await ownerCtx();
     const b = await ownerCtx();
     const segA = done(await upsertSegment(a, { name: "x" }));
-    await expect(upsertChannel(b, { name: "g", segment_ids: [segA.id] })).rejects.toMatchObject({
+    const chB = await insertChannel(b, b.actor.workspaceId, { name: "g" });
+    await expect(updateChannel(b, chB.id, { segment_ids: [segA.id] })).rejects.toMatchObject({
       code: "NOT_FOUND",
     });
   });

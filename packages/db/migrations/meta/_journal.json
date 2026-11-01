@@ -43,6 +43,55 @@
       "when": 1793411936394,
       "tag": "0005_fase5_metricas",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793455961960,
+      "tag": "0006_envio_seguro",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793465485662,
+      "tag": "0007_grupos_admin",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793470405014,
+      "tag": "0008_gestao_grupos",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793483861516,
+      "tag": "0009_oferta_por_link",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793486891714,
+      "tag": "0010_feed_de_produtos",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793491362574,
+      "tag": "0011_feed_categoria",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793492277122,
+      "tag": "0012_reimportar_feed_categorias",
+      "breakpoints": true
     }
   ]
 }

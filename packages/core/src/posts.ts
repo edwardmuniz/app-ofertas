@@ -1,3 +1,4 @@
+import type { SentMessage } from "@ofertas/connectors";
 import {
   ListPostsQuery,
   type Post,
@@ -83,7 +84,11 @@ async function resolveTargets(
   const targets: ChannelRow[] = [];
   for (const c of rows) {
     if (c.status !== "active")
-      skipped.push({ channel_id: c.id, offer_id: null, reason: `Canal ${c.name} pausado.` });
+      skipped.push({
+        channel_id: c.id,
+        offer_id: null,
+        reason: `Canal ${c.name} ${c.status === "archived" ? "removido" : "pausado"}.`,
+      });
     else if (!(PUBLISHABLE_TYPES as readonly string[]).includes(c.type))
       skipped.push({
         channel_id: c.id,
@@ -325,6 +330,10 @@ export async function listPosts(ctx: Ctx, raw: ListPostsQuery = {}) {
   if (q.status) conds.push(eq(posts.status, q.status));
   if (q.channel_id) conds.push(eq(posts.channelId, q.channel_id));
   if (q.offer_id) conds.push(eq(posts.offerId, q.offer_id));
+  // Data do envio; sem envio ainda, a data agendada.
+  const when = sql`coalesce(${posts.sentAt}, ${posts.scheduledAt})`;
+  if (q.from) conds.push(sql`${when} >= ${new Date(q.from).toISOString()}`);
+  if (q.to) conds.push(sql`${when} < ${new Date(q.to).toISOString()}`);
   if (q.cursor) {
     const c = olderThan(q.cursor, posts.createdAt, posts.id);
     if (c) conds.push(c);
@@ -437,15 +446,28 @@ export async function deleteSentPost(ctx: Ctx, postId: string, opts: MutationOpt
 // ── Envio (worker) ──────────────────────────────────────────────
 
 /** Pega posts vencidos para envio, sem disputar com outros workers. */
+const MAYBE_SENT =
+  "Envio interrompido depois de chamar o WhatsApp: a mensagem pode ter saído. Confira no grupo antes de agendar de novo.";
+
 export async function claimDuePosts(deps: Deps, limit = 10) {
   const at = now(deps);
-  // Recupera envios travados (processo caiu no meio).
+  const stuck = and(
+    eq(posts.status, "sending"),
+    lt(posts.updatedAt, new Date(at.getTime() - 5 * MINUTE)),
+  );
+  // Processo caiu no meio. Se o envio já tinha começado, não reenvia (evita mensagem dobrada).
+  const lost = await deps.db
+    .update(posts)
+    .set({ status: "failed", error: MAYBE_SENT })
+    .where(and(stuck, sql`${posts.sendStartedAt} is not null`))
+    .returning({ id: posts.id, workspaceId: posts.workspaceId });
+  for (const p of lost) {
+    await emitEvent(deps.db, p.workspaceId, "post.failed", { post_id: p.id, reason: MAYBE_SENT });
+  }
   await deps.db
     .update(posts)
     .set({ status: "scheduled" })
-    .where(
-      and(eq(posts.status, "sending"), lt(posts.updatedAt, new Date(at.getTime() - 5 * MINUTE))),
-    );
+    .where(and(stuck, sql`${posts.sendStartedAt} is null`));
   const claimed = await deps.db.execute<{ id: string }>(sql`
     update posts set status = 'sending', attempts = attempts + 1, updated_at = now()
     where id in (
@@ -472,6 +494,7 @@ async function reschedule(
       status: "scheduled",
       scheduledAt: at,
       error,
+      sendStartedAt: null,
       ...(countAttempt ? {} : { attempts: sql`greatest(0, ${posts.attempts} - 1)` }),
     })
     .where(eq(posts.id, id));
@@ -484,6 +507,33 @@ async function finish(deps: Deps, post: PostRow, status: "failed" | "skipped", r
     reason,
   });
   return { status, reason };
+}
+
+/** Link rastreado do post: reaproveita o da tentativa anterior em vez de criar outro a cada retentativa. */
+async function postOfferLink(
+  deps: Deps,
+  sysCtx: Ctx,
+  postId: string,
+  offerId: string,
+  channelId: string,
+): Promise<{ id: string; url: string }> {
+  const [existing] = await deps.db
+    .select({ id: trackedLinks.id, slug: trackedLinks.slug })
+    .from(trackedLinks)
+    .where(eq(trackedLinks.postId, postId))
+    .limit(1);
+  if (existing) return { id: existing.id, url: shortUrl(deps, existing.slug) };
+  const link = await createOfferLink(sysCtx, {
+    offer_id: offerId,
+    source: "wa",
+    channel_id: channelId,
+  });
+  if (link.status !== "done") throw new Error("Link da oferta não gerado.");
+  await deps.db
+    .update(trackedLinks)
+    .set({ postId })
+    .where(eq(trackedLinks.id, link.result.link_id));
+  return { id: link.result.link_id, url: link.result.short_url };
 }
 
 export type PublishOutcome = { status: string; reason?: string | null };
@@ -557,6 +607,8 @@ export async function publishPost(deps: Deps, postId: string): Promise<PublishOu
   let body = post.customText ?? post.body ?? "";
   let imageUrl: string | null = null;
   let trackedLinkId: string | null = null;
+  let sendStarted = false;
+  let sent: SentMessage;
   const sysCtx: Ctx = { ...deps, actor: systemActor(wsId, "publisher") };
 
   try {
@@ -569,20 +621,11 @@ export async function publishPost(deps: Deps, postId: string): Promise<PublishOu
       if (!check.ok)
         return finish(deps, post, "skipped", `Oferta inválida no envio: ${check.reason}`);
       const [fresh] = await offersWithProducts(deps.db, wsId, [post.offerId]);
-      const link = await createOfferLink(sysCtx, {
-        offer_id: post.offerId,
-        source: "wa",
-        channel_id: channel.id,
-      });
-      if (link.status !== "done") throw new Error("Link da oferta não gerado.");
-      trackedLinkId = link.result.link_id;
-      await deps.db
-        .update(trackedLinks)
-        .set({ postId: post.id })
-        .where(eq(trackedLinks.id, trackedLinkId));
+      const shortLink = await postOfferLink(deps, sysCtx, post.id, post.offerId, channel.id);
+      trackedLinkId = shortLink.id;
       body = renderTemplate(
         await resolveTemplateBody(deps.db, wsId, post.templateId),
-        offerVars((fresh ?? o).offer, (fresh ?? o).product, link.result.short_url),
+        offerVars((fresh ?? o).offer, (fresh ?? o).product, shortLink.url),
       );
       if (post.withImage) {
         const creative = await creativeImageForPost(deps, {
@@ -604,43 +647,54 @@ export async function publishPost(deps: Deps, postId: string): Promise<PublishOu
 
     const provider = providerOf(deps, acc);
     const ref = refOf(deps, acc);
-    const sent = imageUrl
-      ? await provider.sendImage(ref, channel.externalId, imageUrl, body)
-      : await provider.sendText(ref, channel.externalId, body);
-
     await deps.db
       .update(posts)
-      .set({
-        status: "sent",
-        sentAt: now(deps),
-        body,
-        externalMessageId: sent.messageId,
-        trackedLinkId,
-        error: null,
-      })
+      .set({ sendStartedAt: now(deps) })
       .where(eq(posts.id, post.id));
-    const tz = (await workspaceSchedule(deps.db, wsId)).tz;
-    await deps.db
-      .insert(channelStatsDaily)
-      .values({ channelId: channel.id, date: localDate(at, tz), messagesSent: 1 })
-      .onConflictDoUpdate({
-        target: [channelStatsDaily.channelId, channelStatsDaily.date],
-        set: { messagesSent: sql`${channelStatsDaily.messagesSent} + 1` },
-      });
-    await recordAudit(deps.db, sysCtx.actor, {
-      action: "posts.send",
-      target: { type: "post", id: post.id },
-      params: { channel: channel.name, message_id: sent.messageId },
-      result: "ok",
-    });
-    return { status: "sent" };
+    sendStarted = true;
+    sent = imageUrl
+      ? await provider.sendImage(ref, channel.externalId, imageUrl, body)
+      : await provider.sendText(ref, channel.externalId, body);
   } catch (err) {
     const e = err instanceof AppError ? err : messagingError(err);
+    // Timeout depois de chamar o envio: o WhatsApp pode ter recebido. Não arrisca mandar dobrado.
+    if (sendStarted && e.details?.provider_code === "TIMEOUT") {
+      return finish(deps, post, "failed", MAYBE_SENT);
+    }
     if (post.attempts >= MAX_ATTEMPTS) return finish(deps, post, "failed", e.message);
     const delay = 2 ** post.attempts * MINUTE;
     await reschedule(deps.db, post.id, new Date(at.getTime() + delay), e.message, true);
     return { status: "rescheduled", reason: e.message };
   }
+
+  // Daqui em diante a mensagem já saiu: falhas aqui nunca reagendam o post. Se o processo cair
+  // antes de gravar, a recuperação vê send_started_at e marca como falha sem reenviar.
+  await deps.db
+    .update(posts)
+    .set({
+      status: "sent",
+      sentAt: now(deps),
+      body,
+      externalMessageId: sent.messageId,
+      trackedLinkId,
+      error: null,
+    })
+    .where(eq(posts.id, post.id));
+  const tz = (await workspaceSchedule(deps.db, wsId)).tz;
+  await deps.db
+    .insert(channelStatsDaily)
+    .values({ channelId: channel.id, date: localDate(at, tz), messagesSent: 1 })
+    .onConflictDoUpdate({
+      target: [channelStatsDaily.channelId, channelStatsDaily.date],
+      set: { messagesSent: sql`${channelStatsDaily.messagesSent} + 1` },
+    });
+  await recordAudit(deps.db, sysCtx.actor, {
+    action: "posts.send",
+    target: { type: "post", id: post.id },
+    params: { channel: channel.name, message_id: sent.messageId },
+    result: "ok",
+  });
+  return { status: "sent" };
 }
 
 /** Uma rodada do publicador: reivindica e envia os posts vencidos, com pausa entre envios. */

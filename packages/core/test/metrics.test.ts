@@ -36,11 +36,10 @@ import {
   schedulePosts,
   searchOffers,
   seasonalEvents,
-  syncGroups,
   updatePreferences,
   upsertSegment,
 } from "../src";
-import { createOwner, setupTestDeps } from "./helpers";
+import { createOwner, importAllGroups, setupTestDeps } from "./helpers";
 
 let deps: Deps & { close: () => Promise<void> };
 
@@ -72,7 +71,7 @@ async function setup() {
   await connectAffiliateAccount(ctx, { platform: "shopee", label: "Shopee", mode: "fake" });
   const account = done(await createMessagingAccount(ctx, { label: "Número", provider: "fake" }));
   await getConnectionState(ctx, account.id);
-  const synced = done(await syncGroups(ctx, account.id));
+  const synced = await importAllGroups(ctx, account.id);
   return { ctx, account, channels: synced.channels };
 }
 

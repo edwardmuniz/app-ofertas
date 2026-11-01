@@ -1,12 +1,29 @@
-import { type Platform, type ProductOffer, sanitizeSubId } from "@ofertas/connectors";
+import { createHash } from "node:crypto";
+import {
+  FAKE_CATEGORIES,
+  isGenericTitle,
+  looksLikeAffiliateUrl,
+  type Platform,
+  type ProductOffer,
+  parseProductPage,
+  platformOfUrl,
+  productIdOfUrl,
+  SHOPEE_CATEGORY_PT,
+  sanitizeSubId,
+  titleFromUrl,
+} from "@ofertas/connectors";
 import {
   CreateOfferLinkInput,
   FindSimilarInput,
+  ImportOfferFromLinkInput,
   ListOffersQuery,
   type Offer,
   type OfferCandidate,
+  type OfferCategory,
   type OfferDetail,
+  OfferFromLinkInput,
   type OfferLink,
+  type OfferLinkPreview,
   SaveOfferInput,
   SearchOffersInput,
   type SearchOffersResult,
@@ -16,6 +33,7 @@ import {
 import {
   type affiliateAccounts,
   type DbOrTx,
+  feedItems,
   offers,
   offerValidations,
   pricePoints,
@@ -44,7 +62,7 @@ import {
 type ProductRow = typeof products.$inferSelect;
 type OfferRow = typeof offers.$inferSelect;
 type AccountRow = typeof affiliateAccounts.$inferSelect;
-type DbDeps = Pick<Deps, "db" | "secrets" | "affiliateConnectors" | "now">;
+type DbDeps = Pick<Deps, "db" | "secrets" | "affiliateConnectors" | "now" | "openStream">;
 
 /** Variação de preço aceita antes de considerar a oferta expirada. */
 export const PRICE_TOLERANCE = 0.05;
@@ -161,7 +179,11 @@ export async function runSearch(
   workspaceId: string,
   q: ParsedSearch,
   opts: { excludeExternalIds?: string[] } = {},
-): Promise<{ candidates: Candidate[]; errors: { platform: string; message: string }[] }> {
+): Promise<{
+  candidates: Candidate[];
+  errors: { platform: string; message: string }[];
+  hasMore: boolean;
+}> {
   const accounts = await activeAccounts(
     deps.db,
     workspaceId,
@@ -188,12 +210,17 @@ export async function runSearch(
           categoryId: q.category_id,
           sort: q.sort,
           limit: fetchLimit,
+          page: q.page,
+          minDiscount: q.min_discount,
+          priceMin: q.price_min,
+          priceMax: q.price_max,
+          minRating: q.min_rating,
         });
         await recordAccountHealth(deps.db, account, null);
-        return { account, items: res.items, error: null };
+        return { account, items: res.items, hasMore: res.hasMore, error: null };
       } catch (err) {
         await recordAccountHealth(deps.db, account, err);
-        return { account, items: [] as ProductOffer[], error: providerError(err) };
+        return { account, items: [] as ProductOffer[], hasMore: false, error: providerError(err) };
       }
     }),
   );
@@ -251,7 +278,11 @@ export async function runSearch(
     return { ...p, history, flags, score: offerScore(p.item, history, flags, niches) };
   });
   if (q.sort === "relevance") candidates.sort((a, b) => b.score - a.score);
-  return { candidates: candidates.slice(0, q.limit), errors };
+  if (q.sort === "discount") {
+    candidates.sort((a, b) => (b.item.discountPct ?? 0) - (a.item.discountPct ?? 0));
+  }
+  const hasMore = candidates.length > q.limit || results.some((r) => r.hasMore);
+  return { candidates: candidates.slice(0, q.limit), errors, hasMore };
 }
 
 async function latestOfferByProduct(db: DbOrTx, productIds: string[]) {
@@ -301,12 +332,16 @@ function toCandidate(c: Candidate, existing: OfferRow | undefined): OfferCandida
 export async function searchOffers(ctx: Ctx, raw: SearchOffersInput): Promise<SearchOffersResult> {
   requireScope(ctx.actor, "offers:read");
   const q = SearchOffersInput.parse(raw);
-  const { candidates, errors } = await runSearch(ctx, ctx.actor.workspaceId, q);
+  const { candidates, errors, hasMore } = await runSearch(ctx, ctx.actor.workspaceId, q);
   const existing = await latestOfferByProduct(
     ctx.db,
     candidates.map((c) => c.product.id),
   );
-  return { items: candidates.map((c) => toCandidate(c, existing.get(c.product.id))), errors };
+  return {
+    items: candidates.map((c) => toCandidate(c, existing.get(c.product.id))),
+    errors,
+    has_more: hasMore,
+  };
 }
 
 // ── Curadoria ───────────────────────────────────────────────────
@@ -315,6 +350,7 @@ function toOffer(o: OfferRow, p: ProductRow): Offer {
   return {
     id: o.id,
     status: o.status,
+    origin: o.affiliateAccountId ? "platform" : "link",
     product_id: p.id,
     platform: p.platform,
     title: p.title,
@@ -452,10 +488,8 @@ export async function saveOffer(ctx: Ctx, raw: SaveOfferInput, opts: MutationOpt
         item: fresh.item,
         score: fresh.score,
         flags: fresh.flags,
-        updates_offer_id:
-          existing && (existing.status === "new" || existing.status === "approved")
-            ? existing.id
-            : null,
+        // Reaproveita a última oferta do produto (inclusive rejeitada ou expirada): sem duplicar.
+        updates_offer_id: existing?.id ?? null,
       };
     },
     execute: async (tx, i, p) => {
@@ -471,7 +505,7 @@ export async function saveOffer(ctx: Ctx, raw: SaveOfferInput, opts: MutationOpt
       const [row] = p.updates_offer_id
         ? await tx.db
             .update(offers)
-            .set(values)
+            .set({ ...values, affiliateAccountId: p.account_id })
             .where(eq(offers.id, p.updates_offer_id))
             .returning()
         : await tx.db
@@ -604,6 +638,7 @@ export async function getOffer(ctx: Ctx, offerId: string): Promise<OfferDetail> 
 
 /** Confere preço e estoque agora. Não grava nada. */
 async function checkOffer(deps: DbDeps, workspaceId: string, offer: OfferRow, product: ProductRow) {
+  if (!offer.affiliateAccountId) return checkLinkOffer(deps, offer);
   const fresh = await freshCandidate(deps, workspaceId, product, offer.couponCode);
   const priceNow = fresh.item?.price ?? null;
   const available = fresh.item ? fresh.item.available : null;
@@ -791,13 +826,26 @@ export async function createOfferLink(
         title: product.title,
         fallback_affiliate_url: offer.affiliateUrl,
         account_id: offer.affiliateAccountId,
+        platform: product.platform,
         slug,
         short_url: shortUrl(c, slug),
         sub_ids: subIds,
       };
     },
     execute: async (tx, i, p) => {
-      const [account] = (await activeAccounts(tx.db, wsId)).filter((a) => a.id === p.account_id);
+      const accounts = await activeAccounts(tx.db, wsId);
+      let account = accounts.find((a) => a.id === p.account_id);
+      // Oferta por link: se o destino é link comum da loja ou um an_redir (aceita sub-ids),
+      // remonta com uma conta que gere link de comissão, marcando a origem deste link curto.
+      const fallback = p.fallback_affiliate_url;
+      if (
+        !p.account_id &&
+        (!fallback || !looksLikeAffiliateUrl(fallback) || fallback.includes("/an_redir?"))
+      ) {
+        account = accounts.find(
+          (a) => a.platform === p.platform && (a.mode === "live" || a.mode === "feed"),
+        );
+      }
       let affiliateUrl = p.fallback_affiliate_url;
       if (account) {
         const connector = connectorFor(ctx, account);
@@ -840,3 +888,303 @@ export async function createOfferLink(
 }
 
 export { toOffer };
+
+// ── Oferta por link ─────────────────────────────────────────────
+
+/**
+ * Oferta criada por link colado: sem API da loja não dá para conferir preço e estoque.
+ * Só expira pelo prazo (valid_until).
+ */
+function checkLinkOffer(deps: Pick<Deps, "now">, offer: OfferRow) {
+  const ended = offer.validUntil !== null && offer.validUntil <= now(deps);
+  return {
+    fresh: { item: null as ProductOffer | null, score: 0, flags: [] as QualityFlag[] },
+    priceNow: null,
+    available: null,
+    changePct: null,
+    ok: !ended,
+    reason: ended ? "Período da oferta encerrado." : null,
+  };
+}
+
+/** Produto sem id reconhecível no link: id estável derivado do endereço. */
+function linkId(url: string) {
+  const u = new URL(url);
+  const hash = createHash("sha256").update(`${u.hostname}${u.pathname}`).digest("hex");
+  return `link:${hash.slice(0, 16)}`;
+}
+
+type LinkData = {
+  platform: Platform;
+  externalId: string;
+  productUrl: string;
+  affiliateUrl: string;
+  isAffiliate: boolean;
+  source: "platform" | "page";
+  item: ProductOffer | null;
+  liveAccount: AccountRow | null;
+  title: string | null;
+  imageUrl: string | null;
+  price: number | null;
+  originalPrice: number | null;
+  shopName: string | null;
+};
+
+/** Abre o link (seguindo links curtos), descobre loja e produto e lê o que der da página. */
+async function readLink(deps: Deps, workspaceId: string, raw: string): Promise<LinkData> {
+  const pasted = raw.trim();
+  if (!platformOfUrl(pasted)) {
+    throw new AppError("VALIDATION_ERROR", "Link de loja não reconhecido.", {
+      hint: "Aceita links da Shopee, Mercado Livre, Amazon e Magalu.",
+    });
+  }
+  const page = await deps.fetchPage(pasted).catch(() => null);
+  const finalUrl = page && platformOfUrl(page.url) ? page.url : pasted;
+  const platform = (platformOfUrl(finalUrl) ?? platformOfUrl(pasted)) as Platform;
+  const final = new URL(finalUrl);
+  const foundId = productIdOfUrl(platform, finalUrl) ?? productIdOfUrl(platform, pasted);
+
+  const data =
+    page && page.status < 400
+      ? parseProductPage(page.html, finalUrl)
+      : { title: null, imageUrl: null, price: null, originalPrice: null, shopName: null };
+  const out: LinkData = {
+    platform,
+    externalId: foundId ?? linkId(finalUrl),
+    productUrl: `${final.origin}${final.pathname}`,
+    affiliateUrl: pasted,
+    isAffiliate: looksLikeAffiliateUrl(pasted),
+    source: "page",
+    item: null,
+    liveAccount: null,
+    title:
+      (isGenericTitle(data.title) ? null : data.title) ??
+      titleFromUrl(finalUrl) ??
+      titleFromUrl(pasted),
+    imageUrl: data.imageUrl,
+    price: data.price,
+    originalPrice: data.originalPrice,
+    shopName: data.shopName,
+  };
+
+  // Com conta real ou feed da loja, os dados vêm dela (e o preço é conferido antes de cada envio).
+  const live = (await activeAccounts(deps.db, workspaceId, [platform])).find(
+    (a) => a.mode === "live" || a.mode === "feed",
+  );
+  if (live && !out.isAffiliate) {
+    // Link comum da loja: vira link de comissão (os links curtos ganham sub-ids depois).
+    const link = await connectorFor(deps, live)
+      .generateLink(out.productUrl, [])
+      .catch(() => null);
+    if (link) Object.assign(out, { affiliateUrl: link, isAffiliate: true });
+  }
+  if (live && foundId) {
+    const item = await connectorFor(deps, live)
+      .lookup(foundId)
+      .catch(() => null);
+    if (item) {
+      Object.assign(out, {
+        source: "platform",
+        item,
+        liveAccount: live,
+        title: item.title,
+        imageUrl: item.imageUrls[0] ?? out.imageUrl,
+        price: item.price,
+        originalPrice: item.originalPrice,
+        shopName: item.shopName ?? out.shopName,
+        productUrl: item.url || out.productUrl,
+      });
+    }
+  }
+  return out;
+}
+
+async function openOfferFor(
+  db: DbOrTx,
+  workspaceId: string,
+  platform: Platform,
+  externalId: string,
+) {
+  const [row] = await db
+    .select({ id: offers.id })
+    .from(offers)
+    .innerJoin(products, eq(products.id, offers.productId))
+    .where(
+      and(
+        eq(products.workspaceId, workspaceId),
+        eq(products.platform, platform),
+        eq(products.externalId, externalId),
+        inArray(offers.status, ["new", "approved"]),
+      ),
+    )
+    .orderBy(desc(offers.createdAt))
+    .limit(1);
+  return row?.id ?? null;
+}
+
+/** Abre um link de produto e devolve o que foi encontrado (não grava nada). */
+export async function previewOfferFromLink(
+  ctx: Ctx,
+  raw: OfferFromLinkInput,
+): Promise<OfferLinkPreview> {
+  requireScope(ctx.actor, "offers:write");
+  const input = OfferFromLinkInput.parse(raw);
+  const d = await readLink(ctx, ctx.actor.workspaceId, input.url);
+  const missing: OfferLinkPreview["missing"] = [];
+  if (!d.title) missing.push("title");
+  if (!d.imageUrl) missing.push("image");
+  if (!d.price) missing.push("price");
+  return {
+    platform: d.platform,
+    external_id: d.externalId,
+    product_url: d.productUrl,
+    affiliate_url: d.affiliateUrl,
+    is_affiliate_link: d.isAffiliate || d.source === "platform",
+    source: d.source,
+    title: d.title,
+    image_url: d.imageUrl,
+    price: d.price,
+    original_price: d.originalPrice,
+    shop_name: d.shopName,
+    missing,
+    existing_offer_id: await openOfferFor(ctx.db, ctx.actor.workspaceId, d.platform, d.externalId),
+  };
+}
+
+/**
+ * Cria (ou atualiza) uma oferta a partir de um link colado, com os dados conferidos pelo usuário.
+ * O link colado vira o destino dos links curtos. Com conta real da loja, usa a API dela.
+ */
+export async function importOfferFromLink(
+  ctx: Ctx,
+  raw: ImportOfferFromLinkInput,
+  opts: MutationOptions = {},
+) {
+  const input = ImportOfferFromLinkInput.parse(raw);
+  const wsId = ctx.actor.workspaceId;
+  return runMutation(ctx, {
+    action: "offers.import_link",
+    scope: "offers:write",
+    input,
+    opts,
+    target: (i) => ({ type: "link", id: i.url.slice(0, 200) }),
+    preview: async (c, i) => {
+      const d = await readLink(ctx, wsId, i.url);
+      const original = i.original_price && i.original_price > i.price ? i.original_price : null;
+      const item: ProductOffer = {
+        platform: d.platform,
+        externalId: d.externalId,
+        title: i.title,
+        url: d.productUrl,
+        affiliateUrl: d.isAffiliate || !d.item?.affiliateUrl ? d.affiliateUrl : d.item.affiliateUrl,
+        imageUrls: i.image_url ? [i.image_url] : (d.item?.imageUrls ?? []),
+        price: i.price,
+        originalPrice: original,
+        discountPct: original ? Math.round((1 - i.price / original) * 100) : null,
+        commissionRate: d.item?.commissionRate ?? null,
+        commissionValue: d.item?.commissionValue ?? null,
+        rating: d.item?.rating ?? null,
+        soldCount: d.item?.soldCount ?? null,
+        shopName: d.shopName,
+        categoryIds: d.item?.categoryIds ?? [],
+        categoryName: d.item?.categoryName ?? null,
+        available: true,
+        validUntil: null,
+      };
+      return {
+        item,
+        account_id: d.liveAccount?.id ?? null,
+        source: d.source,
+        updates_offer_id: await openOfferFor(c.db, wsId, d.platform, d.externalId),
+      };
+    },
+    execute: async (tx, i, p) => {
+      const at = now(ctx);
+      const productMap = await upsertProducts(tx.db, wsId, [p.item], at);
+      const product = productMap.get(keyOf(p.item.platform, p.item.externalId));
+      if (!product) throw new Error("Falha ao salvar produto");
+      await recordPrices(
+        tx.db,
+        [{ productId: product.id, price: p.item.price, originalPrice: p.item.originalPrice }],
+        "lookup",
+        at,
+      );
+      const history = summaryOrEmpty(
+        (await priceSummaries(tx.db, [product.id], at)).get(product.id),
+      );
+      const flags = qualityFlags({ ...p.item, couponCode: i.coupon_code }, history);
+      const score = offerScore(p.item, history, flags, await workspaceNiches(tx.db, wsId));
+      const values = {
+        ...offerValues(p.item, score, flags),
+        affiliateAccountId: p.account_id,
+        status: i.status,
+        couponCode: i.coupon_code ?? null,
+        couponDescription: i.coupon_description ?? null,
+        notes: i.notes ?? null,
+        rejectReason: null,
+        lastValidatedAt: at,
+      };
+      const [row] = p.updates_offer_id
+        ? await tx.db
+            .update(offers)
+            .set(values)
+            .where(eq(offers.id, p.updates_offer_id))
+            .returning()
+        : await tx.db
+            .insert(offers)
+            .values({ ...values, workspaceId: wsId, productId: product.id })
+            .returning();
+      if (!row) throw new Error("Falha ao salvar oferta");
+      return toOffer(row, product);
+    },
+  });
+}
+
+// ── Categorias ──────────────────────────────────────────────────
+
+/** Categorias para filtrar a busca: do catálogo do feed (com contagem) ou do simulado. */
+export async function listOfferCategories(ctx: Ctx): Promise<OfferCategory[]> {
+  requireScope(ctx.actor, "offers:read");
+  const out: OfferCategory[] = [];
+  for (const account of await activeAccounts(ctx.db, ctx.actor.workspaceId)) {
+    if (account.mode === "feed") {
+      const rows = await ctx.db
+        .select({
+          id: sql<string>`${feedItems.categoryIds}[1]`,
+          name: sql<string>`max(${feedItems.topCategory})`,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(feedItems)
+        .where(
+          and(
+            eq(feedItems.accountId, account.id),
+            sql`${feedItems.categoryIds}[1] is not null`,
+            // Sem nome (importado antes da coluna existir): fica de fora até a próxima importação.
+            sql`${feedItems.topCategory} is not null`,
+          ),
+        )
+        .groupBy(sql`${feedItems.categoryIds}[1]`)
+        .orderBy(desc(sql`count(*)`));
+      for (const r of rows) {
+        out.push({
+          id: r.id,
+          name: SHOPEE_CATEGORY_PT[r.name] ?? r.name ?? r.id,
+          platform: account.platform,
+          count: r.count,
+        });
+      }
+    } else if (account.mode === "fake") {
+      for (const c of FAKE_CATEGORIES) {
+        out.push({ id: c.id, name: c.name, platform: account.platform, count: null });
+      }
+    }
+  }
+  // Mesma categoria em duas contas: soma.
+  const merged = new Map<string, OfferCategory>();
+  for (const c of out) {
+    const key = `${c.platform}:${c.id}`;
+    const prev = merged.get(key);
+    merged.set(key, prev ? { ...prev, count: (prev.count ?? 0) + (c.count ?? 0) } : c);
+  }
+  return [...merged.values()];
+}

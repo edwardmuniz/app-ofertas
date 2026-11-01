@@ -6,8 +6,10 @@ import {
   rollupClicks,
   runAutomationRules,
   runDueSavedSearches,
+  runFeedSync,
   runHealthChecks,
   runPublisher,
+  s3ConfigFromEnv,
 } from "@ofertas/core";
 import { z } from "zod";
 
@@ -34,6 +36,7 @@ const { deps, close } = createRuntimeDeps({
   redirectBaseUrl: env.REDIRECT_PUBLIC_URL,
   encryptionKey: env.ENCRYPTION_KEY,
   mediaDir: resolve(process.cwd(), process.env.MEDIA_DIR ?? "../../data/media"),
+  s3: s3ConfigFromEnv(process.env),
   publicApiUrl: process.env.API_PUBLIC_URL ?? "http://localhost:3001",
   evolutionGo:
     env.EVOLUTION_GO_URL && env.EVOLUTION_GO_API_KEY
@@ -112,7 +115,35 @@ async function publishTick() {
   }
 }
 
+let feeding = false;
+/**
+ * Feed de produtos: baixa e importa os CSVs das contas em modo feed (uma vez por dia).
+ * Pode levar minutos, então roda à parte, sem segurar as buscas, regras e a fila.
+ */
+async function feedTick() {
+  if (feeding || stopping) return;
+  // Trava curta, renovada enquanto importa: se o worker morrer, ela some em até 90 s.
+  const lock = await deps.cache.setIfAbsent("lock:worker:feed", String(process.pid), 90);
+  if (!lock) return;
+  feeding = true;
+  const renew = setInterval(() => {
+    void deps.cache.set("lock:worker:feed", String(process.pid), 90).catch(() => undefined);
+  }, 30_000);
+  try {
+    const results = await runFeedSync(deps);
+    if (results.length) log("feed de produtos", results);
+  } catch (err) {
+    log("erro no feed de produtos", { error: String(err) });
+  } finally {
+    clearInterval(renew);
+    await deps.cache.del("lock:worker:feed");
+    feeding = false;
+  }
+}
+
 const timer = setInterval(() => void tick(), env.WORKER_TICK_SECONDS * 1000);
+const feedTimer = setInterval(() => void feedTick(), 60_000);
+void feedTick();
 const publishTimer = setInterval(() => void publishTick(), env.PUBLISH_TICK_SECONDS * 1000);
 void tick();
 log(`worker iniciado (a cada ${env.WORKER_TICK_SECONDS}s)`);
@@ -121,6 +152,9 @@ const shutdown = async () => {
   stopping = true;
   clearInterval(timer);
   clearInterval(publishTimer);
+  clearInterval(feedTimer);
+  // Importação do feed em andamento é interrompida: solta a trava para recomeçar logo.
+  if (feeding) await deps.cache.del("lock:worker:feed").catch(() => undefined);
   while (running || publishing) await new Promise((r) => setTimeout(r, 200));
   await close();
   process.exit(0);

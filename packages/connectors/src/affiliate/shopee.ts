@@ -19,6 +19,8 @@ const SORT_TYPE: Record<SearchSort, number> = {
   price_desc: 3,
   price_asc: 4,
   commission: 5,
+  // Sem ordenação por desconto na API: usa relevância e ordena depois.
+  discount: 1,
 };
 
 const OFFER_FIELDS = `itemId productName price priceMin priceMax priceDiscountRate
@@ -104,7 +106,8 @@ export class ShopeeConnector implements AffiliateConnector {
     lookup: true,
     linkGeneration: true,
     subIds: 5,
-    conversionsReport: true,
+    // Relatório de conversões entra na fase Financeiro (fetchConversions ainda não existe).
+    conversionsReport: false,
   };
 
   constructor(

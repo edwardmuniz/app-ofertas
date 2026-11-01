@@ -1,10 +1,14 @@
 import {
+  type GroupDetails,
+  type GroupSetting,
   type GroupSummary,
   type InstanceRef,
   type InstanceStatus,
   MessagingError,
   type MessagingEvent,
   type MessagingProvider,
+  type ParticipantAction,
+  samePhone,
   type WebhookEnvelope,
 } from "./types";
 
@@ -29,6 +33,31 @@ export function pick<T = unknown>(obj: unknown, ...paths: string[]): T | undefin
   return undefined;
 }
 
+/** JID vem como texto ("123@g.us") ou, em versões antigas, como objeto { User, Server }. */
+function jidString(v: unknown): string {
+  if (typeof v === "string") return v;
+  const user = pick<string>(v, "User", "user");
+  const server = pick<string>(v, "Server", "server");
+  return user && server ? `${user}@${server}` : "";
+}
+
+/** Parte do usuário do JID, sem servidor nem aparelho ("5511...:5@s.whatsapp.net" → "5511..."). */
+const jidUser = (v: unknown) => (jidString(v).split("@")[0] ?? "").split(":")[0] ?? "";
+
+/** O número é admin entre os participantes? null se ele não aparece na lista (ex.: só LID). */
+function adminIn(participants: unknown[], me: string): boolean | null {
+  const p = participants.find((x) =>
+    [pick(x, "JID", "jid"), pick(x, "PhoneNumber", "phoneNumber")].some(
+      (j) => j !== undefined && samePhone(jidUser(j), me),
+    ),
+  );
+  if (!p) return null;
+  return Boolean(pick(p, "IsAdmin", "isAdmin") || pick(p, "IsSuperAdmin", "isSuperAdmin"));
+}
+
+/** Prazo das operações de grupo: o WhatsApp responde mais devagar que no envio de texto. */
+const GROUP_TIMEOUT = 45_000;
+
 export const WEBHOOK_EVENTS = ["GROUP", "CONNECTION", "QRCODE"];
 
 type Fetch = typeof fetch;
@@ -43,16 +72,31 @@ export class EvolutionGoProvider implements MessagingProvider {
     path: string,
     apikey: string,
     body?: unknown,
+    timeoutMs = 20_000,
+    /** Corpo JSON enviado como text/plain (contorna a validação de /group/participant) */
+    asText = false,
   ): Promise<T> {
     let res: Response;
     try {
       res = await (this.cfg.fetch ?? fetch)(`${this.cfg.baseUrl.replace(/\/$/, "")}${path}`, {
         method,
-        headers: { apikey, ...(body !== undefined ? { "content-type": "application/json" } : {}) },
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-        signal: AbortSignal.timeout(20_000),
+        headers: {
+          apikey,
+          ...(body !== undefined
+            ? { "content-type": asText ? "text/plain" : "application/json" }
+            : {}),
+        },
+        body:
+          body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (err) {
+      if (err instanceof Error && err.name === "TimeoutError") {
+        throw new MessagingError(
+          "TIMEOUT",
+          `Evolution Go não respondeu em ${Math.round(timeoutMs / 1000)} s.`,
+        );
+      }
       throw new MessagingError("UNAVAILABLE", `Evolution Go indisponível: ${String(err)}`);
     }
     const text = await res.text();
@@ -158,19 +202,21 @@ export class EvolutionGoProvider implements MessagingProvider {
     await this.call("DELETE", "/instance/logout", ref.token);
   }
 
-  async listGroups(ref: InstanceRef): Promise<GroupSummary[]> {
-    const res = await this.call("GET", "/group/myall", ref.token).catch((err) => {
-      if (err instanceof MessagingError && err.code === "INVALID") {
-        return this.call("GET", "/group/list", ref.token);
-      }
-      throw err;
-    });
+  async listGroups(
+    ref: InstanceRef,
+    opts: { ownJid?: string | null } = {},
+  ): Promise<GroupSummary[]> {
+    // `/group/list` devolve todos os grupos em que o número está (uma consulta ao WhatsApp).
+    // `/group/myall` só filtra os criados pelo número e está marcado como "not working" no código
+    // da Evolution Go. Com muitos grupos a resposta é grande: prazo maior.
+    const res = await this.call("GET", "/group/list", ref.token, undefined, 60_000);
     const list = pick<unknown[]>(res, "data", "groups") ?? [];
+    const me = opts.ownJid ? jidUser(opts.ownJid) : null;
     return (Array.isArray(list) ? list : [])
       .map((g) => {
         const participants = pick<unknown[]>(g, "Participants", "participants");
         return {
-          jid: String(pick(g, "JID", "jid", "id") ?? ""),
+          jid: jidString(pick(g, "JID", "jid", "id")),
           name: String(pick(g, "Name", "name", "subject") ?? "Grupo sem nome"),
           participantCount:
             Number(pick(g, "ParticipantCount", "participantCount", "size")) ||
@@ -178,13 +224,20 @@ export class EvolutionGoProvider implements MessagingProvider {
           adminOnly: (pick<boolean>(g, "IsAnnounce", "isAnnounce", "announce") ?? null) as
             | boolean
             | null,
+          isAdmin: me && Array.isArray(participants) ? adminIn(participants, me) : null,
         };
       })
       .filter((g) => g.jid.endsWith("@g.us"));
   }
 
-  async inviteLink(ref: InstanceRef, groupJid: string) {
-    const res = await this.call("POST", "/group/invitelink", ref.token, { groupJid, reset: false });
+  async inviteLink(ref: InstanceRef, groupJid: string, opts: { reset?: boolean } = {}) {
+    const res = await this.call(
+      "POST",
+      "/group/invitelink",
+      ref.token,
+      { groupJid, reset: opts.reset ?? false },
+      GROUP_TIMEOUT,
+    );
     const link = pick<string>(res, "data.inviteLink", "inviteLink", "data.link", "data");
     if (typeof link !== "string")
       throw new MessagingError("INVALID", "Link de convite não retornado.");
@@ -192,10 +245,174 @@ export class EvolutionGoProvider implements MessagingProvider {
   }
 
   async setAdminOnly(ref: InstanceRef, groupJid: string, on: boolean) {
-    await this.call("POST", "/group/settings", ref.token, {
-      groupJid,
-      action: on ? "announcement" : "not_announcement",
-    });
+    await this.setGroupSetting(ref, groupJid, on ? "announcement" : "not_announcement");
+  }
+
+  async setGroupSetting(ref: InstanceRef, groupJid: string, setting: GroupSetting) {
+    await this.call(
+      "POST",
+      "/group/settings",
+      ref.token,
+      { groupJid, action: setting },
+      GROUP_TIMEOUT,
+    );
+  }
+
+  async getGroupInfo(
+    ref: InstanceRef,
+    groupJid: string,
+    opts: { ownJid?: string | null } = {},
+  ): Promise<GroupDetails> {
+    const res = await this.call("POST", "/group/info", ref.token, { groupJid }, GROUP_TIMEOUT);
+    const g = pick<Record<string, unknown>>(res, "data") ?? {};
+    const participants = pick<unknown[]>(g, "Participants", "participants") ?? [];
+    const list = Array.isArray(participants) ? participants : [];
+    const me = opts.ownJid ? jidUser(opts.ownJid) : null;
+    const userOfParticipant = (x: unknown) =>
+      jidUser(pick(x, "PhoneNumber", "phoneNumber") ?? pick(x, "JID", "jid"));
+    const addMode = pick<string>(g, "MemberAddMode", "memberAddMode");
+    return {
+      jid: jidString(pick(g, "JID", "jid")) || groupJid,
+      name: String(pick(g, "Name", "name", "subject") ?? "Grupo sem nome"),
+      participantCount:
+        Number(pick(g, "ParticipantCount", "participantCount", "size")) || list.length,
+      adminOnly: pick<boolean>(g, "IsAnnounce", "isAnnounce", "announce") ?? null,
+      isAdmin: me ? adminIn(list, me) : null,
+      description: pick<string>(g, "Topic", "topic", "desc") ?? null,
+      locked: pick<boolean>(g, "IsLocked", "isLocked") ?? null,
+      approvalRequired:
+        pick<boolean>(g, "IsJoinApprovalRequired", "isJoinApprovalRequired") ?? null,
+      adminsAddMembers: addMode ? addMode === "admin_add" : null,
+      isCommunity: Boolean(pick(g, "IsParent", "isParent")),
+      communityJid: jidString(pick(g, "LinkedParentJID", "linkedParentJid")) || null,
+      participants: list.map(userOfParticipant).filter(Boolean),
+      admins: list
+        .filter((x) => pick(x, "IsAdmin", "isAdmin") || pick(x, "IsSuperAdmin", "isSuperAdmin"))
+        .map(userOfParticipant)
+        .filter(Boolean),
+    };
+  }
+
+  /**
+   * Telefones → JID real no WhatsApp (`/user/check`). Resolve o 9º dígito dos números
+   * brasileiros: mandar o telefone cru faz criar grupo/adicionar travar ou falhar.
+   */
+  private async resolveJids(ref: InstanceRef, phones: string[]) {
+    const res = await this.call(
+      "POST",
+      "/user/check",
+      ref.token,
+      { number: phones.map((p) => `+${p.replace(/\D/g, "")}`), formatJid: false },
+      GROUP_TIMEOUT,
+    );
+    const users = pick<unknown[]>(res, "data.Users", "data.users", "Users") ?? [];
+    const found = new Map<string, string>();
+    for (const u of Array.isArray(users) ? users : []) {
+      const query = String(pick(u, "Query", "query") ?? "").replace(/\D/g, "");
+      const jid = jidString(pick(u, "JID", "jid"));
+      if (query && jid && pick(u, "IsInWhatsapp", "isInWhatsapp") !== false) found.set(query, jid);
+    }
+    const missing = phones.filter((p) => !found.has(p));
+    if (missing.length) {
+      throw new MessagingError("INVALID", `Estes números não têm WhatsApp: ${missing.join(", ")}.`);
+    }
+    return phones.map((p) => found.get(p) as string);
+  }
+
+  async createGroup(ref: InstanceRef, name: string, participants: string[]) {
+    const jids = await this.resolveJids(ref, participants);
+    // Criar grupo é a operação mais lenta do WhatsApp.
+    const res = await this.call(
+      "POST",
+      "/group/create",
+      ref.token,
+      { groupName: name, participants: jids },
+      90_000,
+    );
+    const jid = jidString(pick(res, "data.jid", "data.JID", "data.id"));
+    if (!jid)
+      throw new MessagingError("INVALID", "Evolution Go não devolveu o id do grupo criado.");
+    const failed = pick<unknown[]>(res, "data.failed") ?? [];
+    return {
+      jid,
+      failed: (Array.isArray(failed) ? failed : []).map((f) => jidUser(pick(f, "JID", "jid") ?? f)),
+    };
+  }
+
+  async setGroupName(ref: InstanceRef, groupJid: string, name: string) {
+    await this.call("POST", "/group/name", ref.token, { groupJid, name }, GROUP_TIMEOUT);
+  }
+
+  async setGroupDescription(ref: InstanceRef, groupJid: string, description: string) {
+    await this.call(
+      "POST",
+      "/group/description",
+      ref.token,
+      { groupJid, description },
+      GROUP_TIMEOUT,
+    );
+  }
+
+  async setGroupPhoto(ref: InstanceRef, groupJid: string, imageUrl: string) {
+    // A Evolution Go baixa a imagem antes de responder.
+    await this.call("POST", "/group/photo", ref.token, { groupJid, image: imageUrl }, 60_000);
+  }
+
+  async updateParticipants(
+    ref: InstanceRef,
+    groupJid: string,
+    phones: string[],
+    action: ParticipantAction,
+  ) {
+    const jids = await this.resolveJids(ref, phones);
+    // A validação da rota recusa a lista quando o corpo vem como application/json, mas o
+    // handler lê JSON de qualquer jeito: mandamos o mesmo JSON como text/plain.
+    await this.call(
+      "POST",
+      "/group/participant",
+      ref.token,
+      JSON.stringify({ groupJid, participants: jids, action }),
+      GROUP_TIMEOUT,
+      true,
+    );
+  }
+
+  async joinGroup(ref: InstanceRef, invite: string) {
+    await this.call("POST", "/group/join", ref.token, { code: invite.trim() }, GROUP_TIMEOUT);
+  }
+
+  async leaveGroup(ref: InstanceRef, groupJid: string) {
+    await this.call("POST", "/group/leave", ref.token, { groupJid }, GROUP_TIMEOUT);
+  }
+
+  async createCommunity(ref: InstanceRef, name: string) {
+    const res = await this.call(
+      "POST",
+      "/community/create",
+      ref.token,
+      { communityName: name },
+      90_000,
+    );
+    const jid = jidString(pick(res, "data.JID", "data.jid", "JID", "jid"));
+    if (!jid) throw new MessagingError("INVALID", "Evolution Go não devolveu o id da comunidade.");
+    return { jid };
+  }
+
+  async linkCommunityGroups(
+    ref: InstanceRef,
+    communityJid: string,
+    groupJids: string[],
+    link: boolean,
+  ) {
+    // A resposta de sucesso/falha da Evolution Go não é confiável (bug no código dela):
+    // quem chama confere relendo os grupos. `communityId` vai junto por causa da validação dela.
+    await this.call(
+      "POST",
+      link ? "/community/add" : "/community/remove",
+      ref.token,
+      { communityJid, communityId: communityJid, groupJid: groupJids },
+      90_000,
+    );
   }
 
   private messageId(res: unknown) {
@@ -211,12 +428,14 @@ export class EvolutionGoProvider implements MessagingProvider {
 
   async sendImage(ref: InstanceRef, to: string, imageUrl: string, caption: string) {
     return this.messageId(
-      await this.call("POST", "/send/media", ref.token, {
-        number: to,
-        type: "image",
-        url: imageUrl,
-        caption,
-      }),
+      // A Evolution Go baixa a imagem e sobe para o WhatsApp antes de responder.
+      await this.call(
+        "POST",
+        "/send/media",
+        ref.token,
+        { number: to, type: "image", url: imageUrl, caption },
+        60_000,
+      ),
     );
   }
 
@@ -254,14 +473,41 @@ export function parseEvolutionWebhook(body: unknown): WebhookEnvelope {
         code: pick<string>(data, "code", "Code") ?? null,
       };
       break;
-    case "GroupInfo":
-      e = {
-        kind: "participants",
-        groupJid: String(pick(data, "JID", "jid") ?? ""),
+    case "GroupInfo": {
+      const users = (v: unknown) => (Array.isArray(v) ? v.map(jidUser).filter(Boolean) : []);
+      const has = (...keys: string[]) => keys.some((k) => pick(data, k) !== undefined);
+      const update: Extract<MessagingEvent, { kind: "group_update" }> = {
+        kind: "group_update",
+        groupJid: jidString(pick(data, "JID", "jid")),
         joined: count(pick(data, "Join", "join")),
         left: count(pick(data, "Leave", "leave")),
+        promoted: users(pick(data, "Promote", "promote")),
+        demoted: users(pick(data, "Demote", "demote")),
       };
+      const name = pick<string>(data, "Name.Name", "name.name");
+      if (name) update.name = name;
+      if (has("Topic", "topic")) {
+        update.description = pick<string>(data, "Topic.Topic", "topic.topic") ?? "";
+      }
+      const announce = pick<boolean>(data, "Announce.IsAnnounce", "announce.isAnnounce");
+      if (announce !== undefined) update.adminOnly = announce;
+      const locked = pick<boolean>(data, "Locked.IsLocked", "locked.isLocked");
+      if (locked !== undefined) update.locked = locked;
+      const approval = pick<boolean>(
+        data,
+        "MembershipApprovalMode.IsJoinApprovalRequired",
+        "membershipApprovalMode.isJoinApprovalRequired",
+      );
+      if (approval !== undefined) update.approvalRequired = approval;
+      const link = pick<string>(data, "NewInviteLink", "newInviteLink");
+      if (link)
+        update.inviteLink = link.startsWith("http") ? link : `https://chat.whatsapp.com/${link}`;
+      if (has("Delete", "delete")) update.deleted = true;
+      if (pick<boolean>(data, "Suspended", "suspended")) update.suspended = true;
+      if (pick<boolean>(data, "Unsuspended", "unsuspended")) update.suspended = false;
+      e = update;
       break;
+    }
     case "JoinedGroup": {
       const participants = pick(data, "Participants", "participants");
       e = {

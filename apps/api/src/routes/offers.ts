@@ -4,16 +4,21 @@ import {
   ConnectAffiliateAccountInput,
   CreateOfferLinkInput,
   FindSimilarInput,
+  ImportOfferFromLinkInput,
   ListOffersQuery,
   Offer,
   OfferCandidate,
+  OfferCategory,
   OfferDetail,
+  OfferFromLinkInput,
   OfferLink,
+  OfferLinkPreview,
   OfferPage,
   SavedSearch,
   SaveOfferInput,
   SearchOffersInput,
   SearchOffersResult,
+  UpdateAffiliateAccountInput,
   UpdateOfferStatusInput,
   UpsertSavedSearchInput,
   ValidateOfferResult,
@@ -23,15 +28,21 @@ import {
   connectAffiliateAccount,
   createOfferLink,
   type Deps,
+  deleteAffiliateAccount,
   findSimilarOffers,
   getOffer,
+  importOfferFromLink,
   listAffiliateAccounts,
+  listOfferCategories,
   listOffers,
   listSavedSearches,
+  previewOfferFromLink,
+  requestFeedSync,
   saveOffer,
   searchOffers,
   setAffiliateAccountStatus,
   setOfferStatus,
+  updateAffiliateAccount,
   upsertSavedSearch,
   validateOffer,
 } from "@ofertas/core";
@@ -94,6 +105,53 @@ export const offerRoutes: FastifyPluginAsyncZod<{ deps: Deps }> = async (app, { 
     async (req) =>
       setAffiliateAccountStatus(ctx(req), req.params.id, req.body.status, mutationOpts(req)),
   );
+  app.put(
+    "/affiliate-accounts/:id",
+    {
+      schema: {
+        tags: ["afiliados"],
+        description:
+          "Edita nome e credenciais (só pelo painel). Credenciais em branco mantêm as atuais; as novas são testadas.",
+        params: IdParams,
+        body: UpdateAffiliateAccountInput,
+        ...mutationSchema,
+        response: { 200: MutationResult(AffiliateAccount), ...errors },
+      },
+    },
+    async (req) => updateAffiliateAccount(ctx(req), req.params.id, req.body, mutationOpts(req)),
+  );
+  app.delete(
+    "/affiliate-accounts/:id",
+    {
+      schema: {
+        tags: ["afiliados"],
+        description:
+          "Remove a conta (só pelo painel). Ofertas e publicações ficam; o catálogo do feed é apagado.",
+        params: IdParams,
+        ...mutationSchema,
+        response: {
+          200: MutationResult(
+            z.object({ id: z.string(), deleted: z.literal(true), offers_detached: z.number() }),
+          ),
+          ...errors,
+        },
+      },
+    },
+    async (req) => deleteAffiliateAccount(ctx(req), req.params.id, mutationOpts(req)),
+  );
+  app.post(
+    "/affiliate-accounts/:id/feed-sync",
+    {
+      schema: {
+        tags: ["afiliados"],
+        description: "Pede nova importação do feed de produtos (contas em modo feed).",
+        params: IdParams,
+        ...mutationSchema,
+        response: { 200: MutationResult(AffiliateAccount), ...errors },
+      },
+    },
+    async (req) => requestFeedSync(ctx(req), req.params.id, mutationOpts(req)),
+  );
 
   // ── Busca ──────────────────────────────────────────────────────
   app.post(
@@ -108,6 +166,17 @@ export const offerRoutes: FastifyPluginAsyncZod<{ deps: Deps }> = async (app, { 
       },
     },
     async (req) => searchOffers(ctx(req), req.body),
+  );
+  app.get(
+    "/offers/categories",
+    {
+      schema: {
+        tags: ["ofertas"],
+        description: "Categorias para filtrar a busca (do catálogo do feed, com contagem).",
+        response: { 200: z.array(OfferCategory), ...errors },
+      },
+    },
+    async (req) => listOfferCategories(ctx(req)),
   );
   app.get(
     "/offers/similar",
@@ -155,6 +224,33 @@ export const offerRoutes: FastifyPluginAsyncZod<{ deps: Deps }> = async (app, { 
       },
     },
     async (req) => saveOffer(ctx(req), req.body, mutationOpts(req)),
+  );
+  app.post(
+    "/offers/from-link/preview",
+    {
+      schema: {
+        tags: ["ofertas"],
+        description:
+          "Abre um link de produto (inclusive link curto de afiliado) e devolve título, foto e preço encontrados. Não grava nada.",
+        body: OfferFromLinkInput,
+        response: { 200: OfferLinkPreview, ...errors },
+      },
+    },
+    async (req) => previewOfferFromLink(ctx(req), req.body),
+  );
+  app.post(
+    "/offers/from-link",
+    {
+      schema: {
+        tags: ["ofertas"],
+        description:
+          "Cria uma oferta a partir de um link colado, com título, foto e preço conferidos. O link colado vira o destino dos links curtos.",
+        body: ImportOfferFromLinkInput,
+        ...mutationSchema,
+        response: { 200: MutationResult(Offer), ...errors },
+      },
+    },
+    async (req) => importOfferFromLink(ctx(req), req.body, mutationOpts(req)),
   );
   app.get(
     "/offers/:id",

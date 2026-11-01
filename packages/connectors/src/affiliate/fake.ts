@@ -220,6 +220,7 @@ export class FakeAffiliateConnector implements AffiliateConnector {
       price_asc: (a, b) => a.price - b.price,
       price_desc: (a, b) => b.price - a.price,
       commission: (a, b) => (b.commissionValue ?? 0) - (a.commissionValue ?? 0),
+      discount: (a, b) => (b.discountPct ?? 0) - (a.discountPct ?? 0),
     };
     const sorter = sorters[q.sort ?? "relevance"];
     if (sorter) list = [...list].sort(sorter);

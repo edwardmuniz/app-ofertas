@@ -1,0 +1,1 @@
+ALTER TABLE "feed_items" ADD COLUMN "top_category" text;
