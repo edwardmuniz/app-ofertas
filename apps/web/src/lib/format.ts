@@ -23,3 +23,15 @@ export function scoreClass(score: number) {
   if (score >= 45) return "bg-amber-500 text-white";
   return "bg-neutral-400 text-white dark:bg-neutral-600";
 }
+
+/** "agora", "há 5 min", "há 3 h", "há 2 dias". */
+export function ago(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const min = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60_000));
+  if (min < 1) return "agora";
+  if (min < 60) return `há ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `há ${h} h`;
+  const d = Math.round(h / 24);
+  return `há ${d} ${d === 1 ? "dia" : "dias"}`;
+}

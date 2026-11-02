@@ -1,4 +1,9 @@
-import { FakeCopyWriter, fakeAffiliateControls, fakeMessagingControls } from "@ofertas/connectors";
+import {
+  CopyWriterError,
+  FakeCopyWriter,
+  fakeAffiliateControls,
+  fakeMessagingControls,
+} from "@ofertas/connectors";
 import {
   automationRules,
   channelStatsDaily,
@@ -20,12 +25,15 @@ import {
   type Deps,
   deleteSegment,
   deleteSentPost,
+  fillMissingCopies,
   generateOfferCopy,
   getConnectionState,
+  getOffer,
   handleMessagingWebhook,
   importOfferFromLink,
   listChannels,
   listMessagingAccounts,
+  listOffers,
   listPosts,
   listSegments,
   nextAllowedTime,
@@ -661,6 +669,67 @@ describe("texto próprio da oferta e cards", () => {
     // null volta ao modelo padrão
     const cleared = done(await setOfferCopy(ctx, offer.id, { copy: null }));
     expect(cleared.copy).toBeNull();
+  });
+
+  it("gerar ao aprovar: preenche só ofertas aprovadas sem texto e pausa sem créditos", async () => {
+    const { ctx } = await setup();
+    const { offer: plain } = await approvedOffer(ctx);
+    const { offer: written } = await approvedOffer(ctx, "fone");
+    done(
+      await setOfferCopy(ctx, written.id, {
+        copy: { headline: "Fone que eu escrevi", body: "Texto meu, não troque." },
+      }),
+    );
+    const writer = new FakeCopyWriter();
+    const aiDeps = { ...deps, copywriter: writer };
+
+    // Desligado (padrão): nada acontece.
+    expect((await fillMissingCopies(aiDeps)).generated).not.toContain(plain.id);
+
+    await updatePreferences(ctx, { auto_copy: true });
+    const r = await fillMissingCopies(aiDeps);
+    expect(r.generated).toContain(plain.id);
+    expect(r.generated).not.toContain(written.id);
+    expect((await getOffer(ctx, plain.id)).copy).toMatchObject({ source: "ai" });
+    expect((await getOffer(ctx, written.id)).copy).toMatchObject({
+      headline: "Fone que eu escrevi",
+      source: "human",
+    });
+    // Já tem texto: a próxima rodada não gera de novo.
+    expect((await fillMissingCopies(aiDeps)).generated).not.toContain(plain.id);
+
+    // Sem créditos: para a rodada para tentar depois.
+    const { offer: other } = await approvedOffer(ctx, "panela");
+    const broke = {
+      provider: "openrouter",
+      write: async () => {
+        throw new CopyWriterError("BILLING", "Insufficient credits");
+      },
+    };
+    const stopped = await fillMissingCopies({ ...deps, copywriter: broke });
+    expect(stopped.stopped).toBe("BILLING");
+    expect(stopped.failed.map((f) => f.offer_id)).toContain(other.id);
+    expect((await getOffer(ctx, other.id)).copy).toBeNull();
+  });
+
+  it("aprovadas separadas por enviadas e não enviadas, com a contagem de envios", async () => {
+    const { ctx, channels: chs } = await setup();
+    const ch = chs[0];
+    if (!ch) throw new Error("sem canal");
+    const { offer: sentOne } = await approvedOffer(ctx);
+    const { offer: waiting } = await approvedOffer(ctx, "fone");
+    done(await schedulePosts(ctx, { offer_ids: [sentOne.id], channel_ids: [ch.id], at: past() }));
+    expect((await runPublisher(deps)).map((r) => r.status)).toEqual(["sent"]);
+
+    const yes = await listOffers(ctx, { status: "approved", sent: "yes" });
+    expect(yes.items.map((o) => o.id)).toEqual([sentOne.id]);
+    expect(yes.items[0]?.sent).toMatchObject({ posts: 1, channels: 1 });
+    expect(yes.items[0]?.sent?.last_at).toBeTruthy();
+    const no = await listOffers(ctx, { status: "approved", sent: "no" });
+    expect(no.items.map((o) => o.id)).toEqual([waiting.id]);
+    expect(no.items[0]?.sent).toEqual({ posts: 0, channels: 0, last_at: null });
+    // Continua aprovada depois do envio (pode ir para outros grupos).
+    expect((await listOffers(ctx, { status: "approved" })).items).toHaveLength(2);
   });
 
   it("cards desligados nas Preferências: envia só a foto do produto", async () => {

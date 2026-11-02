@@ -39,6 +39,7 @@ import {
   feedItems,
   offers,
   offerValidations,
+  posts,
   pricePoints,
   products,
   workspaces,
@@ -602,6 +603,10 @@ export async function listOffers(ctx: Ctx, raw: ListOffersQuery = {}) {
   if (q.platform) conds.push(eq(products.platform, q.platform));
   if (q.min_score !== undefined) conds.push(gte(offers.score, q.min_score));
   if (q.q) conds.push(ilike(products.title, `%${q.q.replace(/[%_\\]/g, "\\$&")}%`));
+  if (q.sent) {
+    const wasSent = sql`exists (select 1 from ${posts} where ${posts.offerId} = ${offers.id} and ${posts.status} = 'sent')`;
+    conds.push(q.sent === "yes" ? wasSent : sql`not ${wasSent}`);
+  }
   if (q.cursor) {
     const c = olderThan(q.cursor, offers.createdAt, offers.id);
     if (c) conds.push(c);
@@ -613,11 +618,43 @@ export async function listOffers(ctx: Ctx, raw: ListOffersQuery = {}) {
     .where(and(...conds))
     .orderBy(desc(offers.createdAt), desc(offers.id))
     .limit(q.limit + 1);
+  const sent = await sentSummaries(
+    ctx.db,
+    rows.map((r) => r.offer.id),
+  );
   return toPage(
     rows.map((r) => ({ ...r, id: r.offer.id, createdAt: r.offer.createdAt })),
     q.limit,
-    (r) => toOffer(r.offer, r.product),
+    (r) => ({
+      ...toOffer(r.offer, r.product),
+      sent: sent.get(r.offer.id) ?? { posts: 0, channels: 0, last_at: null },
+    }),
   );
+}
+
+/** Quantas mensagens, em quantos canais e quando foi o último envio de cada oferta. */
+async function sentSummaries(db: DbOrTx, offerIds: string[]) {
+  const map = new Map<string, NonNullable<Offer["sent"]>>();
+  if (offerIds.length === 0) return map;
+  const rows = await db
+    .select({
+      offerId: posts.offerId,
+      posts: sql<number>`count(*)::int`,
+      channels: sql<number>`count(distinct ${posts.channelId})::int`,
+      last: sql<Date | string | null>`max(${posts.sentAt})`,
+    })
+    .from(posts)
+    .where(and(inArray(posts.offerId, offerIds), eq(posts.status, "sent")))
+    .groupBy(posts.offerId);
+  for (const r of rows) {
+    if (!r.offerId) continue;
+    map.set(r.offerId, {
+      posts: r.posts,
+      channels: r.channels,
+      last_at: r.last ? new Date(r.last).toISOString() : null,
+    });
+  }
+  return map;
 }
 
 export async function getOffer(ctx: Ctx, offerId: string): Promise<OfferDetail> {

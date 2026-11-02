@@ -213,6 +213,14 @@ export const Offer = z.object({
   copy: OfferCopy.nullable().describe(
     "Texto próprio da mensagem. Com ele, o envio usa o formato chamada + descrição + preço + fechamento.",
   ),
+  sent: z
+    .object({
+      posts: z.number().describe("Mensagens enviadas com esta oferta."),
+      channels: z.number().describe("Em quantos grupos ou canais."),
+      last_at: z.string().nullable().describe("Último envio."),
+    })
+    .optional()
+    .describe("Envios da oferta (vem em list_offers)."),
   created_at: z.string(),
 });
 export type Offer = z.infer<typeof Offer>;
@@ -259,6 +267,10 @@ export const ListOffersQuery = z.object({
   platform: z.enum(PLATFORMS).optional(),
   min_score: z.coerce.number().int().min(0).max(100).optional(),
   q: z.string().max(100).optional(),
+  sent: z
+    .enum(["yes", "no"])
+    .optional()
+    .describe("yes = já enviada em algum grupo ou canal; no = ainda não enviada."),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.string().optional(),
 });

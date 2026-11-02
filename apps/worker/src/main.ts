@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import {
   createRuntimeDeps,
+  fillMissingCopies,
   recordWorkerHeartbeat,
   refreshMessagingStatuses,
   rollupClicks,
@@ -27,6 +28,10 @@ const env = z
     PUBLISH_TICK_SECONDS: z.coerce.number().int().min(2).default(5),
     EVOLUTION_GO_URL: z.string().optional(),
     EVOLUTION_GO_API_KEY: z.string().optional(),
+    OPENROUTER_API_KEY: z.string().optional(),
+    OPENROUTER_MODEL: z.string().optional(),
+    GOOGLE_API_KEY: z.string().optional(),
+    GEMINI_MODEL: z.string().optional(),
   })
   .parse(process.env);
 
@@ -43,6 +48,10 @@ const { deps, close } = createRuntimeDeps({
       ? { baseUrl: env.EVOLUTION_GO_URL, globalKey: env.EVOLUTION_GO_API_KEY }
       : null,
   dbPoolSize: 4,
+  openrouter: env.OPENROUTER_API_KEY
+    ? { apiKey: env.OPENROUTER_API_KEY, model: env.OPENROUTER_MODEL }
+    : null,
+  gemini: env.GOOGLE_API_KEY ? { apiKey: env.GOOGLE_API_KEY, model: env.GEMINI_MODEL } : null,
 });
 
 const log = (msg: string, extra?: unknown) =>
@@ -141,7 +150,33 @@ async function feedTick() {
   }
 }
 
+let copying = false;
+/** Oferta que falhou volta a ser tentada depois de 15 min; sem créditos ou chave, tudo espera. */
+const copyRetryAt = new Map<string, number>();
+let copyPausedUntil = 0;
+/** Preferência auto_copy: escreve com IA o texto das ofertas aprovadas sem texto. */
+async function copyTick() {
+  if (copying || stopping || !deps.copywriter || Date.now() < copyPausedUntil) return;
+  const lock = await deps.cache.setIfAbsent("lock:worker:copy", String(process.pid), 120);
+  if (!lock) return;
+  copying = true;
+  try {
+    const now = Date.now();
+    for (const [id, at] of copyRetryAt) if (at <= now) copyRetryAt.delete(id);
+    const r = await fillMissingCopies(deps, { limit: 10, skip: [...copyRetryAt.keys()] });
+    for (const f of r.failed) copyRetryAt.set(f.offer_id, now + 15 * 60_000);
+    if (r.stopped) copyPausedUntil = now + 15 * 60_000;
+    if (r.generated.length || r.failed.length) log("textos automáticos", r);
+  } catch (err) {
+    log("erro nos textos automáticos", { error: String(err) });
+  } finally {
+    await deps.cache.del("lock:worker:copy");
+    copying = false;
+  }
+}
+
 const timer = setInterval(() => void tick(), env.WORKER_TICK_SECONDS * 1000);
+const copyTimer = setInterval(() => void copyTick(), 30_000);
 const feedTimer = setInterval(() => void feedTick(), 60_000);
 void feedTick();
 const publishTimer = setInterval(() => void publishTick(), env.PUBLISH_TICK_SECONDS * 1000);
@@ -153,9 +188,10 @@ const shutdown = async () => {
   clearInterval(timer);
   clearInterval(publishTimer);
   clearInterval(feedTimer);
+  clearInterval(copyTimer);
   // Importação do feed em andamento é interrompida: solta a trava para recomeçar logo.
   if (feeding) await deps.cache.del("lock:worker:feed").catch(() => undefined);
-  while (running || publishing) await new Promise((r) => setTimeout(r, 200));
+  while (running || publishing || copying) await new Promise((r) => setTimeout(r, 200));
   await close();
   process.exit(0);
 };

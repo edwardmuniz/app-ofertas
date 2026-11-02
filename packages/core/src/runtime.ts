@@ -2,6 +2,7 @@ import {
   createMessagingProviderFactory,
   defaultAffiliateConnectorFactory,
   GeminiCopyWriter,
+  OpenRouterCopyWriter,
 } from "@ofertas/connectors";
 import { createDb } from "@ofertas/db";
 import { Redis } from "ioredis";
@@ -31,7 +32,8 @@ export type RuntimeConfig = {
   s3?: S3Config | null;
   publicApiUrl: string;
   dbPoolSize?: number;
-  /** Gemini para escrever o texto das ofertas (GOOGLE_API_KEY). */
+  /** IA para escrever o texto das ofertas: OpenRouter (preferido) ou Gemini. */
+  openrouter?: { apiKey: string; model?: string } | null;
   gemini?: { apiKey: string; model?: string } | null;
 };
 
@@ -56,9 +58,11 @@ export function createRuntimeDeps(cfg: RuntimeConfig) {
     openStream: createSafeStreamOpener(),
     notify: createSafeNotifier(),
     publicApiUrl: cfg.publicApiUrl,
-    copywriter: cfg.gemini?.apiKey
-      ? new GeminiCopyWriter(cfg.gemini.apiKey, { model: cfg.gemini.model })
-      : null,
+    copywriter: cfg.openrouter?.apiKey
+      ? new OpenRouterCopyWriter(cfg.openrouter.apiKey, { model: cfg.openrouter.model })
+      : cfg.gemini?.apiKey
+        ? new GeminiCopyWriter(cfg.gemini.apiKey, { model: cfg.gemini.model })
+        : null,
   };
   const close = async () => {
     await closeDb();

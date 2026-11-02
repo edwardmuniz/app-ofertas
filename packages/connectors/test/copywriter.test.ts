@@ -6,6 +6,9 @@ import {
   copyPrompt,
   GEMINI_DEFAULT_MODEL,
   GeminiCopyWriter,
+  OPENROUTER_DEFAULT_MODEL,
+  OPENROUTER_URL,
+  OpenRouterCopyWriter,
 } from "../src";
 
 const FACTS: CopyFacts = {
@@ -93,5 +96,47 @@ describe("texto por IA", () => {
         fetch: respond(429, "Your prepayment credits are depleted."),
       }).write(FACTS),
     ).rejects.toMatchObject({ code: "BILLING" });
+  });
+
+  it("OpenRouter: chama chat/completions com o modelo e schema e lê o JSON (mesmo entre crases)", async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const fetchMock = (async (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      return Response.json({
+        choices: [
+          {
+            message: {
+              content:
+                '```json\n{"headline":"GTA VI chegando!","body":"Vice City te espera.","extra":""}\n```',
+            },
+          },
+        ],
+      });
+    }) as unknown as typeof fetch;
+    const out = await new OpenRouterCopyWriter("chave", { fetch: fetchMock }).write(FACTS);
+    expect(out).toEqual({
+      headline: "GTA VI chegando!",
+      body: "Vice City te espera.",
+      extra: null,
+    });
+    expect(calls[0]?.url).toBe(OPENROUTER_URL);
+    expect(new Headers(calls[0]?.init.headers).get("authorization")).toBe("Bearer chave");
+    const body = JSON.parse(String(calls[0]?.init.body));
+    expect(body.model).toBe(OPENROUTER_DEFAULT_MODEL);
+    expect(body.response_format.type).toBe("json_schema");
+  });
+
+  it("OpenRouter: sem créditos vira BILLING; chave errada vira AUTH", async () => {
+    const respond = (status: number, message: string) =>
+      (async () =>
+        Response.json({ error: { message, code: status } }, { status })) as unknown as typeof fetch;
+    await expect(
+      new OpenRouterCopyWriter("x", { fetch: respond(402, "Insufficient credits") }).write(FACTS),
+    ).rejects.toMatchObject({ code: "BILLING" });
+    await expect(
+      new OpenRouterCopyWriter("x", { fetch: respond(401, "No auth credentials found") }).write(
+        FACTS,
+      ),
+    ).rejects.toMatchObject({ code: "AUTH" });
   });
 });

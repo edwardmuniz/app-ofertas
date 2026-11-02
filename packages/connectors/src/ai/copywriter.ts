@@ -166,6 +166,89 @@ export class GeminiCopyWriter implements CopyWriter {
   }
 }
 
+/** Modelo padrão no OpenRouter (escolhido pelo usuário; troque em OPENROUTER_MODEL). */
+export const OPENROUTER_DEFAULT_MODEL = "deepseek/deepseek-v4.1-flash-1017";
+export const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+
+const COPY_SCHEMA = {
+  type: "object",
+  properties: {
+    headline: { type: "string" },
+    body: { type: "string" },
+    extra: { type: "string" },
+  },
+  required: ["headline", "body", "extra"],
+  additionalProperties: false,
+};
+
+/** Texto via OpenRouter (API no formato da OpenAI), com saída em JSON pelo schema. */
+export class OpenRouterCopyWriter implements CopyWriter {
+  readonly provider = "openrouter";
+
+  constructor(
+    private readonly apiKey: string,
+    private readonly opts: { model?: string; fetch?: typeof fetch } = {},
+  ) {
+    if (!apiKey) throw new CopyWriterError("AUTH", "OPENROUTER_API_KEY não configurada.");
+  }
+
+  async write(facts: CopyFacts): Promise<OfferCopyText> {
+    let res: Response;
+    try {
+      res = await (this.opts.fetch ?? fetch)(OPENROUTER_URL, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${this.apiKey}`,
+          "x-title": "OfZap",
+        },
+        body: JSON.stringify({
+          model: this.opts.model || OPENROUTER_DEFAULT_MODEL,
+          temperature: 0.9,
+          messages: [{ role: "user", content: copyPrompt(facts) }],
+          response_format: {
+            type: "json_schema",
+            json_schema: { name: "oferta", strict: true, schema: COPY_SCHEMA },
+          },
+        }),
+        signal: AbortSignal.timeout(45_000),
+      });
+    } catch (err) {
+      throw new CopyWriterError("UNAVAILABLE", `OpenRouter indisponível: ${String(err)}`);
+    }
+    const data = (await res.json().catch(() => null)) as {
+      choices?: { message?: { content?: string } }[];
+      error?: { message?: string; code?: number };
+    } | null;
+    if (!res.ok || data?.error) {
+      const status = data?.error?.code ?? res.status;
+      const msg = data?.error?.message ?? `respondeu ${res.status}`;
+      const code: CopyWriterErrorCode =
+        status === 402 || /credits|insufficient|balance/i.test(msg)
+          ? "BILLING"
+          : status === 429
+            ? "RATE_LIMIT"
+            : status === 401 || status === 403
+              ? "AUTH"
+              : status >= 500
+                ? "UNAVAILABLE"
+                : "INVALID";
+      throw new CopyWriterError(code, `OpenRouter: ${msg}`);
+    }
+    // Alguns modelos embrulham o JSON em ```json ... ```.
+    const text = (data?.choices?.[0]?.message?.content ?? "")
+      .replace(/^\s*```(?:json)?\s*/i, "")
+      .replace(/\s*```\s*$/, "");
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      throw new CopyWriterError("INVALID", "A IA devolveu um texto fora do formato.");
+    }
+    return cleanCopy(parsed as Record<string, unknown>);
+  }
+}
+
 /** Gerador simulado (testes e demonstração): previsível, sem rede. */
 export class FakeCopyWriter implements CopyWriter {
   readonly provider = "fake";

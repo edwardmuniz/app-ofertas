@@ -2,9 +2,17 @@
 
 import type { Offer, SavedSearch, ValidateOfferResult } from "@ofertas/contracts";
 import { useCallback, useEffect, useState } from "react";
-import { Empty, ErrorText, Loading, LoadingButton, PageHeader, Tag } from "@/components/ui";
+import {
+  Empty,
+  ErrorText,
+  Loading,
+  LoadingButton,
+  PageHeader,
+  Segmented,
+  Tag,
+} from "@/components/ui";
 import { ApiError, api, fmtDate } from "@/lib/api";
-import { money } from "@/lib/format";
+import { ago, money } from "@/lib/format";
 import { CopyEditor } from "./copy-editor";
 import { FromLinkPanel } from "./from-link";
 import { OfferLinkPanel } from "./link-panel";
@@ -132,6 +140,8 @@ function OfferList({
   const [linkFor, setLinkFor] = useState<string | null>(null);
   /** Oferta com o editor de texto aberto */
   const [copyFor, setCopyFor] = useState<Offer | null>(null);
+  /** Aprovadas: primeiro as que ainda não foram enviadas */
+  const [sentFilter, setSentFilter] = useState<"no" | "yes" | "all">("no");
 
   function openCopy(o: Offer) {
     setCopyFor(o);
@@ -142,9 +152,10 @@ function OfferList({
   }
 
   const load = useCallback(async () => {
-    const page = await api<{ items: Offer[] }>(`/offers?status=${status}&limit=100`);
+    const sent = status === "approved" && sentFilter !== "all" ? `&sent=${sentFilter}` : "";
+    const page = await api<{ items: Offer[] }>(`/offers?status=${status}&limit=100${sent}`);
     setItems(page.items);
-  }, [status]);
+  }, [status, sentFilter]);
   useEffect(() => {
     load();
   }, [load]);
@@ -175,8 +186,36 @@ function OfferList({
     }
   }
 
+  const sentTabs =
+    status === "approved" ? (
+      <Segmented
+        value={sentFilter}
+        onChange={(v) => {
+          setItems(null);
+          setSentFilter(v);
+        }}
+        options={[
+          { value: "no", label: "Não enviadas" },
+          { value: "yes", label: "Já enviadas" },
+          { value: "all", label: "Todas" },
+        ]}
+      />
+    ) : null;
+
   if (!items) return <Loading />;
   if (items.length === 0) {
+    if (status === "approved" && sentFilter !== "all") {
+      return (
+        <div className="space-y-4">
+          {sentTabs}
+          <Empty>
+            {sentFilter === "no"
+              ? "Todas as ofertas aprovadas já foram enviadas. Aprove novas em “Buscar” ou “Revisar”."
+              : "Nenhuma oferta aprovada foi enviada ainda."}
+          </Empty>
+        </div>
+      );
+    }
     return (
       <Empty>
         {status === "new"
@@ -201,6 +240,7 @@ function OfferList({
 
   return (
     <div className="space-y-4">
+      {sentTabs}
       {copyFor && (
         <CopyEditor
           key={copyFor.id}
@@ -255,8 +295,19 @@ function OfferList({
                   ) : null
                 }
                 badge={
-                  o.origin === "link" || o.copy ? (
-                    <span className="flex gap-1">
+                  o.origin === "link" || o.copy || (status === "approved" && o.sent) ? (
+                    <span className="flex flex-wrap gap-1">
+                      {status === "approved" &&
+                        o.sent &&
+                        (o.sent.posts > 0 ? (
+                          <Tag tone="neutral" dot>
+                            {`Enviada em ${o.sent.channels} ${o.sent.channels === 1 ? "grupo" : "grupos"} · ${ago(o.sent.last_at)}`}
+                          </Tag>
+                        ) : (
+                          <Tag tone="warning" dot>
+                            Ainda não enviada
+                          </Tag>
+                        ))}
                       {o.origin === "link" && (
                         <Tag tone="info" dot>
                           Por link

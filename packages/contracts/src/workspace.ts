@@ -17,6 +17,12 @@ export const Preferences = z.object({
     .optional()
     .describe("O que nunca publicar (categorias, marcas, termos)."),
   notes: z.string().max(5000).optional().describe("Outras orientações livres."),
+  auto_copy: z
+    .boolean()
+    .optional()
+    .describe(
+      "Gerar com IA o texto das ofertas aprovadas que ainda não têm texto (em segundo plano). Não substitui texto escrito por pessoas ou agentes. Padrão: false.",
+    ),
   creative_cards: z
     .boolean()
     .optional()
