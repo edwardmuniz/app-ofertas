@@ -81,6 +81,7 @@ export default function PreferenciasPage() {
   const [windows, setWindows] = useState<string[]>([]);
   const [cards, setCards] = useState<"on" | "off">("on");
   const [autoCopy, setAutoCopy] = useState<"on" | "off">("off");
+  const [daily, setDaily] = useState<"on" | "off">("off");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -90,6 +91,7 @@ export default function PreferenciasPage() {
       setWindows(p.posting_windows ?? []);
       setCards(p.creative_cards === false ? "off" : "on");
       setAutoCopy(p.auto_copy ? "on" : "off");
+      setDaily(p.studio_daily ? "on" : "off");
     });
   }, []);
 
@@ -105,6 +107,7 @@ export default function PreferenciasPage() {
       alert_webhook_url: String(f.get("alert_webhook_url") ?? "").trim() || null,
       creative_cards: cards === "on",
       auto_copy: autoCopy === "on",
+      studio_daily: daily === "on",
     };
     setSaving(true);
     setMsg(null);
@@ -198,6 +201,26 @@ export default function PreferenciasPage() {
                 value: "off",
                 label: "Só a foto do produto",
                 hint: "Desliga a geração de cards: todos os envios vão com a foto da loja.",
+              },
+            ]}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <div className="label">Carrossel diário para as redes</div>
+          <ChoiceCards
+            columns={2}
+            value={daily}
+            onChange={setDaily}
+            options={[
+              {
+                value: "off",
+                label: "Só quando eu montar",
+                hint: "Você (ou o seu agente) monta os conteúdos em Conteúdo.",
+              },
+              {
+                value: "on",
+                label: "Todo dia às 8h",
+                hint: "Monta um carrossel com as melhores ofertas aprovadas que ainda não foram usadas. Sem custo de IA.",
               },
             ]}
           />

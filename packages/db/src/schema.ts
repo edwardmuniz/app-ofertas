@@ -7,6 +7,7 @@ import {
   numeric,
   pgTable,
   primaryKey,
+  real,
   text,
   timestamp,
   uniqueIndex,
@@ -326,12 +327,74 @@ export const inviteLinks = pgTable(
 );
 
 /** Cliques em links rastreados e convites. Volume alto: particionar por mês quando crescer. */
+/** Vitrine pública do workspace (/@slug): marca, botões de grupo e ofertas do dia. */
+export const storefronts = pgTable("storefronts", {
+  id: id(),
+  workspaceId: uuid()
+    .notNull()
+    .unique()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  slug: text().notNull().unique(),
+  title: text().notNull(),
+  tagline: text(),
+  avatarUrl: text(),
+  /** Convites rotativos exibidos como botões, na ordem */
+  inviteLinkIds: jsonb().$type<string[]>().notNull().default([]),
+  /** Personalização (cores, capa, botões, links, destaques, seções): ver StorefrontDesign */
+  design: jsonb().$type<Record<string, unknown>>().notNull().default({}),
+  active: boolean().notNull().default(true),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+/** Conteúdo para redes (spec 18): vídeo vertical ou carrossel montado a partir de ofertas. */
+export const contents = pgTable(
+  "contents",
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    kind: text({ enum: ["video", "carousel"] }).notNull(),
+    status: text({
+      enum: ["queued", "rendering", "pending_review", "ready", "rejected", "failed"],
+    })
+      .notNull()
+      .default("queued"),
+    title: text().notNull(),
+    hook: text().notNull(),
+    subhook: text(),
+    outro: text().notNull(),
+    caption: text().notNull(),
+    hashtags: text().array().notNull().default([]),
+    offerIds: jsonb().$type<string[]>().notNull().default([]),
+    /** Vídeo (1 arquivo) ou imagens do carrossel, na ordem */
+    assetIds: jsonb().$type<string[]>().notNull().default([]),
+    coverAssetId: uuid(),
+    seconds: real(),
+    error: text(),
+    attempts: integer().notNull().default(0),
+    /** Revisão do vídeo enviado pelo agente (aprovar/recusar no painel) */
+    reviewNote: text(),
+    reviewedAt: timestamp({ withTimezone: true }),
+    reviewedBy: text(),
+    /** Preço de cada oferta quando o conteúdo foi feito (para avisar se mudou) */
+    offerPrices: jsonb().$type<Record<string, number>>().notNull().default({}),
+    /** Redes onde já foi postado (tiktok, instagram, youtube, pinterest...) */
+    postedTo: jsonb().$type<string[]>().notNull().default([]),
+    postedAt: timestamp({ withTimezone: true }),
+    createdBy: text().notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index().on(t.workspaceId, t.createdAt), index().on(t.status)],
+);
+
 export const clicks = pgTable(
   "clicks",
   {
     id: id(),
     workspaceId: workspaceId(),
-    kind: text({ enum: ["link", "invite"] }).notNull(),
+    /** page_view = visita na vitrine; page_offer = clique numa oferta da vitrine */
+    kind: text({ enum: ["link", "invite", "page_view", "page_offer"] }).notNull(),
     trackedLinkId: uuid().references(() => trackedLinks.id, { onDelete: "cascade" }),
     inviteLinkId: uuid().references(() => inviteLinks.id, { onDelete: "cascade" }),
     channelId: uuid().references(() => channels.id, { onDelete: "set null" }),
@@ -398,6 +461,8 @@ export const affiliateAccounts = pgTable(
 export type OfferPriceDetails = {
   pix_price: number | null;
   installments: { count: number; value: number; interest_free: boolean } | null;
+  /** Corrigido por pessoa ou agente (ex.: Pix lido na página da Shopee): vale enquanto o preço não mudar */
+  manual?: boolean;
 };
 
 export type OfferCopy = {
@@ -794,7 +859,7 @@ export const clickStatsHourly = pgTable(
     id: id(),
     workspaceId: workspaceId(),
     hour: timestamp({ withTimezone: true }).notNull(),
-    kind: text({ enum: ["link", "invite"] }).notNull(),
+    kind: text({ enum: ["link", "invite", "page_view", "page_offer"] }).notNull(),
     channelId: uuid(),
     offerId: uuid(),
     postId: uuid(),

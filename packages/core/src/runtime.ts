@@ -8,6 +8,7 @@ import { createDb } from "@ofertas/db";
 import { Redis } from "ioredis";
 import { RedisCache } from "./cache";
 import type { Deps } from "./context";
+import { withOwnMedia } from "./creatives";
 import { RedisCounterStore } from "./limits";
 import {
   createSafeFetcher,
@@ -64,6 +65,8 @@ export function createRuntimeDeps(cfg: RuntimeConfig) {
         ? new GeminiCopyWriter(cfg.gemini.apiKey, { model: cfg.gemini.model })
         : null,
   };
+  // Imagens enviadas pelo painel (/media nosso) vêm direto do armazenamento.
+  deps.fetchMedia = withOwnMedia(deps);
   const close = async () => {
     await closeDb();
     redis.disconnect();

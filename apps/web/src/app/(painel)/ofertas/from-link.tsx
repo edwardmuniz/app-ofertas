@@ -3,6 +3,7 @@
 import type { Offer, OfferLinkPreview } from "@ofertas/contracts";
 import { ImageOff, Link2 } from "lucide-react";
 import { useState } from "react";
+import { ImageField } from "@/components/image-field";
 import { ErrorText, Field, LoadingButton, PlatformBadge, Tag } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 import { money } from "@/lib/format";
@@ -231,22 +232,14 @@ export function FromLinkPanel({
                 </Field>
               </div>
               <div className="md:col-span-2">
-                <Field
-                  label={needs("image") ? "Endereço da foto (preencha)" : "Endereço da foto"}
-                  htmlFor="fl_image"
-                >
-                  <input
-                    className="input"
-                    id="fl_image"
-                    type="url"
-                    value={image}
-                    placeholder="https://…jpg"
-                    onChange={(e) => {
-                      setImage(e.target.value);
-                      setImageBroken(false);
-                    }}
-                  />
-                </Field>
+                <ImageField
+                  label={needs("image") ? "Foto do produto (preencha)" : "Foto do produto"}
+                  value={image}
+                  onChange={(url) => {
+                    setImage(url);
+                    setImageBroken(false);
+                  }}
+                />
               </div>
               <Field
                 label={needs("price") ? "Preço atual (preencha)" : "Preço atual"}

@@ -163,6 +163,17 @@ export function parseAmazonPage(html: string): AmazonPageData {
   };
 }
 
+/** Galeria de fotos em alta da página do produto (na ordem da página, sem repetir). */
+export function amazonImages(html: string, max = 8): string[] {
+  const out: string[] = [];
+  for (const m of html.matchAll(/"hiRes":"(https:[^"]+)"/g)) {
+    const url = m[1];
+    if (url && !out.includes(url)) out.push(url);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
 const discountOf = (price: number, original: number | null) =>
   original && original > price ? Math.round((1 - price / original) * 100) : null;
 

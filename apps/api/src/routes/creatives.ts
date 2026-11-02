@@ -8,6 +8,8 @@ import {
   ImportMediaInput,
   ListCreativesQuery,
   MAX_UPLOAD_BYTES,
+  MAX_VIDEO_BYTES,
+  PublicImage,
   RequestUploadInput,
   UpdateBrandKitInput,
   UploadTicket,
@@ -23,6 +25,7 @@ import {
   importMediaFromUrl,
   listCreatives,
   listCreativeTemplates,
+  publishImage,
   receiveUpload,
   requestUpload,
   serveMedia,
@@ -109,6 +112,20 @@ export const creativeRoutes: FastifyPluginAsyncZod<{ deps: Deps }> = async (app,
       completeUpload(ctx(req), { ...req.body, upload_id: req.params.id }, mutationOpts(req)),
   );
   app.post(
+    "/creatives/uploads/:id/publish",
+    {
+      schema: {
+        tags: ["criativos"],
+        description:
+          "Depois do PUT, devolve um endereço público e permanente da imagem (logo, capa, foto do grupo, foto da oferta).",
+        params: IdParams,
+        ...mutationSchema,
+        response: { 200: MutationResult(PublicImage), ...errors },
+      },
+    },
+    async (req) => publishImage(ctx(req), { upload_id: req.params.id }, mutationOpts(req)),
+  );
+  app.post(
     "/creatives/import",
     {
       schema: {
@@ -180,6 +197,12 @@ export const mediaRoutes: FastifyPluginAsyncZod<{ deps: Deps }> = async (app, { 
       parseBuffer,
     );
   }
+  // Vídeo do agente local (submit_video): até 100 MB. octet-stream fica no limite de imagem.
+  app.addContentTypeParser(
+    "video/mp4",
+    { parseAs: "buffer", bodyLimit: MAX_VIDEO_BYTES + 1024 },
+    parseBuffer,
+  );
 
   const Signed = z.object({ e: z.coerce.number(), s: z.string().min(10) });
 
@@ -187,7 +210,7 @@ export const mediaRoutes: FastifyPluginAsyncZod<{ deps: Deps }> = async (app, { 
     "/uploads/:id",
     {
       schema: { hide: true, params: IdParams, querystring: Signed },
-      bodyLimit: MAX_UPLOAD_BYTES + 1024,
+      bodyLimit: MAX_VIDEO_BYTES + 1024,
     },
     async (req) => {
       const body = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
@@ -195,19 +218,57 @@ export const mediaRoutes: FastifyPluginAsyncZod<{ deps: Deps }> = async (app, { 
     },
   );
 
+  const EXT: Record<string, string> = {
+    "video/mp4": "mp4",
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/webp": "webp",
+  };
   app.get(
     "/media/:id",
-    { schema: { hide: true, params: IdParams, querystring: Signed } },
+    {
+      schema: {
+        hide: true,
+        params: IdParams,
+        querystring: Signed.extend({ dl: z.string().max(80).optional() }),
+      },
+    },
     async (req, reply) => {
-      const file = await serveMedia(deps, req.params.id, req.query.e, req.query.s);
+      const file = await serveMedia(deps, req.params.id, req.query.e, req.query.s, {
+        download: Boolean(req.query.dl),
+      });
       if (!file)
         return reply
           .status(404)
           .send({ error: { code: "NOT_FOUND", message: "Arquivo não encontrado." } });
-      return reply
+      if ("redirect" in file) return reply.redirect(file.redirect, 302);
+      reply
         .type(file.mime)
         .header("cache-control", "public, max-age=86400, immutable")
-        .send(file.data);
+        .header("accept-ranges", "bytes");
+      // ?dl=nome baixa o arquivo em vez de abrir.
+      if (req.query.dl) {
+        const name = req.query.dl.replace(/[^\w.-]+/g, "-");
+        reply.header(
+          "content-disposition",
+          `attachment; filename="${name}.${EXT[file.mime] ?? "bin"}"`,
+        );
+      }
+      // Pedido por partes (players de vídeo, principalmente no iPhone).
+      const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? "");
+      if (range) {
+        const size = file.data.length;
+        const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+        const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+        if (start >= size || start > end) {
+          return reply.status(416).header("content-range", `bytes */${size}`).send();
+        }
+        return reply
+          .status(206)
+          .header("content-range", `bytes ${start}-${end}/${size}`)
+          .send(file.data.subarray(start, end + 1));
+      }
+      return reply.send(file.data);
     },
   );
 };

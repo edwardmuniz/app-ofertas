@@ -21,6 +21,7 @@ import {
   SearchOffersResult,
   SetOfferCopyInput,
   UpdateAffiliateAccountInput,
+  UpdateOfferPricesInput,
   UpdateOfferStatusInput,
   UpsertSavedSearchInput,
   ValidateOfferResult,
@@ -47,6 +48,7 @@ import {
   setOfferCopy,
   setOfferStatus,
   updateAffiliateAccount,
+  updateOfferPrices,
   upsertSavedSearch,
   validateOffer,
 } from "@ofertas/core";
@@ -260,6 +262,19 @@ export const offerRoutes: FastifyPluginAsyncZod<{ deps: Deps }> = async (app, { 
     "/offers/:id",
     { schema: { tags: ["ofertas"], params: IdParams, response: { 200: OfferDetail, ...errors } } },
     async (req) => getOffer(ctx(req), req.params.id),
+  );
+  app.patch(
+    "/offers/:id/prices",
+    {
+      schema: {
+        tags: ["ofertas"],
+        params: IdParams,
+        body: UpdateOfferPricesInput,
+        ...mutationSchema,
+        response: { 200: MutationResult(Offer), ...errors },
+      },
+    },
+    async (req) => updateOfferPrices(ctx(req), req.params.id, req.body, mutationOpts(req)),
   );
   app.post(
     "/offers/:id/status",

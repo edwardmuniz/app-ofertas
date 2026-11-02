@@ -18,7 +18,7 @@ const font = (weight: 400 | 700 | 800) =>
   readFileSync(require.resolve(`@fontsource/inter/files/inter-latin-${weight}-normal.woff`));
 
 let fonts: { name: string; data: Buffer; weight: 400 | 700 | 800; style: "normal" }[] | null = null;
-const loadFonts = () => {
+export const loadFonts = () => {
   fonts ??= ([400, 700, 800] as const).map((weight) => ({
     name: "Inter",
     data: font(weight),

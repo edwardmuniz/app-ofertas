@@ -30,6 +30,7 @@ import {
   SaveOfferInput,
   SearchOffersInput,
   type SearchOffersResult,
+  UpdateOfferPricesInput,
   UpdateOfferStatusInput,
   type ValidateOfferResult,
 } from "@ofertas/contracts";
@@ -595,6 +596,72 @@ export async function setOfferStatus(
   });
 }
 
+/**
+ * Corrige os preços de uma oferta com o que a loja mostra (ex.: agente com navegador lê o Pix na
+ * página da Shopee e vê que o "De" do feed é falso). Vale até o preço da loja mudar.
+ */
+export async function updateOfferPrices(
+  ctx: Ctx,
+  offerId: string,
+  raw: UpdateOfferPricesInput,
+  opts: MutationOptions = {},
+) {
+  const input = UpdateOfferPricesInput.parse(raw);
+  const wsId = ctx.actor.workspaceId;
+  return runMutation(ctx, {
+    action: "offers.update_prices",
+    scope: "offers:write",
+    input: { offer_id: offerId, ...input },
+    opts,
+    target: () => ({ type: "offer", id: offerId }),
+    preview: async (c) => {
+      const { offer } = await loadOffer(c.db, wsId, offerId);
+      const price = input.price ?? offer.price;
+      const original =
+        input.original_price === undefined ? offer.originalPrice : input.original_price;
+      const pix =
+        input.pix_price === undefined ? (offer.priceDetails?.pix_price ?? null) : input.pix_price;
+      const inst =
+        input.installments === undefined
+          ? (offer.priceDetails?.installments ?? null)
+          : input.installments;
+      const originalOk = original && original > price ? original : null;
+      return {
+        price,
+        originalPrice: originalOk,
+        discountPct: originalOk ? Math.round((1 - price / originalOk) * 100) : null,
+        priceDetails: {
+          pix_price: pix && pix < price ? pix : null,
+          installments: inst
+            ? { count: inst.count, value: inst.value, interest_free: inst.interest_free ?? true }
+            : null,
+          manual: true,
+        },
+        qualityFlags: originalOk
+          ? offer.qualityFlags
+          : offer.qualityFlags.filter((f) => f !== "fake_discount"),
+      };
+    },
+    execute: async (tx, _i, p) => {
+      const [row] = await tx.db
+        .update(offers)
+        .set(p)
+        .where(and(eq(offers.id, offerId), eq(offers.workspaceId, wsId)))
+        .returning();
+      if (!row) throw new AppError("NOT_FOUND", "Oferta não encontrada.");
+      if (p.price) {
+        await recordPrices(
+          tx.db,
+          [{ productId: row.productId, price: p.price, originalPrice: p.originalPrice }],
+          "lookup",
+          now(ctx),
+        );
+      }
+      return toOffer(row, await loadProduct(tx.db, wsId, row.productId));
+    },
+  });
+}
+
 export async function listOffers(ctx: Ctx, raw: ListOffersQuery = {}) {
   requireScope(ctx.actor, "offers:read");
   const q = ListOffersQuery.parse(raw);
@@ -740,13 +807,21 @@ async function applyCheck(db: DbOrTx, offer: OfferRow, check: Check, at: Date) {
   });
   const status = check.ok ? offer.status : "expired";
   const item = check.fresh.item;
+  const values = check.ok && item ? offerValues(item, check.fresh.score, check.fresh.flags) : {};
+  // Preços corrigidos à mão (Pix lido na página, "De" falso removido) valem enquanto o preço não mudar.
+  if (check.ok && item && offer.priceDetails?.manual && item.price === offer.price) {
+    Object.assign(values, {
+      originalPrice: offer.originalPrice,
+      discountPct: offer.discountPct,
+      priceDetails: offer.priceDetails,
+      qualityFlags: offer.originalPrice
+        ? check.fresh.flags
+        : check.fresh.flags.filter((f) => f !== "fake_discount"),
+    });
+  }
   await db
     .update(offers)
-    .set({
-      status,
-      lastValidatedAt: at,
-      ...(check.ok && item ? offerValues(item, check.fresh.score, check.fresh.flags) : {}),
-    })
+    .set({ status, lastValidatedAt: at, ...values })
     .where(eq(offers.id, offer.id));
   if (!check.ok && offer.status !== "expired") {
     await emitEvent(db, offer.workspaceId, "offer.expired", {

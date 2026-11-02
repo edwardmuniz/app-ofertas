@@ -52,6 +52,14 @@ complete_upload(upload_id, offer_id?, title?, tags?, ai_generated?)
 
 Alternativas: `import_media_from_url(url, ...)`, CLI `ofertas upload <arquivo> --offer <id>`, base64 inline ≤ 2 MB.
 
+Depois do PUT, o destino do arquivo define a chamada:
+
+- **Criativo de post:** `complete_upload` (acima).
+- **Imagem para um campo de endereço** (logo e capa da vitrine, foto do grupo, foto da oferta): `publish_image(upload_id)` / `POST /v1/creatives/uploads/:id/publish` → `{ url }` público e permanente (assinado por ~10 anos). No painel, todo campo de imagem tem **Enviar imagem** (com prévia) além de colar um endereço.
+- **Vídeo para as redes:** `submit_video` (spec 18).
+
+Imagens nossas (`/media` assinado) são lidas direto do armazenamento quando o servidor precisa delas (foto do grupo, foto da oferta), sem passar pela rede. Uploads não concluídos somem em 1 dia.
+
 ## Validação por destino
 
 `validate_creative(creative_id, destination)` checa: proporção, resolução mínima, duração, tamanho, codec, área segura (texto fora das bordas de UI do story), proporção de texto (recomendação para anúncios). Retorna lista de problemas com `hint` de correção. Corrigível automaticamente quando possível (`auto_fix: true` → crop/resize/transcode).

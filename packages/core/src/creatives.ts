@@ -7,6 +7,9 @@ import {
   ImportMediaInput,
   ListCreativesQuery,
   MAX_UPLOAD_BYTES,
+  MAX_VIDEO_BYTES,
+  type PublicImage,
+  PublishImageInput,
   RequestUploadInput,
   UpdateBrandKitInput,
   type UploadTicket,
@@ -30,16 +33,18 @@ import {
   DEFAULT_BRAND,
   detectFormat,
   inspectImage,
+  inspectVideo,
   renderCreative,
   validateImage,
 } from "@ofertas/render";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, ne } from "drizzle-orm";
 import { requireScope } from "./authz";
 import { type Ctx, type Deps, now } from "./context";
 import { olderThan, toPage } from "./cursor";
 import { AppError } from "./errors";
 import { type MutationOptions, runMutation } from "./mutation";
 import { loadOffer } from "./offers";
+import type { MediaFetcher } from "./safe-fetch";
 import { offerVars } from "./templates";
 
 type AssetRow = typeof assets.$inferSelect;
@@ -52,6 +57,7 @@ const EXT: Record<string, string> = {
   "image/png": "png",
   "image/jpeg": "jpg",
   "image/webp": "webp",
+  "video/mp4": "mp4",
 };
 
 // ── URLs assinadas ──────────────────────────────────────────────
@@ -78,17 +84,53 @@ async function externalMediaUrl(deps: Deps, asset: AssetRow) {
 }
 
 /** Entrega um arquivo se a assinatura for válida. */
-export async function serveMedia(deps: Deps, assetId: string, exp: number, sig: string) {
+export async function serveMedia(
+  deps: Deps,
+  assetId: string,
+  exp: number,
+  sig: string,
+  opts: { download?: boolean } = {},
+): Promise<{ data: Buffer; mime: string } | { redirect: string } | null> {
   if (!checkSignature(deps, `media:${assetId}:${exp}`, exp, sig)) return null;
   const [asset] = await deps.db.select().from(assets).where(eq(assets.id, assetId));
   if (!asset) return null;
+  // Vídeo para assistir: o bucket entrega por partes direto, sem passar o arquivo inteiro pela API.
+  if (asset.mime.startsWith("video/") && !opts.download && deps.storage.signedUrl) {
+    return { redirect: await deps.storage.signedUrl(asset.storageKey, 3600) };
+  }
   const data = await deps.storage.get(asset.storageKey);
   return data ? { data, mime: asset.mime } : null;
 }
 
+/**
+ * Baixa imagens, lendo direto do armazenamento as que são nossas (/media assinado):
+ * imagens enviadas pelo painel funcionam mesmo com a API em endereço interno (localhost).
+ */
+export function withOwnMedia(
+  deps: Pick<Deps, "fetchMedia" | "publicApiUrl" | "db" | "storage" | "secrets">,
+): MediaFetcher {
+  const base = `${deps.publicApiUrl.replace(/\/$/, "")}/media/`;
+  return async (url) => {
+    if (url.startsWith(base)) {
+      const u = new URL(url);
+      const id = u.pathname.split("/").pop() ?? "";
+      const file = await serveMedia(
+        deps as Deps,
+        id,
+        Number(u.searchParams.get("e")),
+        u.searchParams.get("s") ?? "",
+        { download: true },
+      );
+      if (file && "data" in file) return { data: file.data, contentType: file.mime };
+      throw new AppError("NOT_FOUND", "Imagem não encontrada ou link expirado.");
+    }
+    return deps.fetchMedia(url);
+  };
+}
+
 // ── Brand kit ───────────────────────────────────────────────────
 
-async function readBrandKit(db: DbOrTx, workspaceId: string): Promise<BrandKit> {
+export async function readBrandKit(db: DbOrTx, workspaceId: string): Promise<BrandKit> {
   const [ws] = await db
     .select({ settings: workspaces.settings, name: workspaces.name })
     .from(workspaces)
@@ -158,7 +200,7 @@ export function listCreativeTemplates() {
 
 // ── Montagem ────────────────────────────────────────────────────
 
-async function storeAsset(
+export async function storeAsset(
   deps: Pick<Deps, "storage">,
   db: DbOrTx,
   workspaceId: string,
@@ -415,7 +457,10 @@ export async function requestUpload(ctx: Ctx, raw: RequestUploadInput, opts: Mut
           workspaceId: ctx.actor.workspaceId,
           filename: i.filename,
           mime: i.mime,
-          maxBytes: Math.min(i.size_bytes + 1024, MAX_UPLOAD_BYTES),
+          maxBytes: Math.min(
+            i.size_bytes + 1024,
+            i.mime === "video/mp4" ? MAX_VIDEO_BYTES : MAX_UPLOAD_BYTES,
+          ),
           expiresAt,
           createdBy: ctx.actor.label,
         })
@@ -455,6 +500,16 @@ export async function receiveUpload(
   if (data.length > up.maxBytes) {
     throw new AppError("VALIDATION_ERROR", "Arquivo maior que o informado em size_bytes.");
   }
+  if (up.mime === "video/mp4") {
+    const video = inspectVideo(data);
+    if (!video) throw new AppError("VALIDATION_ERROR", "O arquivo não é um MP4 válido.");
+    const asset = await storeAsset(deps, deps.db, up.workspaceId, data, video, "upload");
+    await deps.db
+      .update(uploads)
+      .set({ status: "uploaded", assetId: asset.id })
+      .where(eq(uploads.id, up.id));
+    return { ok: true, upload_id: up.id, width: video.width, height: video.height };
+  }
   const meta = inspectImage(data);
   if (!meta)
     throw new AppError("VALIDATION_ERROR", "O arquivo não é uma imagem PNG, JPEG ou WebP válida.");
@@ -491,6 +546,11 @@ export async function completeUpload(
         });
       }
       if (up.status === "completed") throw new AppError("CONFLICT", "Upload já concluído.");
+      if (up.mime === "video/mp4") {
+        throw new AppError("VALIDATION_ERROR", "Vídeo não vira criativo de post.", {
+          hint: "Envie o vídeo para aprovação com submit_video.",
+        });
+      }
       return { filename: up.filename, asset_id: up.assetId };
     },
     execute: async (tx, i, p) => {
@@ -501,6 +561,83 @@ export async function completeUpload(
       if (!asset) throw new AppError("NOT_FOUND", "Arquivo do upload não encontrado.");
       await tx.db.update(uploads).set({ status: "completed" }).where(eq(uploads.id, i.upload_id));
       return creativeFromAsset(ctx, tx.db, asset, i, "upload", p.filename);
+    },
+  });
+}
+
+/**
+ * Uploads abandonados (link pedido ou arquivo enviado, mas nunca concluído) depois de 1 dia:
+ * apaga o arquivo e o registro. Vídeos de até 100 MB não ficam ocupando espaço.
+ */
+export async function purgeStaleUploads(deps: Deps, opts: { olderThanHours?: number } = {}) {
+  const cutoff = new Date(now(deps).getTime() - (opts.olderThanHours ?? 24) * 3_600_000);
+  const stale = await deps.db
+    .select({ id: uploads.id, assetId: uploads.assetId, key: assets.storageKey })
+    .from(uploads)
+    .leftJoin(assets, eq(assets.id, uploads.assetId))
+    .where(and(ne(uploads.status, "completed"), lt(uploads.createdAt, cutoff)))
+    .limit(200);
+  if (stale.length === 0) return { removed: 0 };
+  await deps.db.delete(uploads).where(
+    inArray(
+      uploads.id,
+      stale.map((s) => s.id),
+    ),
+  );
+  const assetIds = stale.map((s) => s.assetId).filter((x): x is string => Boolean(x));
+  if (assetIds.length) await deps.db.delete(assets).where(inArray(assets.id, assetIds));
+  await Promise.all(
+    stale.map((s) => (s.key ? deps.storage.delete(s.key).catch(() => undefined) : undefined)),
+  );
+  return { removed: stale.length };
+}
+
+/** Validade dos endereços de imagem publicados (vitrine, foto de grupo, foto de oferta). */
+const PUBLIC_IMAGE_DAYS = 3650;
+
+/**
+ * Transforma uma imagem enviada (request_upload + PUT) num endereço público e permanente,
+ * para usar onde o sistema pede o endereço de uma imagem (logo, capa, foto do grupo, foto da oferta).
+ */
+export async function publishImage(ctx: Ctx, raw: PublishImageInput, opts: MutationOptions = {}) {
+  const input = PublishImageInput.parse(raw);
+  const wsId = ctx.actor.workspaceId;
+  return runMutation(ctx, {
+    action: "creatives.publish_image",
+    scope: "creatives:write",
+    input,
+    opts,
+    target: (i) => ({ type: "upload", id: i.upload_id }),
+    preview: async (c, i) => {
+      const [up] = await c.db
+        .select()
+        .from(uploads)
+        .where(and(eq(uploads.id, i.upload_id), eq(uploads.workspaceId, wsId)));
+      if (!up) throw new AppError("NOT_FOUND", "Upload não encontrado.");
+      if (up.status === "pending") {
+        throw new AppError("CONFLICT", "O arquivo ainda não foi enviado.", {
+          hint: "Faça o PUT do arquivo na put_url antes.",
+        });
+      }
+      if (up.status === "completed") throw new AppError("CONFLICT", "Este upload já foi usado.");
+      if (!up.mime.startsWith("image/")) {
+        throw new AppError("VALIDATION_ERROR", "Envie uma imagem PNG, JPEG ou WebP.");
+      }
+      return { asset_id: up.assetId };
+    },
+    execute: async (tx, i, p): Promise<PublicImage> => {
+      const [asset] = await tx.db
+        .select()
+        .from(assets)
+        .where(eq(assets.id, p.asset_id ?? ""));
+      if (!asset) throw new AppError("NOT_FOUND", "Arquivo do upload não encontrado.");
+      await tx.db.update(uploads).set({ status: "completed" }).where(eq(uploads.id, i.upload_id));
+      return {
+        asset_id: asset.id,
+        url: mediaUrl(ctx, asset.id, PUBLIC_IMAGE_DAYS),
+        width: asset.width ?? 0,
+        height: asset.height ?? 0,
+      };
     },
   });
 }

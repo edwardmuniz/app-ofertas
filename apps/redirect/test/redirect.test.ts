@@ -7,6 +7,7 @@ import {
   createInviteLink,
   createTrackedLink,
   type Deps,
+  getAudienceStats,
   getLinkStats,
   MemoryCache,
   MemoryCounterStore,
@@ -14,10 +15,11 @@ import {
   resolveSession,
   SecretBox,
   signup,
+  updateStorefront,
   updateTrackedLink,
   upsertSegment,
 } from "@ofertas/core";
-import { channelSegments, channels, createDb, runMigrations } from "@ofertas/db";
+import { channelSegments, channels, createDb, offers, products, runMigrations } from "@ofertas/db";
 import { resetDb } from "@ofertas/db/testing";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -181,6 +183,140 @@ describe("convites", () => {
     const res = await app.inject({ url: "/entrar/cheio", headers: { "user-agent": BROWSER_UA } });
     expect(res.statusCode).toBe(503);
     expect(res.body).toContain("Grupos lotados");
+  });
+});
+
+describe("vitrine", () => {
+  it("mostra marca, botão do grupo com a origem e ofertas; conta visita e clique em oferta", async () => {
+    const wsId = ctx.actor.workspaceId;
+    const seg = done(await upsertSegment(ctx, { name: "casa" }));
+    await insertChannel(wsId, {
+      name: "Casa 1",
+      inviteUrl: "https://chat.whatsapp.com/CASA",
+      segmentId: seg.id,
+    });
+    const invite = done(
+      await createInviteLink(ctx, { segment_id: seg.id, name: "Casa e Cozinha", slug: "casa" }),
+    );
+    const [prod] = await deps.db
+      .insert(products)
+      .values({
+        workspaceId: wsId,
+        platform: "amazon",
+        externalId: "B0TESTE001",
+        title: "Air Fryer <Philco> 11L",
+        url: "https://www.amazon.com.br/dp/B0TESTE001",
+        imageUrls: ["https://m.media-amazon.com/images/I/x.jpg"],
+      })
+      .returning();
+    if (!prod) throw new Error("produto");
+    const [offer] = await deps.db
+      .insert(offers)
+      .values({
+        workspaceId: wsId,
+        productId: prod.id,
+        status: "approved",
+        price: 389,
+        originalPrice: 530.34,
+        discountPct: 27,
+        score: 80,
+        affiliateUrl: "https://www.amazon.com.br/dp/B0TESTE001?tag=loja-20",
+        priceDetails: { pix_price: 350.1, installments: null },
+      })
+      .returning();
+    if (!offer) throw new Error("oferta");
+
+    await expect(updateStorefront(ctx, { slug: "admin", title: "Teste" })).rejects.toMatchObject({
+      code: "VALIDATION_ERROR",
+    });
+    const sf = done(
+      await updateStorefront(ctx, {
+        slug: "achadinhos",
+        title: "Achadinhos do Edu",
+        tagline: "Ofertas todo dia",
+        invite_link_ids: [invite.id],
+      }),
+    );
+    expect(sf.url).toBe("http://go.test/@achadinhos");
+    expect(sf.source_links[0]?.url).toBe("http://go.test/@achadinhos?src=tiktok");
+
+    const res = await app.inject({
+      url: "/@achadinhos?src=tiktok",
+      headers: { "user-agent": BROWSER_UA },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain("Achadinhos do Edu");
+    expect(res.body).toContain("Air Fryer &lt;Philco&gt; 11L");
+    expect(res.body).toContain("http://go.test/entrar/casa?src=tiktok&amp;via=vitrine");
+    expect(res.body).toContain('href="https://www.amazon.com.br/dp/B0TESTE001?tag=loja-20"');
+    expect(res.body).toContain("no Pix");
+
+    const beacon = await app.inject({
+      method: "POST",
+      url: `/@achadinhos/c?src=tiktok&via=vitrine&o=${offer.id}`,
+      headers: { "user-agent": BROWSER_UA },
+    });
+    expect(beacon.statusCode).toBe(204);
+    const join = await app.inject({
+      url: "/entrar/casa?src=tiktok&via=vitrine",
+      headers: { "user-agent": BROWSER_UA },
+    });
+    expect(join.headers.location).toBe("https://chat.whatsapp.com/CASA");
+    await clicks.flush();
+
+    const stats = await getAudienceStats(ctx, { period: "today" });
+    expect(stats.sources.find((r) => r.source === "tiktok")).toMatchObject({
+      views: 1,
+      invite_clicks: 1,
+      offer_clicks: 1,
+      view_to_invite: 1,
+    });
+
+    // Personalização: cores, botão, link extra, destaque e só destaques.
+    await expect(
+      updateStorefront(ctx, { design: { links: [{ label: "x", url: "javascript:alert(1)" }] } }),
+    ).rejects.toThrow(/http/);
+    const styled = done(
+      await updateStorefront(ctx, {
+        design: {
+          accent_color: "#ea580c",
+          join_label: "Quero entrar",
+          links: [{ label: "Instagram", url: "https://instagram.com/achadinhos" }],
+          featured_offer_ids: [offer.id],
+          offers_mode: "featured_only",
+        },
+      }),
+    );
+    expect(styled.design).toMatchObject({
+      accent_color: "#EA580C",
+      offers_title: "Ofertas de hoje",
+      group_by_category: false,
+    });
+    // Só os campos enviados mudam.
+    done(await updateStorefront(ctx, { design: { offers_title: "Achados" } }));
+    const page2 = await app.inject({ url: "/@achadinhos", headers: { "user-agent": BROWSER_UA } });
+    expect(page2.body).toContain("--accent:#EA580C");
+    expect(page2.body).toContain(">Quero entrar<");
+    expect(page2.body).toContain('href="https://instagram.com/achadinhos"');
+    expect(page2.body).toContain("<h2>Destaques</h2>");
+
+    // Pausada ou inexistente: 404 amigável.
+    done(await updateStorefront(ctx, { active: false }));
+    expect((await app.inject({ url: "/@achadinhos" })).statusCode).toBe(404);
+    expect((await app.inject({ url: "/@naoexiste" })).statusCode).toBe(404);
+  });
+
+  it("endereço de outro workspace é recusado", async () => {
+    const s = await signup(
+      deps,
+      { name: "E", email: "e@teste.com", password: "12345678", workspace_name: "M" },
+      { allowSignup: true },
+    );
+    const r = await resolveSession(deps, s.sessionToken);
+    if (!r) throw new Error("sessão");
+    await expect(
+      updateStorefront({ ...deps, actor: r.actor }, { slug: "achadinhos", title: "Outro" }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
   });
 });
 

@@ -255,6 +255,27 @@ export const SaveOfferInput = z.object({
 });
 export type SaveOfferInput = z.input<typeof SaveOfferInput>;
 
+export const UpdateOfferPricesInput = z.object({
+  price: z.number().positive().max(1_000_000).optional().describe("Preço atual (R$)."),
+  original_price: z
+    .number()
+    .positive()
+    .max(1_000_000)
+    .nullable()
+    .optional()
+    .describe('Preço "De" (R$). null = a loja não mostra preço riscado (remove desconto falso).'),
+  pix_price: z.number().positive().max(1_000_000).nullable().optional(),
+  installments: z
+    .object({
+      count: z.number().int().min(2).max(48),
+      value: z.number().positive().max(1_000_000),
+      interest_free: z.boolean().default(true),
+    })
+    .nullable()
+    .optional(),
+});
+export type UpdateOfferPricesInput = z.input<typeof UpdateOfferPricesInput>;
+
 export const UpdateOfferStatusInput = z.object({
   offer_id: z.uuid(),
   status: z.enum(["approved", "rejected"]),

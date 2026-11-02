@@ -17,6 +17,7 @@ import { CopyEditor } from "./copy-editor";
 import { FromLinkPanel } from "./from-link";
 import { OfferLinkPanel } from "./link-panel";
 import { ProductCard } from "./parts";
+import { OfferPricePanel } from "./price-panel";
 import { SearchTab } from "./search-tab";
 
 type Tab = "buscar" | "curadoria" | "aprovadas" | "rejeitadas" | "buscas";
@@ -138,6 +139,8 @@ function OfferList({
   const [busy, setBusy] = useState<string | null>(null);
   /** Oferta com o painel "Gerar link" aberto */
   const [linkFor, setLinkFor] = useState<string | null>(null);
+  /** Oferta com o ajuste de preços aberto */
+  const [priceFor, setPriceFor] = useState<string | null>(null);
   /** Oferta com o editor de texto aberto */
   const [copyFor, setCopyFor] = useState<Offer | null>(null);
   /** Aprovadas: primeiro as que ainda não foram enviadas */
@@ -292,6 +295,17 @@ function OfferList({
                     </div>
                   ) : linkFor === o.id ? (
                     <OfferLinkPanel offerId={o.id} onClose={() => setLinkFor(null)} />
+                  ) : priceFor === o.id ? (
+                    <OfferPricePanel
+                      offer={o}
+                      onClose={() => setPriceFor(null)}
+                      onSaved={(saved) => {
+                        setPriceFor(null);
+                        setItems(
+                          (list) => list?.map((x) => (x.id === saved.id ? saved : x)) ?? null,
+                        );
+                      }}
+                    />
                   ) : null
                 }
                 badge={
@@ -379,6 +393,14 @@ function OfferList({
                           <span />
                         )}
                         {textButton(o)}
+                        <button
+                          type="button"
+                          className="text-neutral-500 hover:underline"
+                          aria-expanded={priceFor === o.id}
+                          onClick={() => setPriceFor(priceFor === o.id ? null : o.id)}
+                        >
+                          Preços
+                        </button>
                         <button
                           type="button"
                           className="text-neutral-500 hover:text-red-600 hover:underline"

@@ -11,6 +11,7 @@ import {
 } from "fastify-type-provider-zod";
 import { enforceRateLimit, resolveActor } from "./auth";
 import { mcpRoutes } from "./mcp/route";
+import { audienceRoutes } from "./routes/audience";
 import { creativeRoutes, mediaRoutes } from "./routes/creatives";
 import { groupRoutes } from "./routes/groups";
 import { linkRoutes } from "./routes/links";
@@ -110,6 +111,7 @@ export async function buildApp(opts: AppOptions) {
   await app.register(webhookRoutes, { deps: opts.deps });
   await app.register(creativeRoutes, { prefix: "/v1", deps: opts.deps });
   await app.register(metricsRoutes, { prefix: "/v1", deps: opts.deps });
+  await app.register(audienceRoutes, { prefix: "/v1", deps: opts.deps });
   await app.register(mediaRoutes, { deps: opts.deps });
   await app.register(mcpRoutes, { deps: opts.deps, publicUrl: opts.publicUrl });
 

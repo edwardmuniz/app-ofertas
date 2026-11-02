@@ -17,6 +17,7 @@ import {
   importMediaFromUrl,
   listCreatives,
   listPosts,
+  publishImage,
   receiveUpload,
   requestUpload,
   resolveSession,
@@ -27,6 +28,7 @@ import {
   serveMedia,
   updateBrandKit,
   validateCreative,
+  withOwnMedia,
 } from "../src";
 import { createOwner, fakeFetchMedia, importAllGroups, setupTestDeps } from "./helpers";
 
@@ -65,7 +67,13 @@ async function setup() {
 async function fetchSigned(url: string) {
   const u = new URL(url);
   const assetId = u.pathname.split("/").pop() ?? "";
-  return serveMedia(deps, assetId, Number(u.searchParams.get("e")), u.searchParams.get("s") ?? "");
+  const file = await serveMedia(
+    deps,
+    assetId,
+    Number(u.searchParams.get("e")),
+    u.searchParams.get("s") ?? "",
+  );
+  return file && "data" in file ? file : null;
 }
 
 describe("brand kit e geração", () => {
@@ -116,6 +124,42 @@ describe("brand kit e geração", () => {
 });
 
 describe("upload e importação", () => {
+  it("publica imagem enviada com endereço permanente (logo, capa, foto de grupo)", async () => {
+    const { ctx } = await setup();
+    const png = (await fakeFetchMedia("x")).data;
+    const t = done(
+      await requestUpload(ctx, { filename: "logo.png", mime: "image/png", size_bytes: png.length }),
+    );
+    const u = new URL(t.put_url);
+    await expect(publishImage(ctx, { upload_id: t.upload_id })).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    await receiveUpload(
+      deps,
+      t.upload_id,
+      Number(u.searchParams.get("e")),
+      u.searchParams.get("s") ?? "",
+      png,
+    );
+    const pub = done(await publishImage(ctx, { upload_id: t.upload_id }));
+    // Validade de ~10 anos: não expira na vitrine.
+    const exp = Number(new URL(pub.url).searchParams.get("e"));
+    expect(exp * 1000 - Date.now()).toBeGreaterThan(9 * 365 * 86_400_000);
+    const file = await fetchSigned(pub.url);
+    expect(file?.mime).toBe("image/png");
+    // Foto de grupo/oferta com imagem nossa: lida do armazenamento, sem baixar pela rede.
+    const offline = withOwnMedia({
+      ...deps,
+      fetchMedia: async () => {
+        throw new Error("sem rede");
+      },
+    });
+    expect((await offline(pub.url)).data.equals(png)).toBe(true);
+    await expect(publishImage(ctx, { upload_id: t.upload_id })).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+  });
+
   it("upload em duas etapas: link assinado, envio e conclusão com validação", async () => {
     const { ctx, offer } = await setup();
     const png = (await fakeFetchMedia("x")).data;

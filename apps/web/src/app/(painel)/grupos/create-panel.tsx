@@ -4,6 +4,7 @@ import type { MessagingAccount, Segment, TeamContact } from "@ofertas/contracts"
 import { Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { ImageField } from "@/components/image-field";
 import { ErrorText, Field } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 
@@ -59,6 +60,7 @@ export function CreatePanel({
   const [people, setPeople] = useState<Set<string>>(new Set());
   const [segIds, setSegIds] = useState<Set<string>>(new Set());
   const [name, setName] = useState("");
+  const [photo, setPhoto] = useState("");
   const [adminOnly, setAdminOnly] = useState(true);
   const [locked, setLocked] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -181,15 +183,12 @@ export function CreatePanel({
           <textarea className="input min-h-20" id="description" name="description" />
         </Field>
         {isGroup && (
-          <Field label="Foto (URL de uma imagem)" htmlFor="photo_url">
-            <input
-              className="input"
-              id="photo_url"
-              name="photo_url"
-              type="url"
-              placeholder="https://..."
-            />
-          </Field>
+          <ImageField
+            label="Foto do grupo (opcional)"
+            name="photo_url"
+            value={photo}
+            onChange={setPhoto}
+          />
         )}
       </div>
 

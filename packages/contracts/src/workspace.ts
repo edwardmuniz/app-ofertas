@@ -17,6 +17,12 @@ export const Preferences = z.object({
     .optional()
     .describe("O que nunca publicar (categorias, marcas, termos)."),
   notes: z.string().max(5000).optional().describe("Outras orientações livres."),
+  studio_daily: z
+    .boolean()
+    .optional()
+    .describe(
+      "Montar todo dia (8h) um carrossel com as melhores ofertas aprovadas para as redes. Padrão: false.",
+    ),
   auto_copy: z
     .boolean()
     .optional()

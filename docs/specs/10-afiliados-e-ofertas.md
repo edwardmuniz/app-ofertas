@@ -33,6 +33,13 @@ A UI e o MCP leem `capabilities` para esconder/explicar o que não é possível 
 | **Magazine Luiza**                                      | Não há API (Parceiro Magalu)                     | Links da loja do parceiro (app/web)   | Não                                       | Portal                        | Página bloqueia leitura. Por enquanto: oferta por link, dados à mão                                                     |
 | Outras (AliExpress, Natura, Netshoes via Awin/Lomadee…) | Conforme rede                                    |                                       |                                           |                               | Futuro, via conectores de redes de afiliados                                                                            |
 
+### Shopee: Pix e "De" (02/11/2026)
+
+A página da Shopee mostra preço no Pix (ex.: R$ 197,60 no Pix, ou R$ 208,00 com outros métodos) e parcelas, mas a API de afiliados e o feed não trazem esses campos, e o preço "De" do feed costuma ser inflado (ex.: "De R$ 2.500,00", sem preço riscado na página). A página bloqueia leitura automática.
+
+- **Correção de preços** (`update_offer_prices` / `PATCH /v1/offers/:id/prices`; painel: "Preços" no card da oferta aprovada): preço, "De" (`null` remove o desconto falso e a flag `fake_discount`), Pix e parcelas. O agente com navegador lê a página e corrige antes de divulgar.
+- A correção fica marcada (`price_details.manual`) e **vale enquanto o preço da loja não mudar**: a revalidação mantém Pix, parcelas e "De" corrigidos se o preço for o mesmo; se mudar, volta aos dados da loja.
+
 ### Mercado Livre (01/11/2026)
 
 O Mercado Livre fechou o acesso de fora: a API de busca (`/sites/MLB/search`) e a de anúncios respondem 403 para apps de terceiros, mesmo com token (só os anúncios da própria loja), e as páginas de busca e de produto não entregam preço nem foto a leitores automáticos (a foto vira a logo da loja, que o sistema descarta). Link de afiliado também não tem API.

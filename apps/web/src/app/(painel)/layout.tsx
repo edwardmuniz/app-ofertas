@@ -6,6 +6,7 @@ import {
   Bot,
   ChartColumn,
   FileClock,
+  Film,
   Handshake,
   Images,
   LayoutDashboard,
@@ -19,6 +20,7 @@ import {
   Plus,
   Send,
   Settings,
+  Store,
   Sun,
   Ticket,
   Users,
@@ -45,6 +47,13 @@ const NAV: { section: string | null; items: NavItem[] }[] = [
       { href: "/ofertas", label: "Ofertas", icon: Megaphone },
       { href: "/publicacoes", label: "Publicações", icon: Send },
       { href: "/criativos", label: "Criativos", icon: Images },
+    ],
+  },
+  {
+    section: "Audiência",
+    items: [
+      { href: "/vitrine", label: "Vitrine", icon: Store },
+      { href: "/conteudo", label: "Conteúdo", icon: Film },
     ],
   },
   {

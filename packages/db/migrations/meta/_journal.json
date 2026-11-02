@@ -99,6 +99,41 @@
       "when": 1793544839753,
       "tag": "0013_texto_e_pagamento_da_oferta",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1793634698729,
+      "tag": "0014_vitrine",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1793635718955,
+      "tag": "0015_conteudos",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1793639854855,
+      "tag": "0016_vitrine_personalizada",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1793652813818,
+      "tag": "0017_revisao_conteudo",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1793654543334,
+      "tag": "0018_conteudo_revisao_dados",
+      "breakpoints": true
     }
   ]
 }

@@ -127,6 +127,13 @@ Amazon, Mercado Livre, Magalu (conforme APIs verificadas); oferta manual por lin
 **Entregue (01/11/2026), Mercado Livre por agente:** `meli.la` reconhecido; `import_offer_from_link` aceita Pix e parcelas; roteiro no MCP para o agente com navegador buscar, gerar o link no portal e importar (a loja fechou API e páginas).
 **Pendente:** testar a Creators API com credenciais reais ([VERIFICAR] em `amazon.ts`); Mercado Livre e Magalu (por enquanto só oferta por link).
 
+## Fase 7.5 — Audiência orgânica 🟨  ([18](18-audiencia.md))
+
+Prioridade definida em 02/11/2026: crescer do zero sem anúncio, com conteúdo automatizado e medição por canal. Ordem: vitrine + medição → estúdio de conteúdo (adianta parte da Fase 8: vídeos a partir das fotos, sem reaproveitar vídeos das lojas) → status do WhatsApp. O agente local faz a parte criativa pelo MCP; o servidor renderiza sem IA.
+
+**Entregue (02/11/2026):** vitrine `/@slug` com ofertas do dia e botões de grupo, medição por origem (`?src`), painel Audiência › Vitrine; estúdio de conteúdo (carrossel montado no worker, kit para o agente, carrossel diário opcional; vídeo feito pelo agente local com HyperFrames e enviado para aprovação no painel (`submit_video`, `review_content`), painel Audiência › Conteúdo). API e MCP para tudo.
+**Pendente:** status do WhatsApp (verificar suporte na Evolution Go); postagem automática nas redes; ver a vitrine e um vídeo no celular com dados reais.
+
 ## Fase 8 — Criativos de vídeo ⬜  ([14](14-criativos.md))
 
 Remotion, templates de vídeo, render assíncrono, contact sheet, transcode de upload.

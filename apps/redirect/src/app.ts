@@ -4,11 +4,15 @@ import {
   decideLink,
   hashIp,
   isBotUserAgent,
+  loadPublicStorefront,
   now,
   resolveInvite,
   resolveLink,
+  storefrontInviteHref,
+  storefrontUrl,
 } from "@ofertas/core";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
+import { storefrontHtml } from "./storefront-page";
 
 export type RedirectAppOptions = {
   deps: Deps;
@@ -18,7 +22,7 @@ export type RedirectAppOptions = {
   logger?: boolean;
 };
 
-const TRACKED_PARAMS = /^(src|ref|ad|utm_[a-z]+)$/;
+const TRACKED_PARAMS = /^(src|ref|ad|via|o|utm_[a-z]+)$/;
 
 /** Guarda só parâmetros de rastreamento conhecidos (?src=ig_bio, ?ref=, ?ad=, utm_*). */
 function trackedParams(query: unknown): Record<string, string> | null {
@@ -76,6 +80,55 @@ export async function buildRedirectApp(opts: RedirectAppOptions) {
   app.get("/favicon.ico", async (_req, reply) => reply.status(204).send());
   app.get("/", async (_req, reply) =>
     page(reply, 404, "Link não encontrado", "Confira se o endereço está completo."),
+  );
+
+  // Vitrine pública do workspace: /@slug (o @ não existe nos links curtos).
+  app.get<{ Params: { slug: string }; Querystring: { src?: string } }>(
+    "/@:slug",
+    async (req, reply) => {
+      const sf = await loadPublicStorefront(deps, req.params.slug);
+      if (!sf) {
+        return page(reply, 404, "Página não encontrada", "Confira se o endereço está completo.");
+      }
+      const v = visitor(req);
+      opts.clicks.push({
+        workspaceId: sf.workspace_id,
+        kind: "page_view",
+        outcome: "redirect",
+        ...v,
+      });
+      const src = typeof req.query.src === "string" ? req.query.src.slice(0, 40) : null;
+      const beacon = new URL(`${storefrontUrl(deps, sf.slug)}/c`);
+      if (src) beacon.searchParams.set("src", src);
+      beacon.searchParams.set("via", "vitrine");
+      return reply
+        .type("text/html; charset=utf-8")
+        .header("cache-control", "no-store")
+        .send(
+          storefrontHtml(sf, {
+            inviteHref: (slug) => storefrontInviteHref(deps, slug, src),
+            beaconUrl: beacon.toString(),
+          }),
+        );
+    },
+  );
+
+  // Clique numa oferta da vitrine (aviso em segundo plano; o link vai direto para a loja).
+  app.post<{ Params: { slug: string }; Querystring: { o?: string } }>(
+    "/@:slug/c",
+    async (req, reply) => {
+      const sf = await loadPublicStorefront(deps, req.params.slug);
+      const offerId = req.query.o;
+      if (sf && offerId && sf.offers.some((o) => o.id === offerId)) {
+        opts.clicks.push({
+          workspaceId: sf.workspace_id,
+          kind: "page_offer",
+          outcome: "redirect",
+          ...visitor(req),
+        });
+      }
+      return reply.status(204).send();
+    },
   );
 
   app.get<{ Params: { slug: string } }>("/entrar/:slug", async (req, reply) => {

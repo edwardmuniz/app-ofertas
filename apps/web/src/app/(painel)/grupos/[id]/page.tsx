@@ -5,6 +5,7 @@ import { ArrowLeft, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { ImageField } from "@/components/image-field";
 import { CopyButton, ErrorText, Field, PageHeader, Segmented, Tag } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 
@@ -56,6 +57,7 @@ export default function GroupPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [photo, setPhoto] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -136,7 +138,10 @@ export default function GroupPage() {
     }
     run(
       "dados",
-      () => api(`/channels/${id}/group`, { method: "PATCH", body }),
+      async () => {
+        await api(`/channels/${id}/group`, { method: "PATCH", body });
+        setPhoto("");
+      },
       "Dados atualizados no WhatsApp.",
     );
   }
@@ -310,15 +315,12 @@ export default function GroupPage() {
               key={ch.name}
             />
           </Field>
-          <Field label="Nova foto (URL de uma imagem)" htmlFor="photo_url">
-            <input
-              className="input"
-              id="photo_url"
-              name="photo_url"
-              type="url"
-              placeholder="https://..."
-            />
-          </Field>
+          <ImageField
+            label="Nova foto do grupo (opcional)"
+            name="photo_url"
+            value={photo}
+            onChange={setPhoto}
+          />
           <div className="md:col-span-2">
             <Field label="Descrição (vazio limpa)" htmlFor="description">
               <textarea

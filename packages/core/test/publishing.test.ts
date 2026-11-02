@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   CopyWriterError,
   FakeCopyWriter,
@@ -20,28 +22,39 @@ import {
   type Ctx,
   cancelPost,
   connectAffiliateAccount,
+  createContent,
   createMessagingAccount,
   createToken,
   type Deps,
+  deleteContent,
   deleteSegment,
   deleteSentPost,
   fillMissingCopies,
   generateOfferCopy,
   getConnectionState,
+  getContent,
+  getContentKit,
   getOffer,
   handleMessagingWebhook,
   importOfferFromLink,
   listChannels,
+  listContents,
   listMessagingAccounts,
   listOffers,
   listPosts,
   listSegments,
+  markContentPosted,
   nextAllowedTime,
   previewOfferFromLink,
   previewPost,
+  purgeStaleUploads,
+  receiveUpload,
   removeMessagingAccount,
+  renderPendingContents,
   renderTemplate,
+  requestUpload,
   resolveSession,
+  reviewContent,
   runAutomationRules,
   runPublisher,
   saveOffer,
@@ -49,8 +62,10 @@ import {
   searchOffers,
   setChannelAdminOnly,
   setOfferCopy,
+  submitVideo,
   syncGroups,
   updateChannel,
+  updateOfferPrices,
   updatePreferences,
   upsertAutomationRule,
   upsertSegment,
@@ -748,6 +763,264 @@ describe("texto próprio da oferta e cards", () => {
     );
     expect((await runPublisher(deps)).map((r) => r.status)).toEqual(["sent"]);
     expect(fakeMessagingControls.sent[0]?.imageUrl).toBe(offer.image_url);
+  });
+});
+
+describe("preços corrigidos à mão (Pix da Shopee)", () => {
+  it("grava Pix e remove o De falso; revalidar mantém enquanto o preço não muda", async () => {
+    const { ctx } = await setup();
+    const { offer, candidate } = await approvedOffer(ctx);
+    const price = offer.price;
+    const fixed = done(
+      await updateOfferPrices(ctx, offer.id, {
+        original_price: null,
+        pix_price: Math.round(price * 95) / 100,
+        installments: { count: 12, value: Math.round((price / 12) * 100) / 100 },
+      }),
+    );
+    expect(fixed).toMatchObject({ original_price: null, discount_pct: null });
+    expect(fixed.pix_price).toBeCloseTo(price * 0.95, 1);
+    expect(fixed.installments).toMatchObject({ count: 12, interest_free: true });
+    expect(fixed.flags).not.toContain("fake_discount");
+
+    // A loja continua no mesmo preço: a correção fica.
+    done(await validateOffer(ctx, offer.id));
+    expect((await getOffer(ctx, offer.id)).pix_price).toBeCloseTo(price * 0.95, 1);
+
+    // O preço da loja mudou: a correção deixa de valer.
+    fakeAffiliateControls.setPrice(candidate.external_id, price * 0.9);
+    done(await validateOffer(ctx, offer.id));
+    const after = await getOffer(ctx, offer.id);
+    expect(after.price).toBeCloseTo(price * 0.9, 1);
+    expect(after.pix_price).toBeNull();
+  });
+});
+
+describe("estúdio de conteúdo", () => {
+  it("kit, criar carrossel, montar no worker, marcar postado; vídeo não é montado no servidor", async () => {
+    const { ctx } = await setup();
+    const { offer: a } = await approvedOffer(ctx);
+    const { offer: b } = await approvedOffer(ctx, "fone");
+
+    const kit = await getContentKit(ctx, { limit: 10 });
+    expect(kit.offers.map((o) => o.offer_id)).toEqual(expect.arrayContaining([a.id, b.id]));
+    expect(kit.storefront_url).toBeNull();
+
+    await expect(
+      createContent(ctx, {
+        offer_ids: [a.id, "00000000-0000-4000-8000-000000000000"],
+        hook: "Teste",
+      }),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+
+    const car = done(
+      await createContent(ctx, {
+        kind: "carousel",
+        offer_ids: [a.id, b.id],
+        hook: "2 achadinhos de hoje",
+        hashtags: ["#Achadinhos", "ofertas do dia"],
+      }),
+    );
+    expect(car).toMatchObject({ status: "queued", hashtags: ["achadinhos", "ofertasdodia"] });
+    expect(car.caption).toContain("Link na bio");
+
+    await expect(
+      createContent(ctx, { kind: "video", offer_ids: [a.id], hook: "Vídeo" } as never),
+    ).rejects.toThrow();
+    const results = await renderPendingContents(deps);
+    expect(results.find((r) => r.id === car.id)?.status).toBe("ready");
+
+    const ready = await getContent(ctx, car.id);
+    expect(ready.files).toHaveLength(4); // abertura + 2 ofertas + fechamento
+    expect(ready.cover_url).toContain("/media/");
+
+    // Ainda na fila: não dá para marcar como postado.
+    const queued = done(await createContent(ctx, { offer_ids: [b.id], hook: "Achadinho do dia" }));
+    await expect(
+      markContentPosted(ctx, queued.id, { platforms: ["tiktok"] }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    const posted = done(await markContentPosted(ctx, car.id, { platforms: ["Instagram"] }));
+    expect(posted.posted_to).toEqual(["instagram"]);
+    expect((await listContents(ctx, { posted: "no" })).map((c) => c.id)).not.toContain(car.id);
+
+    // Já usada recentemente: o kit marca.
+    const again = await getContentKit(ctx, { limit: 10 });
+    expect(again.offers.find((o) => o.offer_id === a.id)?.recently_used).toBe(true);
+  });
+});
+
+describe("vídeo do agente local", () => {
+  const fixture = (name: string) =>
+    readFileSync(join(__dirname, "..", "..", "render", "test", "fixtures", name));
+
+  async function upload(ctx: Ctx, data: Buffer, mime: "video/mp4" | "image/png" = "video/mp4") {
+    const t = done(await requestUpload(ctx, { filename: "v.mp4", mime, size_bytes: data.length }));
+    const u = new URL(t.put_url);
+    const id = u.pathname.split("/").pop() ?? "";
+    await receiveUpload(
+      deps,
+      id,
+      Number(u.searchParams.get("e")),
+      u.searchParams.get("s") ?? "",
+      data,
+    );
+    return id;
+  }
+
+  it("agente envia o MP4, fica aguardando aprovação e só uma pessoa aprova ou recusa", async () => {
+    const { ctx } = await setup();
+    const { offer } = await approvedOffer(ctx);
+    const t = await createToken(ctx, { name: "agente", preset: "full" });
+    const actor = await authenticateToken(deps, t.token, "mcp");
+    if (!actor) throw new Error("token");
+    const agent: Ctx = { ...deps, actor };
+
+    const kit = await getContentKit(agent, { limit: 5 });
+    expect(kit.video_brief.format).toMatchObject({ width: 1080, height: 1920 });
+    expect(kit.video_brief.steps.join(" ")).toContain("submit_video");
+
+    // Horizontal é recusado.
+    const wide = await upload(agent, fixture("horizontal-6s.mp4"));
+    await expect(
+      submitVideo(agent, { upload_id: wide, offer_ids: [offer.id], hook: "Achadinho do dia" }),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+
+    const id = await upload(agent, fixture("vertical-6s.mp4"));
+    const sent = done(
+      await submitVideo(agent, { upload_id: id, offer_ids: [offer.id], hook: "Achadinho do dia" }),
+    );
+    expect(sent).toMatchObject({ kind: "video", status: "pending_review", seconds: 6 });
+    expect(sent.files[0]).toMatchObject({ mime: "video/mp4", width: 1080, height: 1920 });
+    expect(sent.caption).toContain("Link na bio");
+    // O mesmo upload não vale duas vezes.
+    await expect(
+      submitVideo(agent, { upload_id: id, offer_ids: [offer.id], hook: "De novo" }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+
+    await expect(reviewContent(agent, sent.id, { decision: "approve" })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(markContentPosted(ctx, sent.id, { platforms: ["tiktok"] })).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+
+    const rejected = done(
+      await reviewContent(ctx, sent.id, { decision: "reject", note: "Preço do Pix errado" }),
+    );
+    expect(rejected).toMatchObject({ status: "rejected", review_note: "Preço do Pix errado" });
+    // Recusar de novo o que já está recusado não faz sentido.
+    await expect(reviewContent(ctx, sent.id, { decision: "reject" })).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+
+    const again = await upload(agent, fixture("vertical-6s.mp4"));
+    const second = done(
+      await submitVideo(agent, {
+        upload_id: again,
+        offer_ids: [offer.id],
+        hook: "Achadinho do dia",
+      }),
+    );
+    expect(done(await reviewContent(ctx, second.id, { decision: "approve" })).status).toBe("ready");
+    expect(
+      done(await markContentPosted(ctx, second.id, { platforms: ["tiktok"] })).posted_to,
+    ).toEqual(["tiktok"]);
+    expect((await listContents(agent, { status: "rejected" })).map((c) => c.id)).toEqual([sent.id]);
+  });
+});
+
+describe("vídeo do agente local: mudar de ideia, avisos e limpeza", () => {
+  const fixture = (name: string) =>
+    readFileSync(join(__dirname, "..", "..", "render", "test", "fixtures", name));
+
+  async function sendVideo(agent: Ctx, offerId: string) {
+    const data = fixture("vertical-6s.mp4");
+    const t = done(
+      await requestUpload(agent, { filename: "v.mp4", mime: "video/mp4", size_bytes: data.length }),
+    );
+    const u = new URL(t.put_url);
+    const id = u.pathname.split("/").pop() ?? "";
+    await receiveUpload(
+      deps,
+      id,
+      Number(u.searchParams.get("e")),
+      u.searchParams.get("s") ?? "",
+      data,
+    );
+    return {
+      uploadId: id,
+      content: done(
+        await submitVideo(agent, { upload_id: id, offer_ids: [offerId], hook: "Achadinho" }),
+      ),
+    };
+  }
+
+  it("reprova depois de aprovar, avisa preço mudado, desmarca rede, exclui e limpa uploads", async () => {
+    const { ctx } = await setup();
+    const { offer } = await approvedOffer(ctx);
+    const t = await createToken(ctx, { name: "agente", preset: "full" });
+    const actor = await authenticateToken(deps, t.token, "mcp");
+    if (!actor) throw new Error("token");
+    const agent: Ctx = { ...deps, actor };
+
+    const { uploadId, content } = await sendVideo(agent, offer.id);
+    expect(content.warnings).toEqual([]);
+
+    // Repetir o envio aponta para o conteúdo já criado.
+    await expect(
+      submitVideo(agent, { upload_id: uploadId, offer_ids: [offer.id], hook: "De novo" }),
+    ).rejects.toMatchObject({ code: "CONFLICT", details: { content_id: content.id } });
+
+    // Aprovado → reprovado → aprovado de novo.
+    done(await reviewContent(ctx, content.id, { decision: "approve" }));
+    const back = done(await reviewContent(ctx, content.id, { decision: "reject", note: "Feio" }));
+    expect(back.status).toBe("rejected");
+    // Recusado não esconde as ofertas do agente.
+    const kit = await getContentKit(agent, { limit: 10 });
+    expect(kit.offers.find((o) => o.offer_id === offer.id)?.recently_used).toBe(false);
+    expect(done(await reviewContent(ctx, content.id, { decision: "approve" })).status).toBe(
+      "ready",
+    );
+
+    // Preço mudou depois do vídeo: aviso antes de postar.
+    done(await updateOfferPrices(ctx, offer.id, { price: offer.price - 10 }));
+    const warned = await getContent(ctx, content.id);
+    expect(warned.warnings[0]).toMatch(/preço mudou/);
+
+    // Marcou a rede errada e desmarcou.
+    done(await markContentPosted(ctx, content.id, { platforms: ["tiktok", "instagram"] }));
+    const fixed = done(
+      await markContentPosted(ctx, content.id, { platforms: ["instagram"], undo: true }),
+    );
+    expect(fixed.posted_to).toEqual(["tiktok"]);
+
+    // Excluir apaga o conteúdo e o arquivo.
+    const before = (deps.storage as unknown as { files?: Map<string, Buffer> }).files?.size;
+    done(await deleteContent(ctx, content.id));
+    await expect(getContent(ctx, content.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    if (before !== undefined) {
+      expect((deps.storage as unknown as { files: Map<string, Buffer> }).files.size).toBe(
+        before - 1,
+      );
+    }
+
+    // Upload enviado e nunca concluído some depois de 1 dia.
+    const data = fixture("vertical-6s.mp4");
+    const lost = done(
+      await requestUpload(agent, { filename: "x.mp4", mime: "video/mp4", size_bytes: data.length }),
+    );
+    const u = new URL(lost.put_url);
+    await receiveUpload(
+      deps,
+      lost.upload_id,
+      Number(u.searchParams.get("e")),
+      u.searchParams.get("s") ?? "",
+      data,
+    );
+    expect((await purgeStaleUploads(deps)).removed).toBe(0);
+    expect((await purgeStaleUploads(deps, { olderThanHours: -1 })).removed).toBeGreaterThan(0);
   });
 });
 

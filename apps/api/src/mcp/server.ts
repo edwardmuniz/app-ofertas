@@ -3,6 +3,8 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import {
   AuditQuery,
   CompleteUploadInput,
+  ContentKitQuery,
+  CreateContentInput,
   CreateInviteLinkInput,
   CreateOfferLinkInput,
   CreateTrackedLinkInput,
@@ -13,29 +15,37 @@ import {
   LinkStatsQuery,
   ListAlertsQuery,
   ListChannelsQuery,
+  ListContentsQuery,
   ListCreativesQuery,
   ListOffersQuery,
   ListPostsQuery,
   ListTrackedLinksQuery,
+  MarkContentPostedInput,
   MetricsBreakdownQuery,
   MetricsPeriodQuery,
   MutationOptions,
   OfferFromLinkInput,
   Preferences,
   PreviewPostInput,
+  PublishImageInput,
   RequestUploadInput,
+  ReviewContentInput,
   SaveOfferInput,
   SchedulePostsInput,
   SearchOffersInput,
   SeasonalCalendarQuery,
   SetOfferCopyInput,
+  SubmitVideoInput,
   SyncGroupsInput,
   UpdateBrandKitInput,
   UpdateChannelInput,
+  UpdateContentInput,
   UpdateGroupInput,
   UpdateGroupSettingsInput,
   UpdateInviteLinkInput,
+  UpdateOfferPricesInput,
   UpdateOfferStatusInput,
+  UpdateStorefrontInput,
   UpdateTrackedLinkInput,
   UpsertAutomationRuleInput,
   UpsertMessageTemplateInput,
@@ -48,15 +58,20 @@ import {
   type Ctx,
   cancelPost,
   completeUpload,
+  createContent,
   createInviteLink,
   createOfferLink,
   createTrackedLink,
+  deleteContent,
   deleteCreative,
   deleteSegment,
   deleteSentPost,
   findSimilarOffers,
   generateCreative,
+  getAudienceStats,
   getBrandKit,
+  getContent,
+  getContentKit,
   getCreative,
   getFunnel,
   getGroup,
@@ -67,6 +82,7 @@ import {
   getPerformanceSummary,
   getPreferences,
   getSeasonalCalendar,
+  getStorefront,
   getSystemStatus,
   importMediaFromUrl,
   importOfferFromLink,
@@ -76,6 +92,7 @@ import {
   listAudit,
   listAutomationRules,
   listChannels,
+  listContents,
   listCreatives,
   listCreativeTemplates,
   listInviteLinks,
@@ -88,23 +105,30 @@ import {
   listSegments,
   listTeamContacts,
   listTrackedLinks,
+  markContentPosted,
   previewOfferFromLink,
   previewPost,
+  publishImage,
   requestFeedSync,
   requestUpload,
+  reviewContent,
   saveOffer,
   schedulePosts,
   searchOffers,
   setChannelAdminOnly,
   setOfferCopy,
   setOfferStatus,
+  submitVideo,
   syncGroups,
   updateBrandKit,
   updateChannel,
+  updateContent,
   updateGroup,
   updateGroupSettings,
   updateInviteLink,
+  updateOfferPrices,
   updatePreferences,
+  updateStorefront,
   updateTrackedLink,
   upsertAutomationRule,
   upsertMessageTemplate,
@@ -479,6 +503,22 @@ export function createMcpServer(ctx: Ctx): McpServer {
       annotations: WRITE,
     },
     safe(async (args) => importOfferFromLink(ctx, ...splitOpts(args))),
+  );
+
+  server.registerTool(
+    "update_offer_prices",
+    {
+      title: "Corrigir preços da oferta",
+      description:
+        'Corrige preço, preço "De", Pix e parcelas com o que a página da loja mostra (ex.: na Shopee a API não traz o Pix e o "De" do feed costuma ser falso). original_price null remove o desconto falso. Vale até o preço da loja mudar.',
+      inputSchema: {
+        offer_id: z.uuid(),
+        ...UpdateOfferPricesInput.shape,
+        ...MutationOptions.shape,
+      },
+      annotations: WRITE,
+    },
+    safe(async ({ offer_id, ...args }) => updateOfferPrices(ctx, offer_id, ...splitOpts(args))),
   );
 
   server.registerTool(
@@ -861,7 +901,7 @@ export function createMcpServer(ctx: Ctx): McpServer {
     {
       title: "Pedir link de upload",
       description:
-        "Para subir uma imagem que você criou: devolve put_url (válida por 15 min) e um comando curl pronto. Envie o arquivo com PUT e depois chame complete_upload.",
+        "Para subir um arquivo que você criou: devolve put_url (válida por 15 min) e um comando curl pronto. Envie com PUT e depois: criativo de post → complete_upload; imagem para logo/capa/foto de grupo ou de oferta → publish_image; vídeo MP4 (video/mp4, até 100 MB) → submit_video. Uploads não concluídos somem em 1 dia.",
       inputSchema: { ...RequestUploadInput.shape, ...MutationOptions.shape },
       annotations: WRITE,
     },
@@ -878,6 +918,18 @@ export function createMcpServer(ctx: Ctx): McpServer {
       annotations: WRITE,
     },
     safe(async (args) => completeUpload(ctx, ...splitOpts(args))),
+  );
+
+  server.registerTool(
+    "publish_image",
+    {
+      title: "Publicar imagem",
+      description:
+        "Depois do PUT de uma imagem, devolve um endereço público e permanente para usar onde o sistema pede imagem: logo e capa da vitrine (avatar_url, cover_url), foto do grupo (photo_url), foto da oferta (image_url).",
+      inputSchema: { ...PublishImageInput.shape, ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async (args) => publishImage(ctx, ...splitOpts(args))),
   );
 
   server.registerTool(
@@ -952,6 +1004,147 @@ export function createMcpServer(ctx: Ctx): McpServer {
       annotations: READ,
     },
     safe(async (args) => getPerformanceSummary(ctx, args)),
+  );
+
+  server.registerTool(
+    "get_storefront",
+    {
+      title: "Vitrine",
+      description:
+        "Vitrine pública do negócio (/@slug): marca, convites exibidos e o link para a bio de cada rede (com ?src). null = ainda não criada.",
+      annotations: READ,
+    },
+    safe(async () => getStorefront(ctx)),
+  );
+
+  server.registerTool(
+    "update_storefront",
+    {
+      title: "Configurar vitrine",
+      description:
+        "Cria ou altera a vitrine: endereço (slug, obrigatório na primeira vez), nome, frase, foto, convites rotativos exibidos e se está ativa.",
+      inputSchema: { ...UpdateStorefrontInput.shape, ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async (args) => updateStorefront(ctx, ...splitOpts(args))),
+  );
+
+  server.registerTool(
+    "get_audience_stats",
+    {
+      title: "Audiência por origem",
+      description:
+        "Visitas na vitrine, cliques em Entrar no grupo e em ofertas por origem (?src: tiktok, instagram...), mais entradas e saídas dos grupos por dia. Use para saber qual rede e qual conteúdo trazem gente.",
+      inputSchema: MetricsPeriodQuery.shape,
+      annotations: READ,
+    },
+    safe(async (args) => getAudienceStats(ctx, args)),
+  );
+
+  server.registerTool(
+    "get_content_kit",
+    {
+      title: "Kit de conteúdo",
+      description:
+        "Ofertas aprovadas recentes com fotos, preços e o link da bio, para montar carrosséis (create_content) e vídeos (você faz com HyperFrames e envia com submit_video). Ofertas usadas nos últimos 3 dias vêm marcadas (recently_used). video_brief traz formato, margens, cores da marca e o passo a passo do vídeo.",
+      inputSchema: ContentKitQuery.shape,
+      annotations: READ,
+    },
+    safe(async (args) => getContentKit(ctx, args)),
+  );
+
+  server.registerTool(
+    "create_content",
+    {
+      title: "Criar carrossel",
+      description:
+        "Monta no servidor (sem custo de IA) um carrossel do Instagram (4:5) com as ofertas escolhidas, na ordem. Você escreve a frase de abertura (hook), o fechamento e a legenda com hashtags. Fica pronto em segundos: confira com get_content (status ready). Vídeo não é montado aqui.",
+      inputSchema: { ...CreateContentInput.shape, ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async (args) => createContent(ctx, ...splitOpts(args))),
+  );
+
+  server.registerTool(
+    "submit_video",
+    {
+      title: "Enviar vídeo para aprovação",
+      description:
+        "Envia o vídeo vertical que você montou na máquina do usuário (HyperFrames: siga video_brief de get_content_kit). Antes: request_upload com mime video/mp4 e PUT do arquivo. O vídeo fica aguardando aprovação (pending_review) no painel; depois de aprovado vira ready. Se vier rejected, leia review_note e mande outro.",
+      inputSchema: { ...SubmitVideoInput.shape, ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async (args) => submitVideo(ctx, ...splitOpts(args))),
+  );
+
+  server.registerTool(
+    "review_content",
+    {
+      title: "Aprovar ou recusar vídeo",
+      description:
+        "Só para usuários do painel: agentes recebem FORBIDDEN (a aprovação é de uma pessoa). Use list_contents status=pending_review para acompanhar.",
+      inputSchema: { id: z.uuid(), ...ReviewContentInput.shape, ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async ({ id, ...args }) => reviewContent(ctx, id, ...splitOpts(args))),
+  );
+
+  server.registerTool(
+    "list_contents",
+    {
+      title: "Conteúdos",
+      description:
+        "Vídeos e carrosséis, com status (pending_review = aguardando aprovação; rejected = recusado, com review_note), links dos arquivos, legenda e onde já foram postados (posted=no para os que faltam postar).",
+      inputSchema: ListContentsQuery.shape,
+      annotations: READ,
+    },
+    safe(async (args) => listContents(ctx, args)),
+  );
+
+  server.registerTool(
+    "get_content",
+    {
+      title: "Conteúdo",
+      description: "Um conteúdo: status da montagem, arquivos, capa e legenda.",
+      inputSchema: { id: z.uuid() },
+      annotations: READ,
+    },
+    safe(async ({ id }) => getContent(ctx, id)),
+  );
+
+  server.registerTool(
+    "update_content",
+    {
+      title: "Editar legenda do conteúdo",
+      description: "Altera nome, legenda ou hashtags (as imagens não mudam).",
+      inputSchema: { id: z.uuid(), ...UpdateContentInput.shape, ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async ({ id, ...args }) => updateContent(ctx, id, ...splitOpts(args))),
+  );
+
+  server.registerTool(
+    "delete_content",
+    {
+      title: "Excluir conteúdo",
+      description:
+        "Apaga um conteúdo e os arquivos dele (ex.: vídeo recusado que você já refez). Não dá para desfazer.",
+      inputSchema: { id: z.uuid(), ...MutationOptions.shape },
+      annotations: { ...WRITE, destructiveHint: true },
+    },
+    safe(async ({ id, ...args }) => deleteContent(ctx, id, splitOpts(args)[1])),
+  );
+
+  server.registerTool(
+    "mark_content_posted",
+    {
+      title: "Marcar conteúdo como postado",
+      description:
+        "Registra em quais redes o conteúdo foi postado (tiktok, instagram, youtube, pinterest, whatsapp). Use depois de postar. undo=true desmarca (marcou errado).",
+      inputSchema: { id: z.uuid(), ...MarkContentPostedInput.shape, ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async ({ id, ...args }) => markContentPosted(ctx, id, ...splitOpts(args))),
   );
 
   server.registerTool(

@@ -2,10 +2,13 @@ import { resolve } from "node:path";
 import {
   createRuntimeDeps,
   fillMissingCopies,
+  purgeStaleUploads,
   recordWorkerHeartbeat,
   refreshMessagingStatuses,
+  renderPendingContents,
   rollupClicks,
   runAutomationRules,
+  runDailyStudio,
   runDueSavedSearches,
   runFeedSync,
   runHealthChecks,
@@ -75,6 +78,8 @@ async function tick() {
     if (res.ran.length || res.expired) log("buscas salvas", res);
     const rules = await runAutomationRules(deps);
     if (rules.scheduled) log("regras automáticas", rules);
+    const daily = await runDailyStudio(deps);
+    if (daily.length) log("conteúdo diário", daily);
   } catch (err) {
     log("erro na rodada", { error: String(err) });
   }
@@ -97,6 +102,8 @@ async function maintenance() {
       if (r.rows) log("métricas consolidadas", r);
       const st = await refreshMessagingStatuses(deps);
       if (st.changed) log("status dos números atualizado", st);
+      const up = await purgeStaleUploads(deps);
+      if (up.removed) log("uploads abandonados removidos", up);
     }
     const h = await runHealthChecks(deps);
     if (h.opened || h.resolved) log("alertas", h);
@@ -150,6 +157,24 @@ async function feedTick() {
   }
 }
 
+let rendering = false;
+/** Estúdio: monta os vídeos e carrosséis na fila (alguns segundos cada). */
+async function renderTick() {
+  if (rendering || stopping) return;
+  const lock = await deps.cache.setIfAbsent("lock:worker:render", String(process.pid), 600);
+  if (!lock) return;
+  rendering = true;
+  try {
+    const r = await renderPendingContents(deps, { limit: 3 });
+    if (r.length) log("estúdio", r);
+  } catch (err) {
+    log("erro no estúdio", { error: String(err) });
+  } finally {
+    await deps.cache.del("lock:worker:render");
+    rendering = false;
+  }
+}
+
 let copying = false;
 /** Oferta que falhou volta a ser tentada depois de 15 min; sem créditos ou chave, tudo espera. */
 const copyRetryAt = new Map<string, number>();
@@ -177,6 +202,7 @@ async function copyTick() {
 
 const timer = setInterval(() => void tick(), env.WORKER_TICK_SECONDS * 1000);
 const copyTimer = setInterval(() => void copyTick(), 30_000);
+const renderTimer = setInterval(() => void renderTick(), 10_000);
 const feedTimer = setInterval(() => void feedTick(), 60_000);
 void feedTick();
 const publishTimer = setInterval(() => void publishTick(), env.PUBLISH_TICK_SECONDS * 1000);
@@ -189,9 +215,11 @@ const shutdown = async () => {
   clearInterval(publishTimer);
   clearInterval(feedTimer);
   clearInterval(copyTimer);
+  clearInterval(renderTimer);
   // Importação do feed em andamento é interrompida: solta a trava para recomeçar logo.
   if (feeding) await deps.cache.del("lock:worker:feed").catch(() => undefined);
-  while (running || publishing || copying) await new Promise((r) => setTimeout(r, 200));
+  while (running || publishing || copying || rendering)
+    await new Promise((r) => setTimeout(r, 200));
   await close();
   process.exit(0);
 };

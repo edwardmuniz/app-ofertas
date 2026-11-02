@@ -2,8 +2,10 @@ import { z } from "zod";
 
 export const CREATIVE_FORMATS = ["wa_image", "feed_4x5", "story_9x16"] as const;
 export const CREATIVE_TEMPLATES = ["card_preco", "cupom_destaque"] as const;
-export const UPLOAD_MIME = ["image/png", "image/jpeg", "image/webp"] as const;
+export const UPLOAD_MIME = ["image/png", "image/jpeg", "image/webp", "video/mp4"] as const;
+/** Imagens até 10 MB; vídeo (MP4, para conteúdo das redes) até 100 MB. */
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+export const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 
 const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Use cor hexadecimal, ex.: #E11D48");
 
@@ -78,11 +80,21 @@ export const GenerateCreativeInput = z.object({
 });
 export type GenerateCreativeInput = z.input<typeof GenerateCreativeInput>;
 
-export const RequestUploadInput = z.object({
-  filename: z.string().trim().min(1).max(200),
-  mime: z.enum(UPLOAD_MIME),
-  size_bytes: z.number().int().min(1).max(MAX_UPLOAD_BYTES),
-});
+export const RequestUploadInput = z
+  .object({
+    filename: z.string().trim().min(1).max(200),
+    mime: z.enum(UPLOAD_MIME).describe("video/mp4 só para submit_video (conteúdo das redes)."),
+    size_bytes: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_VIDEO_BYTES)
+      .describe("Tamanho exato do arquivo. Imagem até 10 MB; vídeo até 100 MB."),
+  })
+  .refine((v) => v.mime === "video/mp4" || v.size_bytes <= MAX_UPLOAD_BYTES, {
+    message: "Imagem até 10 MB.",
+    path: ["size_bytes"],
+  });
 export type RequestUploadInput = z.infer<typeof RequestUploadInput>;
 
 export const UploadTicket = z.object({
@@ -107,6 +119,21 @@ const CreativeMeta = {
 
 export const CompleteUploadInput = z.object({ upload_id: z.uuid(), ...CreativeMeta });
 export type CompleteUploadInput = z.infer<typeof CompleteUploadInput>;
+
+export const PublishImageInput = z.object({
+  upload_id: z.uuid().describe("Upload de uma imagem (request_upload + PUT)."),
+});
+export type PublishImageInput = z.infer<typeof PublishImageInput>;
+
+export const PublicImage = z.object({
+  asset_id: z.string(),
+  url: z
+    .string()
+    .describe("Endereço público e permanente: use em avatar_url, cover_url, photo_url, image_url."),
+  width: z.number(),
+  height: z.number(),
+});
+export type PublicImage = z.infer<typeof PublicImage>;
 
 export const ImportMediaInput = z.object({
   url: z.url({ protocol: /^https?$/ }),
