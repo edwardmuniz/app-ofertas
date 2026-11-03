@@ -42,6 +42,7 @@ Amazon: usar **tracking IDs** distintos por origem (limitado) + nosso redirect p
 - Redireciona para o link de convite do WhatsApp do grupo escolhido; registra a "intenção de entrada" (para o funil).
 - Quando todos lotam: evento `segment.full` → recomendação "criar novo grupo" (ou criação automática se o provedor permitir).
 - Parâmetros `?src=ig_bio`, `?ref=<membro>` (indicação), `?ad=<id>` gravados no clique.
+- **Editar** (painel: Convites › Editar; API `PATCH /v1/invite-links/:id`; MCP `update_invite_link`): nome, segmento, distribuição, reserva de vagas, destino quando lotar e pausar. O link (slug) não muda, para não quebrar o que já foi divulgado.
 
 ## Critérios de aceite
 

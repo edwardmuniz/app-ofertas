@@ -1,6 +1,8 @@
 # 14 — Criativos (imagem e vídeo)
 
-Dois caminhos, ambos disponíveis para humano (painel) e agente (MCP/CLI):
+Dois caminhos, disponíveis para o agente (MCP/CLI):
+
+> **Painel (02/11/2026):** a tela Criativos saiu do painel. Vídeos, carrosséis e criativos estáticos agora são feitos pelo agente local. A API e as tools MCP continuam, e os cards de preço seguem saindo nos envios. A identidade visual (brand kit) passou para **Preferências**. A tela volta a ser pensada junto com os anúncios (Meta Ads).
 
 - **A) Gerar no servidor por template** — `generate_creative(offer_id, template, formats, variations)`.
 - **B) Criar fora e subir** — o agente gera na máquina do usuário (modelos de imagem, ffmpeg, Remotion, editor) e envia via upload.
@@ -75,7 +77,7 @@ Permite o ciclo: gerar → ver → ajustar parâmetros → gerar de novo.
 ## Biblioteca
 
 - Busca por oferta, tags, formato, origem, status.
-- **Remover** (`DELETE /v1/creatives/:id`, `delete_creative`): apaga o criativo, os registros e os arquivos (no S3 ou no disco). Posts agendados com ele passam a gerar o card na hora, ou a usar a foto do produto. No painel, a galeria pede confirmação na própria tela.
+- **Remover** (`DELETE /v1/creatives/:id`, `delete_creative`): apaga o criativo, os registros e os arquivos (no S3 ou no disco). Posts agendados com ele passam a gerar o card na hora, ou a usar a foto do produto. A galeria do painel foi removida (ver nota no topo).
 - Versões e variantes (para A/B).
 - Desempenho por criativo (`creative_stats_daily`): uso em posts/anúncios, cliques, CTR, conversões.
 - **Fadiga**: CTR em queda > X% vs. primeiros dias → recomendação "gerar variações".

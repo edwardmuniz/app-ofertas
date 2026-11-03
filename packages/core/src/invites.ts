@@ -154,13 +154,17 @@ export async function updateInviteLink(
         .where(and(eq(inviteLinks.id, i.id), eq(inviteLinks.workspaceId, wsId)));
       if (!row) throw new AppError("NOT_FOUND", "Convite não encontrado.");
       const { id: _id, ...changes } = i;
-      return { segmentId: row.segmentId, changes };
+      const segmentId = i.segment_id ?? row.segmentId;
+      // Valida o segmento novo (e devolve o nome na prévia).
+      const segmentName = await getSegmentName(c.db, wsId, segmentId);
+      return { segmentId, segment_name: segmentName, changes };
     },
     execute: async (tx, i, p) => {
       const [row] = await tx.db
         .update(inviteLinks)
         .set({
           ...(i.name !== undefined && { name: i.name }),
+          ...(i.segment_id !== undefined && { segmentId: i.segment_id }),
           ...(i.strategy !== undefined && { strategy: i.strategy }),
           ...(i.reserve !== undefined && { reserve: i.reserve }),
           ...(i.fallback_url !== undefined && { fallbackUrl: i.fallback_url }),
@@ -169,7 +173,7 @@ export async function updateInviteLink(
         .where(and(eq(inviteLinks.id, i.id), eq(inviteLinks.workspaceId, wsId)))
         .returning();
       if (!row) throw new AppError("NOT_FOUND", "Convite não encontrado.");
-      return toInviteLink(ctx, tx.db, row, await getSegmentName(tx.db, wsId, p.segmentId));
+      return toInviteLink(ctx, tx.db, row, p.segment_name);
     },
   });
 }

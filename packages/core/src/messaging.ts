@@ -25,7 +25,7 @@ import {
   posts,
   workspaces,
 } from "@ofertas/db";
-import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { requireHuman, requireScope } from "./authz";
 import {
   addSegments,
@@ -187,6 +187,9 @@ async function updateFromStatus(deps: Deps, row: AccountRow) {
       })
       .where(and(eq(messagingAccounts.id, row.id), eq(messagingAccounts.status, row.status)))
       .returning();
+    if (updated?.status === "connected" && row.status !== "connected") {
+      await adoptOrphanChannels(deps, updated);
+    }
     return updated ?? (await getAccountRow(deps.db, row.workspaceId, row.id));
   } catch (err) {
     const e = messagingError(err);
@@ -196,6 +199,38 @@ async function updateFromStatus(deps: Deps, row: AccountRow) {
       .where(eq(messagingAccounts.id, row.id))
       .returning();
     return updated ?? row;
+  }
+}
+
+/**
+ * Ao conectar, o número reassume os grupos que ficaram sem número (ex.: o número antigo
+ * foi removido) e dos quais participa, para os agendamentos voltarem a enxergá-los.
+ * Melhor esforço: se o provedor falhar, a importação manual de grupos resolve.
+ */
+export async function adoptOrphanChannels(deps: Deps, row: AccountRow): Promise<number> {
+  try {
+    const groups = await providerOf(deps, row).listGroups(refOf(deps, row), {
+      ownJid: row.ownJid,
+    });
+    if (!groups.length) return 0;
+    const adopted = await deps.db
+      .update(channels)
+      .set({ messagingAccountId: row.id })
+      .where(
+        and(
+          eq(channels.workspaceId, row.workspaceId),
+          isNull(channels.messagingAccountId),
+          ne(channels.status, "archived"),
+          inArray(
+            channels.externalId,
+            groups.map((g) => g.jid),
+          ),
+        ),
+      )
+      .returning({ id: channels.id });
+    return adopted.length;
+  } catch {
+    return 0;
   }
 }
 
@@ -420,7 +455,13 @@ export async function syncGroups(
         number_is_admin: g.isAdmin,
         channel_id: byJid.get(g.jid)?.id ?? null,
         channel_status: byJid.get(g.jid)?.status ?? null,
+        linked: byJid.get(g.jid)?.messagingAccountId === row.id,
       }));
+      // Canal ativo sem número (o número antigo foi removido): este número pode reassumir.
+      const orphan = (g: AvailableGroup) => {
+        const ch = byJid.get(g.jid);
+        return !!ch && ch.status !== "archived" && !ch.messagingAccountId;
+      };
       const jids = new Set(groups.map((g) => g.jid));
       const linked = await c.db
         .select({ id: channels.id, name: channels.name, externalId: channels.externalId })
@@ -442,7 +483,7 @@ export async function syncGroups(
         selected = [...new Set(i.group_jids)];
       } else {
         selected = available
-          .filter((g) => g.channel_status && g.channel_status !== "archived")
+          .filter((g) => (g.linked && g.channel_status !== "archived") || orphan(g))
           .map((g) => g.jid);
       }
       const chosen = new Set(selected);
@@ -633,6 +674,7 @@ export async function handleMessagingWebhook(deps: Deps, provider: string, body:
         .where(eq(messagingAccounts.id, row.id));
       await deps.cache.del(qrCacheKey(row.id));
       if (row.status !== "connected") {
+        await adoptOrphanChannels(deps, { ...row, ownJid: e.jid ?? row.ownJid });
         await emitEvent(deps.db, row.workspaceId, "whatsapp.connected", { account_id: row.id });
       }
       break;

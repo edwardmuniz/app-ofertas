@@ -445,7 +445,7 @@ export function SearchTab({ run, onSaved }: { run: Runner; onSaved: () => void }
             </Empty>
           ) : (
             <>
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(13rem,1fr))]">
                 {items.map((c) => (
                   <ProductCard
                     key={c.product_id}

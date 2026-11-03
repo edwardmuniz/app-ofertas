@@ -64,6 +64,11 @@ export const AvailableGroup = z.object({
   number_is_admin: z.boolean().nullable(),
   channel_id: z.string().nullable().describe("Canal correspondente, se o grupo já foi importado."),
   channel_status: z.enum(CHANNEL_STATUS).nullable(),
+  linked: z
+    .boolean()
+    .describe(
+      "O canal já está ligado a este número. Falso com channel_id: o canal ficou sem número (ex.: número removido) e pode ser religado escolhendo o grupo.",
+    ),
 });
 export type AvailableGroup = z.infer<typeof AvailableGroup>;
 

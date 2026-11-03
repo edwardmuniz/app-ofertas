@@ -92,12 +92,18 @@ export function ProductCard({
 }) {
   return (
     <div className="card flex flex-col overflow-hidden p-0">
-      <div className="relative aspect-square bg-white dark:bg-neutral-950">
+      {/* Foto em área quadrada fixa: imagem alta ou larga não muda o tamanho do card. */}
+      <div className="relative aspect-square shrink-0 overflow-hidden bg-white dark:bg-neutral-950">
         {p.image_url ? (
           // biome-ignore lint/performance/noImgElement: imagens externas das lojas
-          <img src={p.image_url} alt="" loading="lazy" className="h-full w-full object-contain" />
+          <img
+            src={p.image_url}
+            alt=""
+            loading="lazy"
+            className="absolute inset-0 h-full w-full object-contain p-2"
+          />
         ) : (
-          <div className="flex h-full items-center justify-center text-neutral-300">
+          <div className="absolute inset-0 flex items-center justify-center text-neutral-300">
             <ImageOff className="h-8 w-8" />
           </div>
         )}

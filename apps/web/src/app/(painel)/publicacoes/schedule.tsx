@@ -97,6 +97,7 @@ export function Schedule({ run, onDone }: { run: Runner; onDone: () => void }) {
   const [offers, setOffers] = useState<Offer[] | null>(null);
   const [segments, setSegments] = useState<Segment[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [unlinked, setUnlinked] = useState(0);
   const [selected, setSelected] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [target, setTarget] = useState<"segments" | "groups">("segments");
@@ -124,6 +125,9 @@ export function Schedule({ run, onDone }: { run: Runner; onDone: () => void }) {
       setSegments(s);
       setChannels(
         c.filter((x) => x.status === "active" && x.messaging_account_id && x.external_id),
+      );
+      setUnlinked(
+        c.filter((x) => x.status === "active" && x.external_id && !x.messaging_account_id).length,
       );
       const pre = new URLSearchParams(window.location.search).get("offer");
       if (pre) setSelected([pre]);
@@ -351,6 +355,15 @@ export function Schedule({ run, onDone }: { run: Runner; onDone: () => void }) {
           />
         }
       >
+        {unlinked > 0 && (
+          <p className="mb-3 rounded-md bg-amber-50 p-3 text-sm dark:bg-amber-500/10">
+            {unlinked} grupo(s) sem número de WhatsApp ligado não aparecem aqui. Em{" "}
+            <Link className="underline" href="/whatsapp">
+              WhatsApp
+            </Link>
+            , abra “Importar grupos” do número e confirme os marcados como “Sem número”.
+          </p>
+        )}
         {channels.length === 0 ? (
           <p className="text-sm text-neutral-500">
             Nenhum grupo ativo com WhatsApp. Importe ou crie grupos em{" "}

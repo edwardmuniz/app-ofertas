@@ -53,6 +53,7 @@ export type CreateInviteLinkInput = z.input<typeof CreateInviteLinkInput>;
 export const UpdateInviteLinkInput = z.object({
   id: z.uuid(),
   name: z.string().trim().min(1).max(120).optional(),
+  segment_id: z.uuid().optional().describe("Troca os grupos que recebem as pessoas."),
   strategy: z.enum(INVITE_STRATEGIES).optional(),
   reserve: z.number().int().min(0).max(500).optional(),
   fallback_url: httpUrl.nullable().optional(),

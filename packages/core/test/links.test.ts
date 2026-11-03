@@ -17,6 +17,7 @@ import {
   resolveLink,
   resolveSession,
   updateChannel,
+  updateInviteLink,
   updateTrackedLink,
   upsertSegment,
 } from "../src";
@@ -244,6 +245,45 @@ describe("convite rotativo", () => {
       evts.filter((e) => (e.payload as { invite_link_id: string }).invite_link_id === inv.id),
     ).toHaveLength(1);
     expect((await listInviteLinks(ctx))[0]?.capacity.channels).toBe(0);
+  });
+});
+
+describe("editar convite", () => {
+  it("troca segmento, distribuição, reserva e fallback sem mudar o link", async () => {
+    const ctx = await ownerCtx();
+    const { seg } = await segmentWithGroups(ctx, [{ name: "velho", members: 0 }]);
+    const { seg: novo, channels } = await segmentWithGroups(ctx, [{ name: "novo", members: 0 }]);
+    const inv = done(await createInviteLink(ctx, { segment_id: seg.id, name: "Bio" }));
+
+    const edited = done(
+      await updateInviteLink(ctx, {
+        id: inv.id,
+        name: "Bio do TikTok",
+        segment_id: novo.id,
+        strategy: "round_robin",
+        reserve: 5,
+        fallback_url: "https://instagram.com/loja",
+      }),
+    );
+    expect(edited).toMatchObject({
+      slug: inv.slug,
+      url: inv.url,
+      name: "Bio do TikTok",
+      segment_id: novo.id,
+      strategy: "round_robin",
+      reserve: 5,
+      fallback_url: "https://instagram.com/loja",
+    });
+    const r = await resolveInvite(deps, inv.slug);
+    expect(r.kind === "redirect" && r.channel.id).toBe(channels[0]?.id);
+
+    // Tirar o fallback e segmento de outro workspace.
+    expect(
+      done(await updateInviteLink(ctx, { id: inv.id, fallback_url: null })).fallback_url,
+    ).toBeNull();
+    await expect(
+      updateInviteLink(ctx, { id: inv.id, segment_id: "00000000-0000-4000-8000-000000000000" }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 });
 

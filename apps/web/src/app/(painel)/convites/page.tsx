@@ -1,6 +1,7 @@
 "use client";
 
 import type { InviteLink, LinkStats, Segment } from "@ofertas/contracts";
+import { Pencil } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -28,6 +29,7 @@ export default function ConvitesPage() {
   const [segments, setSegments] = useState<Segment[]>([]);
   const [clicks, setClicks] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [inv, segs, stats] = await Promise.all([
@@ -221,6 +223,13 @@ export default function ConvitesPage() {
                 <div className="flex items-center gap-2">
                   <Badge on={i.active} onLabel="Ativo" offLabel="Pausado" />
                   <CopyButton value={i.url} />
+                  <button
+                    type="button"
+                    className="btn-ghost inline-flex items-center gap-1.5"
+                    onClick={() => setEditing(editing === i.id ? null : i.id)}
+                  >
+                    <Pencil className="h-4 w-4" /> {editing === i.id ? "Fechar" : "Editar"}
+                  </button>
                   <LoadingButton variant="btn-ghost" busy={busy === i.id} onClick={() => toggle(i)}>
                     {i.active ? "Pausar" : "Ativar"}
                   </LoadingButton>
@@ -250,10 +259,167 @@ export default function ConvitesPage() {
                   <span className="tabular-nums">{clicks[i.id] ?? 0}</span>
                 </div>
               </div>
+              <div className="text-xs text-neutral-500">
+                {i.strategy === "fill_first" ? "Enche um grupo por vez" : "Alterna os grupos"} ·
+                reserva de {i.reserve} vaga{i.reserve === 1 ? "" : "s"} por grupo
+                {i.fallback_url ? ` · se lotar, vai para ${i.fallback_url}` : ""}
+              </div>
+              {editing === i.id && (
+                <InviteEditor
+                  invite={i}
+                  segments={segments}
+                  onCancel={() => setEditing(null)}
+                  onSaved={async () => {
+                    setEditing(null);
+                    await load();
+                  }}
+                />
+              )}
             </div>
           );
         })}
       </section>
     </div>
+  );
+}
+
+const RESERVES = [0, 5, 10, 20, 50];
+
+/** Edição de um convite: o link continua o mesmo, só muda para onde ele leva. */
+function InviteEditor({
+  invite,
+  segments,
+  onCancel,
+  onSaved,
+}: {
+  invite: InviteLink;
+  segments: Segment[];
+  onCancel: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const [name, setName] = useState(invite.name);
+  const [segmentId, setSegmentId] = useState(invite.segment_id);
+  const [strategy, setStrategy] = useState(invite.strategy);
+  const [reserve, setReserve] = useState(invite.reserve);
+  const [fallback, setFallback] = useState(invite.fallback_url ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const chosen = segments.find((s) => s.id === segmentId);
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    const body: Record<string, unknown> = {};
+    if (name.trim() && name.trim() !== invite.name) body.name = name.trim();
+    if (segmentId !== invite.segment_id) body.segment_id = segmentId;
+    if (strategy !== invite.strategy) body.strategy = strategy;
+    if (reserve !== invite.reserve) body.reserve = reserve;
+    const fb = fallback.trim() || null;
+    if (fb !== invite.fallback_url) body.fallback_url = fb;
+    if (!Object.keys(body).length) return onCancel();
+    setBusy(true);
+    setError(null);
+    try {
+      await api(`/invite-links/${invite.id}`, { method: "PATCH", body });
+      await onSaved();
+    } catch (err) {
+      setError(err instanceof ApiError ? `${err.message} ${err.hint ?? ""}` : "Erro ao salvar.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={save}
+      className="grid gap-4 border-t border-neutral-100 pt-4 md:grid-cols-2 dark:border-neutral-800"
+    >
+      <Field label="Nome" htmlFor={`name_${invite.id}`}>
+        <input
+          className="input"
+          id={`name_${invite.id}`}
+          value={name}
+          maxLength={120}
+          onChange={(e) => setName(e.target.value)}
+        />
+      </Field>
+      <div className="space-y-1.5 text-sm text-neutral-500">
+        <div className="label">Link</div>
+        <p>
+          O endereço <code className="font-mono">{invite.url}</code> não muda: quem já tem o link
+          segue funcionando.
+        </p>
+      </div>
+      <div className="space-y-1.5 md:col-span-2">
+        <div className="label">Segmento (os grupos que recebem as pessoas)</div>
+        <div className="flex flex-wrap gap-2">
+          {segments.map((s) => (
+            <Chip key={s.id} on={segmentId === s.id} onClick={() => setSegmentId(s.id)}>
+              {s.name}
+              <span className="opacity-60 tabular-nums">
+                · {s.channel_count} grupo{s.channel_count === 1 ? "" : "s"}
+              </span>
+            </Chip>
+          ))}
+        </div>
+        {chosen && chosen.channel_count === 0 && (
+          <p className="text-xs text-amber-600">
+            Este segmento não tem grupos: o convite cai direto no “se todos lotarem”.
+          </p>
+        )}
+      </div>
+      <div className="space-y-1.5 md:col-span-2">
+        <div className="label">Como distribuir</div>
+        <ChoiceCards
+          columns={2}
+          value={strategy}
+          onChange={setStrategy}
+          options={[
+            {
+              value: "fill_first",
+              label: "Encher um por vez",
+              hint: "Lota o grupo mais antigo antes de passar ao próximo.",
+            },
+            {
+              value: "round_robin",
+              label: "Alternar grupos",
+              hint: "Cada pessoa vai para um grupo diferente, em rodízio.",
+            },
+          ]}
+        />
+      </div>
+      <div className="space-y-1.5 md:col-span-2">
+        <div className="label">Vagas de reserva por grupo</div>
+        <div className="flex flex-wrap items-center gap-2">
+          {[...new Set([...RESERVES, invite.reserve])]
+            .sort((a, b) => a - b)
+            .map((n) => (
+              <Chip key={n} on={reserve === n} onClick={() => setReserve(n)}>
+                {n}
+              </Chip>
+            ))}
+        </div>
+      </div>
+      <div className="md:col-span-2">
+        <Field label="Se todos lotarem, mandar para (opcional)" htmlFor={`fb_${invite.id}`}>
+          <input
+            className="input"
+            id={`fb_${invite.id}`}
+            type="url"
+            value={fallback}
+            placeholder="https://instagram.com/seuperfil"
+            onChange={(e) => setFallback(e.target.value)}
+          />
+        </Field>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 md:col-span-2">
+        <LoadingButton busy={busy} type="submit">
+          Salvar alterações
+        </LoadingButton>
+        <button type="button" className="btn-ghost" onClick={onCancel}>
+          Cancelar
+        </button>
+        <ErrorText error={error} />
+      </div>
+    </form>
   );
 }

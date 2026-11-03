@@ -142,7 +142,7 @@ export default function ConteudoPage() {
                   : "Nada por aqui ainda."}
             </Empty>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-[repeat(auto-fill,minmax(19rem,1fr))]">
               {shown.map((c) => (
                 <ContentCard key={c.id} c={c} onChange={load} />
               ))}

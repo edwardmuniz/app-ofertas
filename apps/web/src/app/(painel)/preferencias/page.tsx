@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Chip, ChoiceCards, Loading, LoadingButton, PageHeader } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
+import { BrandKitForm } from "./brand-kit";
 
 const toList = (s: string) =>
   s
@@ -287,6 +288,7 @@ export default function PreferenciasPage() {
           Salvar
         </LoadingButton>
       </form>
+      <BrandKitForm />
     </div>
   );
 }

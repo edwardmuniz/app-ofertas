@@ -385,7 +385,7 @@ export function createMcpServer(ctx: Ctx): McpServer {
     {
       title: "Editar convite rotativo",
       description:
-        "Muda nome, estratégia, reserva de vagas, fallback ou pausa o convite (active=false).",
+        "Muda nome, segmento (grupos que recebem), estratégia, reserva de vagas, fallback ou pausa o convite (active=false). O link continua o mesmo.",
       inputSchema: { ...UpdateInviteLinkInput.shape, ...MutationOptions.shape },
       annotations: WRITE,
     },

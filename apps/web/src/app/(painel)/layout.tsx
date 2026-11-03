@@ -8,7 +8,6 @@ import {
   FileClock,
   Film,
   Handshake,
-  Images,
   LayoutDashboard,
   Link2,
   LogOut,
@@ -31,6 +30,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 
+/** Páginas de grade (cards): um pouco mais largas em telas grandes, com mais colunas. */
+const WIDE_PAGES = ["/ofertas", "/conteudo"];
+
 type NavItem = { href: string; label: string; icon: LucideIcon };
 
 const NAV: { section: string | null; items: NavItem[] }[] = [
@@ -46,7 +48,6 @@ const NAV: { section: string | null; items: NavItem[] }[] = [
     items: [
       { href: "/ofertas", label: "Ofertas", icon: Megaphone },
       { href: "/publicacoes", label: "Publicações", icon: Send },
-      { href: "/criativos", label: "Criativos", icon: Images },
     ],
   },
   {
@@ -317,7 +318,13 @@ export default function PainelLayout({ children }: { children: React.ReactNode }
             ) : null}
           </div>
         </header>
-        <main className="mx-auto max-w-[1280px] px-4 pt-7 pb-12 md:px-6">{children}</main>
+        <main
+          className={`mx-auto px-4 pt-7 pb-12 md:px-6 ${
+            WIDE_PAGES.some((p) => pathname.startsWith(p)) ? "max-w-[1680px]" : "max-w-[1280px]"
+          }`}
+        >
+          {children}
+        </main>
       </div>
     </div>
   );

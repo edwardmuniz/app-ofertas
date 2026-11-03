@@ -13,7 +13,10 @@ import { ApiError, api } from "@/lib/api";
 
 type Group = SyncGroupsPreview["groups"][number];
 
-const inPlatform = (g: Group) => g.channel_status !== null && g.channel_status !== "archived";
+/** Já ligado a este número: não precisa escolher de novo. */
+const inPlatform = (g: Group) => g.linked && g.channel_status !== "archived";
+/** Está na plataforma mas sem número (o número antigo foi removido): dá para religar. */
+const orphan = (g: Group) => !g.linked && g.channel_id !== null && g.channel_status !== "archived";
 
 /** Escolha dos grupos do número que entram na plataforma. */
 export function ImportPanel({
@@ -47,6 +50,8 @@ export function ImportPanel({
         if (!alive) return;
         setPreview(p.preview);
         setSegments(s);
+        // Grupos que ficaram sem número já vêm marcados para religar.
+        setPicked(new Set(p.preview.groups.filter(orphan).map((g) => g.jid)));
       })
       .catch((err) => {
         if (alive) setError(err instanceof ApiError ? `${err.message} ${err.hint ?? ""}` : "Erro.");
@@ -181,6 +186,7 @@ export function ImportPanel({
                 <span className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
                   {already && <Tag tone="positive">Na plataforma</Tag>}
                   {g.channel_status === "archived" && <Tag>Removido antes</Tag>}
+                  {orphan(g) && <Tag tone="warning">Sem número: religar</Tag>}
                   {cantPost ? (
                     <Tag tone="negative">Só admins enviam e o número não é admin</Tag>
                   ) : g.number_is_admin === false ? (

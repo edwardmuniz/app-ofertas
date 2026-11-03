@@ -277,6 +277,29 @@ describe("remover número", () => {
     const pending = await deps.db.select().from(posts).where(eq(posts.channelId, ch.id));
     expect(pending.every((p) => p.status === "canceled")).toBe(true);
   });
+
+  it("número novo reassume os grupos que ficaram sem número", async () => {
+    const { ctx, account, channels: chs } = await setup();
+    done(await removeMessagingAccount(ctx, account.id));
+    const novo = done(await createMessagingAccount(ctx, { label: "Novo", provider: "fake" }));
+    const ws = eq(channels.workspaceId, ctx.actor.workspaceId);
+
+    // Conectar já religa sozinho.
+    expect((await getConnectionState(ctx, novo.id)).account.status).toBe("connected");
+    let rows = await deps.db.select().from(channels).where(ws);
+    expect(rows.every((r) => r.messagingAccountId === novo.id)).toBe(true);
+
+    // Se não deu (provedor fora no momento), a importação mostra os grupos para religar.
+    await deps.db.update(channels).set({ messagingAccountId: null }).where(ws);
+    const res = await syncGroups(ctx, novo.id, {}, { dryRun: true });
+    if (res.status !== "dry_run") throw new Error("esperado dry_run");
+    const g = res.preview.groups.find((x) => x.channel_id === chs[0]?.id);
+    expect(g).toMatchObject({ linked: false, channel_status: "active" });
+    expect(res.preview.selected).toHaveLength(chs.length);
+    done(await syncGroups(ctx, novo.id, {}));
+    rows = await deps.db.select().from(channels).where(ws);
+    expect(rows.every((r) => r.messagingAccountId === novo.id)).toBe(true);
+  });
 });
 
 describe("agendamento", () => {
