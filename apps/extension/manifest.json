@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "OfZap: cadastrar oferta",
+  "version": "0.1.0",
+  "description": "Cadastra no OfZap a oferta da página aberta (Mercado Livre, Amazon, Shopee), com preço, Pix, cupom e o seu link de afiliado.",
+  "action": {
+    "default_title": "Cadastrar no OfZap",
+    "default_popup": "popup.html"
+  },
+  "permissions": ["activeTab", "scripting", "storage", "clipboardRead"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"]
+}

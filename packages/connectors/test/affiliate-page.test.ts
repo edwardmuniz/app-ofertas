@@ -18,6 +18,16 @@ describe("página de produto", () => {
     expect(
       productIdOfUrl("mercadolivre", "https://produto.mercadolivre.com.br/MLB-123-fone-_JM"),
     ).toBe("MLB123");
+    // Produto de vendedor (/up/MLBU...) não se confunde com o anúncio MLB de mesmo número.
+    expect(
+      productIdOfUrl(
+        "mercadolivre",
+        "https://www.mercadolivre.com.br/fone/up/MLBU3165237239?pdp_filters=deal%3AMLB1717788#polycard",
+      ),
+    ).toBe("MLBU3165237239");
+    expect(
+      productIdOfUrl("mercadolivre", "https://www.mercadolivre.com.br/fone/p/MLB15209590"),
+    ).toBe("MLB15209590");
     expect(productIdOfUrl("amazon", "https://www.amazon.com.br/x/dp/b09xs7jwhh?th=1")).toBe(
       "B09XS7JWHH",
     );

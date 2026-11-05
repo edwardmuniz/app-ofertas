@@ -478,7 +478,17 @@ describe("Mercado Livre por link (dados vistos pelo agente)", () => {
         original_price: 399.9,
         pix_price: 265.9,
         installments: { count: 10, value: 27.99, interest_free: true },
+        // Cupom sem código (de ativar na página), como a extensão manda.
+        coupon_description: "Cupom de 20% OFF: ative na página antes de comprar",
       }),
+    );
+    expect(offer).toMatchObject({
+      coupon_code: null,
+      coupon_source: "manual",
+      coupon_active: true,
+    });
+    expect((await previewPost(ctx, { offer_id: offer.id })).body).toContain(
+      "🎟️ Cupom de 20% OFF: ative na página antes de comprar",
     );
     expect(offer).toMatchObject({
       platform: "mercadolivre",

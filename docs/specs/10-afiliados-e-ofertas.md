@@ -110,6 +110,18 @@ Conta Amazon em modo **Associado** (`live`), com:
 - **Amazon (lido da página):** "Aplicar cupom de 10%" e "Economize R$ 20 com cupom" (cupom de marcar, sem código) e "com o código PROMO10" (código promocional). Na página do produto, só vale o bloco de preço e promoções do anúncio principal (`promoPriceBlockMessage`, `couponText`, `vpcButton`…), não os carrosséis de outros produtos. Na busca, cada card tem o seu. Sem código, a mensagem leva "🎟️ Cupom de 10%: marque “Aplicar cupom” na página antes de comprar" (`{{cupom_ativar}}`).
 - A Shopee (API e feed) e as outras lojas não informam cupom.
 
+## Extensão do Chrome (05/11/2026)
+
+Cadastro de oferta a partir da página aberta, sem copiar dado por dado (`apps/extension`, instalação no README da pasta).
+
+- **Lê da página** (no navegador da pessoa, já logada): título, foto, preço, Pix, preço "De", parcelas, cupom e link de afiliado.
+  - Mercado Livre: o valor em destaque com "ou R$ X em outros meios" é o Pix e X é o preço. Cupom "20% OFF com cupom" (sem código, de ativar na página) ou com código. O link `meli.la` vem da barra de Afiliados depois de "Compartilhar", ou da área de transferência (botão Colar).
+  - Amazon: mesmos blocos lidos pelo servidor; link curto da barra de Associados, se aberto.
+  - Shopee e outras: título e foto da página, preço e Pix pelo texto (conferir no formulário).
+- **Confere e envia:** formulário com tudo editável e escolha entre aprovar já e mandar para revisar. Envia para `POST /v1/offers/from-link` com o token de API (`Authorization: Bearer`). Cupom sem código vai em `coupon_description` e vale como cupom de ativar na página.
+- **Ligação:** endereço da API e token guardados na extensão. A permissão de acesso é pedida só para o endereço da API.
+- **Próximo:** marcar vários produtos na vitrine de um cupom e cadastrar de uma vez; grupo de captura no WhatsApp (link + print lidos por IA).
+
 ## Cupom da loja inteira (05/11/2026)
 
 Cupons que não são de um produto (ex.: "R$ 20 OFF acima de R$ 99 na Shopee") viram um post próprio nos grupos.

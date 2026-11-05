@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <title>OfZap</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="top">
+      <span class="brand"><span class="brand-dot"></span>OfZap</span>
+      <span id="store" class="store" hidden></span>
+      <button type="button" id="open-settings" class="icon-btn" title="Configurar" aria-label="Configurar">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+    </header>
+
+    <!-- Configuração: endereço da API e token -->
+    <section id="settings" class="pane" hidden>
+      <div class="card">
+        <h1>Ligar ao OfZap</h1>
+        <p class="muted">
+          Crie um token em <b>Agentes</b> no painel do OfZap (pode ser o mesmo do agente) e cole
+          aqui.
+        </p>
+        <div class="field">
+          <label for="api-url">Endereço da API</label>
+          <input id="api-url" type="url" placeholder="https://api.seudominio.com.br" />
+        </div>
+        <div class="field">
+          <label for="api-token">Token</label>
+          <input id="api-token" type="password" placeholder="ofz_..." />
+        </div>
+        <p id="settings-msg" class="msg" hidden></p>
+        <button type="button" id="save-settings" class="btn">Salvar e testar</button>
+      </div>
+    </section>
+
+    <!-- Oferta lida da página -->
+    <section id="offer" class="pane" hidden>
+      <div class="card product">
+        <img id="image" alt="" />
+        <textarea id="title" rows="3" aria-label="Título do produto"></textarea>
+      </div>
+
+      <div id="summary" class="summary" aria-live="polite"></div>
+
+      <div class="card">
+        <h2>Preços</h2>
+        <div class="grid">
+          <div class="field">
+            <label for="price">Preço</label>
+            <div class="money"><span>R$</span><input id="price" inputmode="decimal" /></div>
+          </div>
+          <div class="field">
+            <label for="pix">No Pix</label>
+            <div class="money"><span>R$</span><input id="pix" inputmode="decimal" placeholder="—" /></div>
+          </div>
+          <div class="field">
+            <label for="original">Preço De (riscado)</label>
+            <div class="money">
+              <span>R$</span><input id="original" inputmode="decimal" placeholder="—" />
+            </div>
+          </div>
+          <div class="field">
+            <label for="inst-count">Parcelas</label>
+            <div class="inline">
+              <input id="inst-count" inputmode="numeric" placeholder="12" class="short" />
+              <span class="muted">x</span>
+              <div class="money"><span>R$</span><input id="inst-value" inputmode="decimal" placeholder="—" /></div>
+            </div>
+            <label class="check"><input type="checkbox" id="inst-free" /> sem juros</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Cupom <span class="muted small">(deixe vazio se não tiver)</span></h2>
+        <div class="grid">
+          <div class="field">
+            <label for="coupon-code">Código</label>
+            <input id="coupon-code" placeholder="sem código" class="mono" />
+          </div>
+          <div class="field">
+            <label for="coupon-desc">Regra</label>
+            <input id="coupon-desc" placeholder="ex.: 20% OFF" />
+          </div>
+        </div>
+        <button type="button" id="use-last" class="btn-ghost last" hidden></button>
+        <label class="check">
+          <input type="checkbox" id="keep-coupon" /> Repetir este cupom nos próximos produtos
+        </label>
+      </div>
+
+      <div class="card">
+        <h2>Seu link de afiliado <span id="affiliate-status" class="chip"></span></h2>
+        <div class="inline">
+          <input id="affiliate" type="url" placeholder="https://meli.la/..." />
+          <button type="button" id="paste-link" class="btn-ghost">Colar</button>
+        </div>
+        <p id="affiliate-hint" class="hint" hidden></p>
+      </div>
+
+      <footer class="bottom">
+        <div class="segmented" role="radiogroup" aria-label="Depois de cadastrar">
+          <label><input type="radio" name="status" value="approved" checked /><span>Aprovar já</span></label>
+          <label><input type="radio" name="status" value="new" /><span>Mandar para revisar</span></label>
+        </div>
+        <p id="offer-msg" class="msg" hidden></p>
+        <button type="button" id="send" class="btn btn-accent">Cadastrar no OfZap</button>
+        <button type="button" id="reread" class="link">Ler a página de novo</button>
+      </footer>
+    </section>
+
+    <section id="unsupported" class="pane" hidden>
+      <div class="card empty">
+        <p><b>Nenhum produto nesta página.</b></p>
+        <p class="muted">
+          Abra a página de um produto do Mercado Livre, da Amazon ou da Shopee e clique de novo.
+        </p>
+      </div>
+    </section>
+
+    <script src="parse.js"></script>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

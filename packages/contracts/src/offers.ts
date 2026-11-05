@@ -430,7 +430,13 @@ export const ImportOfferFromLinkInput = z.object({
     .optional()
     .describe("Parcelamento anunciado, ex.: 10x de R$ 52,19 sem juros."),
   coupon_code: z.string().max(60).optional(),
-  coupon_description: z.string().max(200).optional(),
+  coupon_description: z
+    .string()
+    .max(200)
+    .optional()
+    .describe(
+      "Regra do cupom. Sem coupon_code, vale como cupom de ativar na página (ex.: Cupom de 20% OFF: ative na página antes de comprar).",
+    ),
   coupon_valid_until: z.iso
     .datetime({ offset: true })
     .optional()

@@ -1,0 +1,464 @@
+/* Cores do painel OfZap: cinza frio + tangerina. */
+:root {
+  --bg: #f4f5f7;
+  --card: #ffffff;
+  --text: #111418;
+  --muted: #5b6270;
+  --border: #dfe2e7;
+  --field: #ffffff;
+  --accent: #ff7a38;
+  --accent-hover: #f0661f;
+  --ink: #111418;
+  --ink-fg: #ffffff;
+  --ok: #0f7a3d;
+  --ok-bg: #e7f6ec;
+  --bad: #b42318;
+  --bad-bg: #fdecea;
+  --warn: #8a5300;
+  --warn-bg: #fff4e0;
+  --focus: rgba(255, 122, 56, 0.35);
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1217;
+    --card: #161b22;
+    --text: #eef1f5;
+    --muted: #a0a8b5;
+    --border: #2a313b;
+    --field: #0e1217;
+    --ink: #eef1f5;
+    --ink-fg: #0e1217;
+    --ok: #4ade80;
+    --ok-bg: rgba(74, 222, 128, 0.12);
+    --bad: #f87171;
+    --bad-bg: rgba(248, 113, 113, 0.12);
+    --warn: #fbbf24;
+    --warn-bg: rgba(251, 191, 36, 0.12);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+body {
+  width: 400px;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font:
+    14px / 1.45 "Geist",
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+}
+p {
+  margin: 0;
+}
+
+/* Topo */
+.top {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 700;
+  font-size: 16px;
+}
+.brand-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+.store {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+}
+.store::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--store-color, var(--muted));
+}
+.store[hidden] {
+  display: none;
+}
+.icon-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.icon-btn:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* Conteúdo */
+.pane {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px 0;
+}
+.pane[hidden] {
+  display: none;
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.card.empty {
+  margin-bottom: 14px;
+  padding: 20px 14px;
+  text-align: center;
+}
+#settings .card {
+  margin-bottom: 14px;
+}
+h1,
+h2 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+h1 {
+  font-size: 16px;
+}
+h2 {
+  font-size: 13px;
+  font-weight: 700;
+}
+.muted {
+  color: var(--muted);
+  font-weight: 400;
+}
+.small {
+  font-size: 12px;
+}
+
+input,
+textarea {
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--field);
+  color: inherit;
+  font: inherit;
+}
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus);
+}
+/* Produto */
+.product {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 12px;
+}
+.product img {
+  width: 84px;
+  height: 84px;
+  flex-shrink: 0;
+  object-fit: contain;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.product img[hidden] {
+  display: none;
+}
+.product textarea {
+  flex: 1;
+  min-height: 84px;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  font-weight: 600;
+  line-height: 1.35;
+  resize: none;
+  scrollbar-width: thin;
+}
+.product textarea:hover {
+  border-color: var(--border);
+}
+
+/* Resumo do preço, como sai na mensagem */
+.summary {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--ok-bg);
+  font-size: 14px;
+}
+.summary:empty {
+  display: none;
+}
+.summary b {
+  font-size: 17px;
+}
+.summary s {
+  color: var(--muted);
+}
+.summary .pix {
+  color: var(--ok);
+  font-weight: 700;
+}
+
+/* Campos */
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.money {
+  position: relative;
+  min-width: 0;
+}
+/* Só cresce na largura (ao lado das parcelas); na coluna, não estica na altura. */
+.inline .money {
+  flex: 1;
+}
+.money span {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  font-size: 13px;
+  pointer-events: none;
+}
+.money input {
+  padding-left: 32px;
+  font-variant-numeric: tabular-nums;
+}
+.inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.short {
+  width: 48px;
+  flex-shrink: 0;
+  text-align: center;
+}
+.mono {
+  font-family: ui-monospace, "Geist Mono", monospace;
+  text-transform: uppercase;
+}
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 400;
+  color: var(--text);
+  cursor: pointer;
+}
+.check input {
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+  accent-color: var(--accent);
+}
+
+/* Último cupom */
+.last {
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+}
+.last[hidden] {
+  display: none;
+}
+
+/* Situação do link de afiliado */
+.chip {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.chip:empty {
+  display: none;
+}
+.chip.ok {
+  color: var(--ok);
+  background: var(--ok-bg);
+}
+.chip.warn {
+  color: var(--warn);
+  background: var(--warn-bg);
+}
+.hint {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--warn-bg);
+  color: var(--warn);
+  font-size: 12px;
+}
+.hint[hidden] {
+  display: none;
+}
+
+/* Botões */
+button {
+  font: inherit;
+  cursor: pointer;
+}
+.btn {
+  width: 100%;
+  min-height: 46px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--ink);
+  color: var(--ink-fg);
+  font-weight: 700;
+  font-size: 15px;
+}
+.btn-accent {
+  background: var(--accent);
+  color: #fff;
+}
+.btn-accent:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+.btn-ghost {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.btn-ghost:hover {
+  background: var(--bg);
+}
+.link {
+  align-self: center;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  text-decoration: underline;
+}
+
+/* Rodapé fixo com a ação principal */
+.bottom {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 -14px;
+  padding: 10px 14px 12px;
+  background: var(--card);
+  border-top: 1px solid var(--border);
+}
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+.segmented label {
+  position: relative;
+  cursor: pointer;
+}
+.segmented input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  min-height: 0;
+  opacity: 0;
+}
+.segmented span {
+  display: block;
+  padding: 7px 6px;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.segmented input:checked + span {
+  background: var(--card);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.segmented input:focus-visible + span {
+  box-shadow: 0 0 0 3px var(--focus);
+}
+
+/* Mensagens */
+.msg {
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.msg[hidden] {
+  display: none;
+}
+.msg.ok {
+  color: var(--ok);
+  background: var(--ok-bg);
+}
+.msg.bad {
+  color: var(--bad);
+  background: var(--bad-bg);
+}

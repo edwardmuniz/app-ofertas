@@ -1436,17 +1436,23 @@ export async function importOfferFromLink(
       const history = summaryOrEmpty(
         (await priceSummaries(tx.db, [product.id], at)).get(product.id),
       );
-      const flags = qualityFlags({ ...p.item, couponCode: i.coupon_code }, history);
+      const flags = qualityFlags(
+        { ...p.item, couponCode: i.coupon_code || i.coupon_description },
+        history,
+      );
       const score = offerScore(p.item, history, flags, await workspaceNiches(tx.db, wsId));
       const values = {
         ...offerValues(p.item, score, flags),
         affiliateAccountId: p.account_id,
         status: i.status,
-        couponCode: i.coupon_code ?? null,
-        couponDescription: i.coupon_code ? (i.coupon_description ?? null) : null,
+        // Sem código, a descrição vale como cupom de ativar na página (ex.: Mercado Livre).
+        couponCode: i.coupon_code || null,
+        couponDescription: i.coupon_description || null,
         couponValidUntil:
-          i.coupon_code && i.coupon_valid_until ? new Date(i.coupon_valid_until) : null,
-        couponSource: i.coupon_code ? ("manual" as const) : null,
+          (i.coupon_code || i.coupon_description) && i.coupon_valid_until
+            ? new Date(i.coupon_valid_until)
+            : null,
+        couponSource: i.coupon_code || i.coupon_description ? ("manual" as const) : null,
         notes: i.notes ?? null,
         rejectReason: null,
         lastValidatedAt: at,

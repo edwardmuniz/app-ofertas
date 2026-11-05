@@ -51,8 +51,10 @@ export function productIdOfUrl(platform: Platform, raw: string): string | null {
         null
       );
     case "mercadolivre": {
-      const m = `${path}${url.hash}`.match(/MLB-?(\d+)/i);
-      return m ? `MLB${m[1]}` : null;
+      // Anúncio (MLB123 / MLB-123, também em /p/MLB123) ou produto de vendedor (/up/MLBU123):
+      // prefixos diferentes, para os dois não se confundirem.
+      const m = `${path}${url.hash}`.match(/MLB(U)?-?(\d+)/i);
+      return m ? `MLB${m[1] ? "U" : ""}${m[2]}` : null;
     }
     case "amazon":
       return (
