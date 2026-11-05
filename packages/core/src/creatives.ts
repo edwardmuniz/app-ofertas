@@ -45,7 +45,7 @@ import { AppError } from "./errors";
 import { type MutationOptions, runMutation } from "./mutation";
 import { loadOffer } from "./offers";
 import type { MediaFetcher } from "./safe-fetch";
-import { offerVars } from "./templates";
+import { activeCoupon, offerVars } from "./templates";
 
 type AssetRow = typeof assets.$inferSelect;
 type CreativeRow = typeof creatives.$inferSelect;
@@ -310,7 +310,7 @@ export async function renderOfferCreative(
     price: vars.preco ?? "",
     originalPrice: vars.preco_original ?? null,
     discountPct: offer.discountPct,
-    coupon: offer.couponCode,
+    coupon: activeCoupon(offer)?.code ?? null,
     badge: vars.selo ? vars.selo.replace(/^[^\p{L}\p{N}]+/u, "") : null,
     platform: vars.plataforma ?? "",
     image: await productImage(deps, product),

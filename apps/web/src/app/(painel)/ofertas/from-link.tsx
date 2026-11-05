@@ -366,7 +366,7 @@ export function FromLinkPanel({
               disabled={!priceN || title.trim().length < 3 || busy !== null}
               onClick={() => save("new")}
             >
-              Mandar para curadoria
+              Revisar depois
             </LoadingButton>
           </div>
         </div>

@@ -39,6 +39,17 @@ describe("Shopee (real, com fetch simulado)", () => {
     expect(JSON.parse(call.body).variables).toMatchObject({ keyword: "air fryer", sortType: 1 });
   });
 
+  it("sem palavra-chave, relevância vira mais vendidos (a API só ordena por relevância com palavra)", async () => {
+    const { c, calls } = connector(() =>
+      Response.json({ data: { productOfferV2: { nodes: [], pageInfo: { hasNextPage: false } } } }),
+    );
+    await c.search({ categoryId: "100644" });
+    await c.search({ categoryId: "100644", sort: "price_asc" });
+    const vars = calls.map((x) => JSON.parse(x.body).variables);
+    expect(vars[0]).toMatchObject({ productCatId: 100644, sortType: 2 });
+    expect(vars[1]).toMatchObject({ sortType: 4 });
+  });
+
   it("normaliza o produto e deriva o preço original do desconto", () => {
     const p = mapShopeeNode({
       itemId: 22_001,
@@ -66,6 +77,7 @@ describe("Shopee (real, com fetch simulado)", () => {
       soldCount: 1500,
       affiliateUrl: "https://s.shopee.com.br/abc",
       categoryIds: ["100637"],
+      categoryName: "Esportes e Lazer",
     });
   });
 

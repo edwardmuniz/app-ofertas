@@ -12,7 +12,9 @@ import {
   channels,
   limits,
   messagingAccounts,
+  offers,
   posts,
+  storeCoupons,
   trackedLinks,
 } from "@ofertas/db";
 import { eq, sql } from "drizzle-orm";
@@ -29,6 +31,7 @@ import {
   deleteContent,
   deleteSegment,
   deleteSentPost,
+  deleteStoreCoupon,
   fillMissingCopies,
   generateOfferCopy,
   getConnectionState,
@@ -43,6 +46,7 @@ import {
   listOffers,
   listPosts,
   listSegments,
+  listStoreCoupons,
   markContentPosted,
   nextAllowedTime,
   previewOfferFromLink,
@@ -62,6 +66,7 @@ import {
   searchOffers,
   setChannelAdminOnly,
   setOfferCopy,
+  setOfferCoupon,
   submitVideo,
   syncGroups,
   updateChannel,
@@ -69,6 +74,7 @@ import {
   updatePreferences,
   upsertAutomationRule,
   upsertSegment,
+  upsertStoreCoupon,
   validateOffer,
 } from "../src";
 import { createOwner, fakePages, importAllGroups, insertChannel, setupTestDeps } from "./helpers";
@@ -577,6 +583,52 @@ describe("Amazon (associado só com a tag)", () => {
     ).rejects.toMatchObject({ code: "PROVIDER_ERROR" });
   });
 
+  it("cupom da página: entra e sai sozinho; cupom manual não é trocado", async () => {
+    const { ctx } = await setup();
+    done(
+      await connectAffiliateAccount(ctx, {
+        platform: "amazon",
+        label: "Amazon",
+        mode: "live",
+        credentials: { partner_tag: "minhaloja-20" },
+      }),
+    );
+    const withCoupon = `${page("153.90")}
+<div id="promoPriceBlockMessage_feature_div"><label id="couponTextpctch">Aplicar cupom de 10% </label></div>`;
+    serve(page("153.90"));
+    const offer = done(
+      await importOfferFromLink(ctx, { url: PASTED, title: "Fone", price: 153.9 }),
+    );
+    expect(offer.coupon_source).toBeNull();
+
+    serve(withCoupon);
+    await validateOffer(ctx, offer.id);
+    expect(await getOffer(ctx, offer.id)).toMatchObject({
+      coupon_code: null,
+      coupon_source: "store",
+      coupon_active: true,
+    });
+    const body = (await previewPost(ctx, { offer_id: offer.id })).body;
+    expect(body).toContain("🎟️ Cupom de 10%: marque “Aplicar cupom” na página antes de comprar");
+
+    // A página deixou de mostrar: o cupom da loja sai.
+    serve(page("153.90"));
+    await validateOffer(ctx, offer.id);
+    expect(await getOffer(ctx, offer.id)).toMatchObject({
+      coupon_description: null,
+      coupon_source: null,
+    });
+
+    // Cupom definido à mão não é trocado pelo da página.
+    done(await setOfferCoupon(ctx, offer.id, { coupon_code: "MEU10" }));
+    serve(withCoupon);
+    await validateOffer(ctx, offer.id);
+    expect(await getOffer(ctx, offer.id)).toMatchObject({
+      coupon_code: "MEU10",
+      coupon_source: "manual",
+    });
+  });
+
   it("link colado ganha a sua tag, o preço é conferido e o post leva o link direto", async () => {
     const { ctx, channels: chs } = await setup();
     const ch = chs[0];
@@ -786,6 +838,140 @@ describe("texto próprio da oferta e cards", () => {
     );
     expect((await runPublisher(deps)).map((r) => r.status)).toEqual(["sent"]);
     expect(fakeMessagingControls.sent[0]?.imageUrl).toBe(offer.image_url);
+  });
+});
+
+describe("cupom da oferta", () => {
+  it("sai na mensagem com a regra, some quando vence e pode ser tirado", async () => {
+    const { ctx } = await setup();
+    const { offer } = await approvedOffer(ctx);
+    const future = new Date(Date.now() + 3 * 86_400_000).toISOString();
+
+    // Validade no passado é recusada.
+    await expect(
+      setOfferCoupon(ctx, offer.id, { coupon_code: "VELHO", coupon_valid_until: past() }),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+
+    const withCoupon = done(
+      await setOfferCoupon(ctx, offer.id, {
+        coupon_code: "BLACK20",
+        coupon_description: "R$ 20 OFF acima de R$ 99",
+        coupon_valid_until: future,
+      }),
+    );
+    expect(withCoupon).toMatchObject({ coupon_code: "BLACK20", coupon_active: true });
+    expect(withCoupon.flags).toContain("coupon_required");
+    let body = (await previewPost(ctx, { offer_id: offer.id })).body;
+    expect(body).toContain("BLACK20");
+    expect(body).toContain("_R$ 20 OFF acima de R$ 99_");
+
+    // Venceu: continua salvo, mas some da mensagem.
+    await deps.db
+      .update(offers)
+      .set({ couponValidUntil: new Date(Date.now() - 1000) })
+      .where(eq(offers.id, offer.id));
+    expect((await getOffer(ctx, offer.id)).coupon_active).toBe(false);
+    body = (await previewPost(ctx, { offer_id: offer.id })).body;
+    expect(body).not.toContain("BLACK20");
+    expect(body).not.toContain("R$ 20 OFF");
+
+    const removed = done(await setOfferCoupon(ctx, offer.id, { coupon_code: null }));
+    expect(removed).toMatchObject({
+      coupon_code: null,
+      coupon_description: null,
+      coupon_valid_until: null,
+      coupon_active: false,
+    });
+    expect(removed.flags).not.toContain("coupon_required");
+  });
+});
+
+describe("cupom da loja inteira", () => {
+  it("cadastra, divulga com link de afiliado, não repete e não manda vencido", async () => {
+    const { ctx, channels: chs } = await setup();
+    const ch = chs[0];
+    if (!ch) throw new Error("sem canal");
+    const future = new Date(Date.now() + 2 * 86_400_000).toISOString();
+    await expect(
+      upsertStoreCoupon(ctx, {
+        platform: "shopee",
+        title: "R$ 20 OFF",
+        url: "https://shopee.com.br/m/cupons",
+        valid_until: past(),
+      }),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+
+    const coupon = done(
+      await upsertStoreCoupon(ctx, {
+        platform: "shopee",
+        title: "R$ 20 OFF acima de R$ 99",
+        code: "shopee20",
+        details: "Só no app",
+        url: "https://shopee.com.br/m/cupons",
+        valid_until: future,
+      }),
+    );
+    expect(coupon).toMatchObject({ code: "SHOPEE20", active: true, posts_sent: 0 });
+    expect(coupon.affiliate_url).toBeTruthy();
+
+    const prev = await previewPost(ctx, { coupon_id: coupon.id });
+    expect(prev.body).toContain("🎟️ *CUPOM SHOPEE*");
+    expect(prev.body).toContain("Código: *SHOPEE20*");
+    expect(prev.body).toMatch(/⏰ Válido até \d{2}\/\d{2} às \d{2}:\d{2}/);
+
+    const plan = done(
+      await schedulePosts(ctx, { coupon_ids: [coupon.id], channel_ids: [ch.id], at: past() }),
+    );
+    expect(plan.scheduled).toHaveLength(1);
+    expect(plan.scheduled[0]).toMatchObject({ coupon_id: coupon.id, offer_id: null });
+    // O mesmo cupom não se repete no grupo em 12 horas.
+    const again = await schedulePosts(
+      ctx,
+      { coupon_ids: [coupon.id], channel_ids: [ch.id] },
+      { dryRun: true },
+    );
+    expect(again.status === "dry_run" && again.preview.skipped[0]?.reason).toMatch(/12 horas/);
+
+    expect((await runPublisher(deps)).map((r) => r.status)).toEqual(["sent"]);
+    const text = fakeMessagingControls.sent.at(-1)?.text ?? "";
+    expect(text).toContain("SHOPEE20");
+    expect(text).toContain("go.test/");
+    expect((await listStoreCoupons(ctx))[0]).toMatchObject({ id: coupon.id, posts_sent: 1 });
+
+    // Venceu depois de agendado: o envio não sai.
+    const other = done(
+      await upsertStoreCoupon(ctx, {
+        platform: "shopee",
+        title: "Frete grátis",
+        url: "https://shopee.com.br/m/frete",
+      }),
+    );
+    // Outro grupo: no mesmo, o intervalo mínimo entre envios adiaria o post.
+    const ch2 = chs[1];
+    if (!ch2) throw new Error("sem canal");
+    done(await schedulePosts(ctx, { coupon_ids: [other.id], channel_ids: [ch2.id], at: past() }));
+    await deps.db
+      .update(storeCoupons)
+      .set({ validUntil: new Date(Date.now() - 1000) })
+      .where(eq(storeCoupons.id, other.id));
+    const out = await runPublisher(deps);
+    expect(out.map((r) => r.status)).toEqual(["skipped"]);
+    expect((await listStoreCoupons(ctx)).map((c) => c.id)).not.toContain(other.id);
+
+    // Apagar cancela o que ainda está agendado.
+    const third = done(
+      await upsertStoreCoupon(ctx, {
+        platform: "shopee",
+        title: "10% OFF",
+        url: "https://shopee.com.br/m/dez",
+      }),
+    );
+    const future2 = new Date(Date.now() + 86_400_000).toISOString();
+    done(await schedulePosts(ctx, { coupon_ids: [third.id], channel_ids: [ch.id], at: future2 }));
+    expect(done(await deleteStoreCoupon(ctx, third.id))).toEqual({
+      deleted: true,
+      scheduled_posts_canceled: 1,
+    });
   });
 });
 

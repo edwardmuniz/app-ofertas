@@ -8,6 +8,7 @@ import {
   type SearchQuery,
   type SearchResult,
   type SearchSort,
+  type StoreCoupon,
 } from "./types";
 
 // Amazon (Associados Amazon.com.br).
@@ -69,6 +70,8 @@ export type AmazonPageData = {
   /** Preço no Pix (menor que o preço normal) */
   pixPrice: number | null;
   installments: Installments | null;
+  /** Cupom do anúncio principal ("Aplicar cupom de 10%"). */
+  coupon: StoreCoupon | null;
   /** Página anti-robô (captcha): não dá para concluir nada. */
   blocked: boolean;
 };
@@ -91,6 +94,55 @@ function installmentsOf(html: string): Installments | null {
   const value = parsePrice(any?.[2] ?? null);
   if (!any || !value || count < 2) return null;
   return { count, value, interestFree: Boolean(free) };
+}
+
+/** Texto visível do trecho de HTML (sem tags, espaços juntados). */
+const textOf = (html: string) =>
+  html
+    .replace(/<script[\s\S]*?<\/script>/g, " ")
+    .replace(/<style[\s\S]*?<\/style>/g, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ");
+
+const couponValue = (v: string) =>
+  v
+    .replace(/\s+/g, " ")
+    .replace(/(\d)\s*%/, "$1%")
+    .trim();
+
+/**
+ * Cupom anunciado no texto: "Aplicar cupom de 10%", "Economize R$ 20,00 com cupom" (cupom de
+ * marcar na página, sem código) ou "com o código PROMO10" (código promocional).
+ */
+export function amazonCouponOf(text: string): StoreCoupon | null {
+  const code = text.match(/c[óo]digo(?:\s+promocional)?\s*:?\s+([A-Z0-9]{4,20})\b/)?.[1];
+  const value =
+    text.match(/Aplicar\s+cupom\s+de\s+(R\$\s*[\d.,]+|\d{1,2}\s*%)/i)?.[1] ??
+    text.match(
+      /Economize\s+(R\$\s*[\d.,]+|\d{1,2}\s*%)\s+com\s+(?:o\s+)?(?:cupom|c[óo]digo)/i,
+    )?.[1] ??
+    null;
+  if (code) {
+    return {
+      code,
+      description: value ? `${couponValue(value)} de desconto` : "Código promocional",
+    };
+  }
+  if (!value) return null;
+  return {
+    code: null,
+    description: `Cupom de ${couponValue(value)}: marque “Aplicar cupom” na página antes de comprar`,
+  };
+}
+
+/** Cupom do anúncio principal (bloco de preço e promoções, não os carrosséis de outros produtos). */
+function pageCouponOf(html: string): StoreCoupon | null {
+  const at = html.search(
+    /id="(?:promoPriceBlockMessage_feature_div|couponText|couponBadge|vpcButton|applicable_promotion_list_sec)/,
+  );
+  if (at < 0) return null;
+  return amazonCouponOf(textOf(html.slice(at, at + 5000)));
 }
 
 const clean = (s: string | undefined | null) =>
@@ -159,6 +211,7 @@ export function parseAmazonPage(html: string): AmazonPageData {
     categoryName: clean(crumb?.[2]),
     pixPrice: pixPriceOf(html, price),
     installments: price ? installmentsOf(html) : null,
+    coupon: pageCouponOf(html),
     blocked,
   };
 }
@@ -190,6 +243,7 @@ export type AmazonSearchItem = {
   /** "Mais de 1 mil compras no mês passado" → 1000 */
   boughtLastMonth: number | null;
   installments: Installments | null;
+  coupon: StoreCoupon | null;
 };
 
 /** Ordenação na própria Amazon (desconto e comissão são ordenados depois, no sistema). */
@@ -278,6 +332,7 @@ export function parseAmazonSearch(html: string): {
               interestFree: /sem juros/.test(b.slice(inst.index, (inst.index ?? 0) + 600)),
             }
           : null,
+      coupon: amazonCouponOf(textOf(b)),
     });
   }
   const next = html.match(/<[^>]*s-pagination-next[^>]*>/)?.[0];
@@ -560,6 +615,7 @@ export class AmazonConnector implements AffiliateConnector {
         // O Pix só aparece na página do produto (lido ao salvar e antes de cada envio).
         pixPrice: null,
         installments: i.installments,
+        coupon: i.coupon,
       };
     });
     return { items, hasMore: r.hasMore || r.items.length > items.length };
@@ -633,6 +689,7 @@ export class AmazonConnector implements AffiliateConnector {
       validUntil: null,
       pixPrice: d.pixPrice,
       installments: d.installments,
+      coupon: d.coupon,
     };
   }
 

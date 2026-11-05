@@ -7,7 +7,7 @@ import { type Ctx, type Deps, now, systemActor } from "./context";
 import { AppError } from "./errors";
 import { type MutationOptions, runMutation } from "./mutation";
 import { loadOffer, toOffer } from "./offers";
-import { offerVars } from "./templates";
+import { activeCoupon, offerVars } from "./templates";
 
 /** Converte falhas da IA no erro padrão. */
 const COPY_HINTS: Record<string, Record<string, string>> = {
@@ -89,7 +89,10 @@ async function writeAiCopy(
         discountPct: offer.discountPct,
         pixPrice: v.preco_pix ?? null,
         installments: v.parcelas ?? null,
-        coupon: offer.couponCode,
+        coupon: (() => {
+          const c = activeCoupon(offer);
+          return c ? (c.code ?? c.description) : null;
+        })(),
         category: product.categoryName,
         shop: product.shopName,
         tone: typeof tone === "string" && tone.trim() ? tone : null,

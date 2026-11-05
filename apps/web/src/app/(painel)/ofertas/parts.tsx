@@ -72,21 +72,27 @@ export type CardProduct = {
 };
 
 /**
- * Card no estilo de vitrine: foto grande com selo de desconto, preço em destaque, avaliação,
- * loja e link para abrir o produto na própria loja. As ações ficam no rodapé.
+ * Card no estilo de vitrine: foto, nome, preço grande e uma linha de situação, com as ações
+ * em botões grandes e escritos no rodapé. Pensado para ser fácil de ler e de tocar.
  */
 export function ProductCard({
   p,
-  badge,
-  overlay,
+  status,
+  meta,
+  coupon,
+  showScore = true,
   footer,
   children,
 }: {
   p: CardProduct;
-  /** Etiqueta no canto da foto (ex.: "Na curadoria") */
-  badge?: React.ReactNode;
-  /** Painel que cobre a foto (motivo da rejeição, gerar link): o card mantém o tamanho */
-  overlay?: React.ReactNode;
+  /** Situação da oferta (ex.: "Ainda não enviada"), em destaque logo abaixo da foto. */
+  status?: React.ReactNode;
+  /** Texto curto ao lado de "Ver na loja" (ex.: quando foi conferida). */
+  meta?: React.ReactNode;
+  /** Cupom da oferta, logo abaixo do preço. */
+  coupon?: React.ReactNode;
+  /** Nota 0–100 no canto da foto: ajuda a decidir na busca e na revisão. */
+  showScore?: boolean;
   footer: React.ReactNode;
   children?: React.ReactNode;
 }) {
@@ -100,7 +106,7 @@ export function ProductCard({
             src={p.image_url}
             alt=""
             loading="lazy"
-            className="absolute inset-0 h-full w-full object-contain p-2"
+            className="absolute inset-0 h-full w-full object-contain p-3"
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-neutral-300">
@@ -108,39 +114,44 @@ export function ProductCard({
           </div>
         )}
         {p.discount_pct ? (
-          <span className="absolute top-2 left-2 rounded-md bg-emerald-600 px-1.5 py-0.5 text-xs font-semibold text-white">
+          <span className="absolute top-2 left-2 rounded-md bg-emerald-600 px-2 py-0.5 text-sm font-semibold text-white">
             -{p.discount_pct}%
           </span>
         ) : null}
-        <span className="absolute top-2 right-2">
-          <Score value={p.score} />
-        </span>
-        {badge && <span className="absolute bottom-2 left-2">{badge}</span>}
-        {overlay && (
-          <div className="absolute inset-0 z-10 overflow-y-auto bg-white/95 p-3 backdrop-blur-sm dark:bg-neutral-900/95">
-            {overlay}
-          </div>
+        {showScore && (
+          <span className="absolute top-2 right-2">
+            <Score value={p.score} />
+          </span>
         )}
       </div>
-      <div className="flex flex-1 flex-col gap-1.5 p-3">
-        <div className="flex items-center justify-between gap-2 text-xs text-neutral-500">
+      <div className="flex flex-1 flex-col gap-2 p-4">
+        <div className="flex items-center justify-between gap-2 text-sm text-neutral-500">
           <PlatformBadge platform={p.platform} />
           {p.category && <span className="truncate">{p.category}</span>}
         </div>
+        {status && <div className="text-sm font-medium">{status}</div>}
         <a
           href={p.url}
           target="_blank"
           rel="noreferrer"
-          className="line-clamp-2 min-h-10 text-sm leading-5 hover:underline"
+          className="line-clamp-2 min-h-12 text-[15px] leading-6 hover:underline"
           title={p.title}
         >
           {p.title}
         </a>
-        <Price price={p.price} original={p.original_price} discount={null} />
-        <div className="flex flex-wrap items-center gap-x-2 text-xs text-neutral-500">
+        <div className="flex flex-wrap items-baseline gap-x-2">
+          <span className="text-2xl font-semibold tabular-nums">{money(p.price)}</span>
+          {p.original_price && (
+            <span className="text-sm text-neutral-500 tabular-nums line-through">
+              {money(p.original_price)}
+            </span>
+          )}
+        </div>
+        {coupon && <div>{coupon}</div>}
+        <div className="flex flex-wrap items-center gap-x-3 text-sm text-neutral-500">
           {p.rating ? (
-            <span className="inline-flex items-center gap-0.5">
-              <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+            <span className="inline-flex items-center gap-1">
+              <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
               {p.rating.toFixed(1)}
             </span>
           ) : null}
@@ -150,15 +161,18 @@ export function ProductCard({
         </div>
         <Flags flags={p.flags} />
         {children}
-        <a
-          href={p.url}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-900 hover:underline dark:hover:text-neutral-100"
-        >
-          <ExternalLink className="h-3 w-3" /> Ver na loja
-        </a>
-        <div className="mt-auto flex flex-wrap gap-2 pt-2">{footer}</div>
+        <div className="flex items-center justify-between gap-2 text-sm text-neutral-500">
+          <span className="min-w-0 truncate">{meta}</span>
+          <a
+            href={p.url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex shrink-0 items-center gap-1 hover:text-neutral-900 hover:underline dark:hover:text-neutral-100"
+          >
+            <ExternalLink className="h-4 w-4" /> Ver na loja
+          </a>
+        </div>
+        <div className="mt-auto flex flex-col gap-2 pt-2">{footer}</div>
       </div>
     </div>
   );

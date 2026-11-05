@@ -14,6 +14,7 @@ import {
   offers,
   posts,
   products,
+  storeCoupons,
   trackedLinks,
   workspaces,
 } from "@ofertas/db";
@@ -21,12 +22,13 @@ import { and, desc, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
 import { recordAudit } from "./audit";
 import { requireScope } from "./authz";
 import { type Ctx, type Deps, now, systemActor } from "./context";
+import { couponIsLive, couponMessage, loadCoupons } from "./coupons";
 import { creativeImageForPost } from "./creatives";
 import { olderThan, toPage } from "./cursor";
 import { AppError } from "./errors";
 import { emitEvent } from "./events";
 import { getLimit } from "./limits";
-import { shortUrl } from "./links";
+import { freeSlug, insertTrackedLink, shortUrl } from "./links";
 import { getAccountRow, messagingError, providerOf, refOf } from "./messaging";
 import { type MutationOptions, runMutation } from "./mutation";
 import { createOfferLink, shareUrlFor, validateOfferAsSystem } from "./offers";
@@ -39,6 +41,8 @@ type ChannelRow = typeof channels.$inferSelect;
 
 const MINUTE = 60_000;
 const DUPLICATE_WINDOW_MS = 7 * 86_400_000;
+/** O mesmo cupom não se repete no mesmo grupo dentro deste prazo. */
+const COUPON_REPEAT_MS = 12 * 3_600_000;
 const PUBLISHABLE_TYPES = ["wa_group", "wa_community", "wa_channel"] as const;
 const LIVE_STATUSES = ["scheduled", "sending", "sent"] as const;
 const MAX_ATTEMPTS = 3;
@@ -51,6 +55,14 @@ function previewLink(
   product: { url: string },
 ) {
   return shareUrlFor(offer.affiliateUrl ?? product.url, shortUrl(deps, PLACEHOLDER_LINK));
+}
+
+/** Link da prévia do cupom: o de afiliado direto (Amazon) ou o curto gerado no envio. */
+function couponPreviewLink(
+  deps: Pick<Deps, "redirectBaseUrl">,
+  c: { affiliateUrl: string | null; url: string },
+) {
+  return shareUrlFor(c.affiliateUrl ?? c.url, shortUrl(deps, PLACEHOLDER_LINK));
 }
 
 export async function workspaceSchedule(db: DbOrTx, workspaceId: string) {
@@ -164,6 +176,7 @@ function toPost(
     channel_id: r.channelId,
     channel_name: channelName,
     offer_id: r.offerId,
+    coupon_id: r.couponId,
     title,
     status: r.status,
     scheduled_at: r.scheduledAt.toISOString(),
@@ -184,7 +197,15 @@ export async function previewPost(ctx: Ctx, raw: PreviewPostInput) {
   const input = PreviewPostInput.parse(raw);
   const wsId = ctx.actor.workspaceId;
   if (input.text) return { body: input.text, image_url: null };
-  if (!input.offer_id) throw new AppError("VALIDATION_ERROR", "Informe offer_id ou text.");
+  if (input.coupon_id) {
+    const [c] = await loadCoupons(ctx.db, wsId, [input.coupon_id]);
+    if (!c) throw new AppError("NOT_FOUND", "Cupom não encontrado.");
+    const { tz } = await workspaceSchedule(ctx.db, wsId);
+    return { body: couponMessage(c, couponPreviewLink(ctx, c), tz), image_url: c.imageUrl };
+  }
+  if (!input.offer_id) {
+    throw new AppError("VALIDATION_ERROR", "Informe offer_id, coupon_id ou text.");
+  }
   const [row] = await offersWithProducts(ctx.db, wsId, [input.offer_id]);
   if (!row) throw new AppError("NOT_FOUND", "Oferta não encontrada.");
   const body = renderTemplate(
@@ -212,8 +233,8 @@ export async function schedulePosts(ctx: Ctx, raw: SchedulePostsInput, opts: Mut
     input,
     opts,
     preview: async (c, i) => {
-      if (!i.offer_ids?.length && !i.text) {
-        throw new AppError("VALIDATION_ERROR", "Informe offer_ids ou text.");
+      if (!i.offer_ids?.length && !i.coupon_ids?.length && !i.text) {
+        throw new AppError("VALIDATION_ERROR", "Informe offer_ids, coupon_ids ou text.");
       }
       if (i.creative_id) {
         if (i.offer_ids?.length !== 1) {
@@ -237,6 +258,7 @@ export async function schedulePosts(ctx: Ctx, raw: SchedulePostsInput, opts: Mut
 
       type Item = {
         offerId: string | null;
+        couponId: string | null;
         productId: string | null;
         title: string | null;
         body: string;
@@ -257,6 +279,7 @@ export async function schedulePosts(ctx: Ctx, raw: SchedulePostsInput, opts: Mut
           else
             items.push({
               offerId: id,
+              couponId: null,
               productId: r.product.id,
               title: r.product.title,
               body: renderTemplate(
@@ -265,8 +288,52 @@ export async function schedulePosts(ctx: Ctx, raw: SchedulePostsInput, opts: Mut
               ),
             });
         }
-      } else if (i.text) {
-        items.push({ offerId: null, productId: null, title: null, body: i.text });
+      }
+      if (i.coupon_ids?.length) {
+        const rows = await loadCoupons(c.db, wsId, i.coupon_ids);
+        for (const id of i.coupon_ids) {
+          const r = rows.find((x) => x.id === id);
+          if (!r)
+            skipped.push({ channel_id: null, offer_id: null, reason: "Cupom não encontrado." });
+          else if (!couponIsLive(r, now(c)))
+            skipped.push({
+              channel_id: null,
+              offer_id: null,
+              reason: `Cupom “${r.title}” vencido ou arquivado.`,
+            });
+          else
+            items.push({
+              offerId: null,
+              couponId: id,
+              productId: null,
+              title: `Cupom: ${r.title}`,
+              body: couponMessage(r, couponPreviewLink(c, r), sched.tz),
+            });
+        }
+      }
+      if (!i.offer_ids?.length && !i.coupon_ids?.length && i.text) {
+        items.push({ offerId: null, couponId: null, productId: null, title: null, body: i.text });
+      }
+
+      // Cupom já divulgado (ou agendado) no grupo há pouco: não repete.
+      const couponIds = items.map((x) => x.couponId).filter((x): x is string => Boolean(x));
+      const recentCoupons = new Set<string>();
+      if (couponIds.length && targets.length) {
+        const rows = await c.db
+          .select({ channelId: posts.channelId, couponId: posts.couponId })
+          .from(posts)
+          .where(
+            and(
+              inArray(
+                posts.channelId,
+                targets.map((t) => t.id),
+              ),
+              inArray(posts.couponId, couponIds),
+              inArray(posts.status, [...LIVE_STATUSES]),
+              gte(posts.createdAt, new Date(now(c).getTime() - COUPON_REPEAT_MS)),
+            ),
+          );
+        for (const r of rows) recentCoupons.add(`${r.channelId}:${r.couponId}`);
       }
 
       const recent = await recentPairs(
@@ -281,6 +348,14 @@ export async function schedulePosts(ctx: Ctx, raw: SchedulePostsInput, opts: Mut
         const last = await lastSlot(c.db, ch.id);
         let cursor = new Date(Math.max(start.getTime(), last ? last.getTime() + minInterval : 0));
         for (const item of items) {
+          if (item.couponId && recentCoupons.has(`${ch.id}:${item.couponId}`)) {
+            skipped.push({
+              channel_id: ch.id,
+              offer_id: null,
+              reason: `Cupom já divulgado em ${ch.name} nas últimas 12 horas.`,
+            });
+            continue;
+          }
           if (item.productId && recent.has(`${ch.id}:${item.productId}`)) {
             skipped.push({
               channel_id: ch.id,
@@ -295,6 +370,7 @@ export async function schedulePosts(ctx: Ctx, raw: SchedulePostsInput, opts: Mut
             channel_id: ch.id,
             channel_name: ch.name,
             offer_id: item.offerId,
+            coupon_id: item.couponId,
             title: item.title,
             scheduled_at: at.toISOString(),
             body: item.body,
@@ -313,7 +389,8 @@ export async function schedulePosts(ctx: Ctx, raw: SchedulePostsInput, opts: Mut
             workspaceId: wsId,
             channelId: x.channel_id,
             offerId: x.offer_id,
-            customText: x.offer_id ? null : (i.text ?? null),
+            couponId: x.coupon_id,
+            customText: x.offer_id || x.coupon_id ? null : (i.text ?? null),
             templateId: i.template_id ?? null,
             withImage: i.with_image,
             creativeId: i.creative_id ?? null,
@@ -327,7 +404,10 @@ export async function schedulePosts(ctx: Ctx, raw: SchedulePostsInput, opts: Mut
       return {
         scheduled: rows.map((r) => {
           const plan = p.posts.find(
-            (x) => x.channel_id === r.channelId && x.offer_id === r.offerId,
+            (x) =>
+              x.channel_id === r.channelId &&
+              x.offer_id === r.offerId &&
+              x.coupon_id === r.couponId,
           );
           return toPost(ctx, r, plan?.channel_name ?? "", plan?.title ?? null, null);
         }),
@@ -357,12 +437,14 @@ export async function listPosts(ctx: Ctx, raw: ListPostsQuery = {}) {
       post: posts,
       channelName: channels.name,
       title: products.title,
+      couponTitle: storeCoupons.title,
       slug: trackedLinks.slug,
     })
     .from(posts)
     .innerJoin(channels, eq(channels.id, posts.channelId))
     .leftJoin(offers, eq(offers.id, posts.offerId))
     .leftJoin(products, eq(products.id, offers.productId))
+    .leftJoin(storeCoupons, eq(storeCoupons.id, posts.couponId))
     .leftJoin(trackedLinks, eq(trackedLinks.id, posts.trackedLinkId))
     .where(and(...conds))
     .orderBy(desc(posts.createdAt), desc(posts.id))
@@ -370,7 +452,14 @@ export async function listPosts(ctx: Ctx, raw: ListPostsQuery = {}) {
   return toPage(
     rows.map((r) => ({ ...r, id: r.post.id, createdAt: r.post.createdAt })),
     q.limit,
-    (r) => toPost(ctx, r.post, r.channelName, r.title, r.slug),
+    (r) =>
+      toPost(
+        ctx,
+        r.post,
+        r.channelName,
+        r.title ?? (r.couponTitle ? `Cupom: ${r.couponTitle}` : null),
+        r.slug,
+      ),
   );
 }
 
@@ -559,6 +648,41 @@ async function postOfferLink(
   return { id: link.result.link_id, url: link.result.share_url };
 }
 
+/** Link rastreado do post de cupom (reaproveitado se o envio for tentado de novo). */
+async function postCouponLink(
+  deps: Deps,
+  postId: string,
+  c: { id: string; title: string; url: string; affiliateUrl: string | null; workspaceId: string },
+  channelId: string,
+): Promise<{ id: string; url: string }> {
+  const [existing] = await deps.db
+    .select({
+      id: trackedLinks.id,
+      slug: trackedLinks.slug,
+      destination: trackedLinks.destinationUrl,
+    })
+    .from(trackedLinks)
+    .where(eq(trackedLinks.postId, postId))
+    .limit(1);
+  if (existing) {
+    return {
+      id: existing.id,
+      url: shareUrlFor(existing.destination, shortUrl(deps, existing.slug)),
+    };
+  }
+  const row = await insertTrackedLink(deps.db, {
+    workspaceId: c.workspaceId,
+    slug: await freeSlug(deps.db),
+    destinationUrl: c.affiliateUrl ?? c.url,
+    title: `Cupom: ${c.title}`,
+    source: "wa",
+    campaign: "cupom",
+    channelId,
+    postId,
+  });
+  return { id: row.id, url: shareUrlFor(row.destinationUrl, shortUrl(deps, row.slug)) };
+}
+
 export type PublishOutcome = { status: string; reason?: string | null };
 
 /** Envia um post já reivindicado (status sending). */
@@ -635,7 +759,15 @@ export async function publishPost(deps: Deps, postId: string): Promise<PublishOu
   const sysCtx: Ctx = { ...deps, actor: systemActor(wsId, "publisher") };
 
   try {
-    if (post.offerId) {
+    if (post.couponId) {
+      const [c] = await loadCoupons(deps.db, wsId, [post.couponId]);
+      if (!c) return finish(deps, post, "skipped", "Cupom removido.");
+      if (!couponIsLive(c, at)) return finish(deps, post, "skipped", "Cupom vencido ou arquivado.");
+      const link = await postCouponLink(deps, post.id, c, channel.id);
+      trackedLinkId = link.id;
+      body = couponMessage(c, link.url, (await workspaceSchedule(deps.db, wsId)).tz);
+      imageUrl = post.withImage ? c.imageUrl : null;
+    } else if (post.offerId) {
       const [o] = await offersWithProducts(deps.db, wsId, [post.offerId]);
       if (!o) return finish(deps, post, "skipped", "Oferta removida.");
       if (o.offer.status !== "approved")

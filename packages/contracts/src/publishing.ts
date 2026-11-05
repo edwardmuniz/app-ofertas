@@ -153,6 +153,11 @@ export const POST_STATUS = [
 export const SchedulePostsInput = z.object({
   offer_ids: z.array(z.uuid()).max(50).optional().describe("Ofertas aprovadas a publicar."),
   text: z.string().min(1).max(4000).optional().describe("Mensagem livre, sem oferta."),
+  coupon_ids: z
+    .array(z.uuid())
+    .max(20)
+    .optional()
+    .describe("Cupons da loja inteira (list_store_coupons) a divulgar, cada um num post."),
   channel_ids: z.array(z.uuid()).max(100).optional(),
   segment_ids: z
     .array(z.uuid())
@@ -181,6 +186,7 @@ export const PlannedPost = z.object({
   channel_id: z.string(),
   channel_name: z.string(),
   offer_id: z.string().nullable(),
+  coupon_id: z.string().nullable(),
   title: z.string().nullable(),
   scheduled_at: z.string(),
   body: z.string(),
@@ -197,6 +203,7 @@ export const Post = z.object({
   channel_id: z.string(),
   channel_name: z.string(),
   offer_id: z.string().nullable(),
+  coupon_id: z.string().nullable(),
   title: z.string().nullable(),
   status: z.enum(POST_STATUS),
   scheduled_at: z.string(),
@@ -218,6 +225,7 @@ export const ScheduleResult = z.object({
 
 export const PreviewPostInput = z.object({
   offer_id: z.uuid().optional(),
+  coupon_id: z.uuid().optional(),
   text: z.string().max(4000).optional(),
   template_id: z.uuid().optional(),
 });

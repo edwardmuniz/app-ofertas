@@ -99,9 +99,30 @@ Conta Amazon em modo **Associado** (`live`), com:
 - **Sub-ids:** a Amazon não tem. Para separar canais, crie tags diferentes no portal (uma conta por tag) ou use o relatório por tag.
 - **Simulado:** a conta simulada da Amazon usa ASINs e links da Amazon (`?tag=simulado-20`).
 
+## Cupom da oferta (05/11/2026)
+
+- **Campos:** código, regra curta (`coupon_description`, ex.: "R$ 20 OFF acima de R$ 99") e validade (`coupon_valid_until`, opcional).
+- **Como entra:** ao salvar (`save_offer`), no **Colar link** e, a qualquer momento, por `set_offer_coupon` / `PUT /v1/offers/:id/coupon`. `coupon_code: null` tira o cupom. No painel: "Mais opções › Cupom" da oferta aprovada. A validade é escolhida por dia e vale até 23h59 (horário de Brasília).
+- **Na mensagem:** linha "🎟️ Cupom: _CODIGO_" e, abaixo, a regra em itálico, montadas pelo sistema (o texto da oferta não leva cupom). O card de preço e o texto da IA também recebem o cupom.
+- **Validade:** vencido, o cupom continua salvo, mas some da mensagem, do card e do texto da IA sozinho (`coupon_active: false`). O painel mostra o código riscado com "(vencido)". Validade no passado é recusada.
+- A flag `coupon_required` acompanha o cupom: entra quando ele é definido e sai quando é tirado.
+- **Origem (`coupon_source`):** `manual` (pessoa ou agente; nunca muda sozinho) ou `store` (lido da loja). O cupom lido da loja entra ao salvar e é atualizado a cada conferência de preço: some quando a página deixa de mostrar. Salvar um cupom à mão passa a valer no lugar.
+- **Amazon (lido da página):** "Aplicar cupom de 10%" e "Economize R$ 20 com cupom" (cupom de marcar, sem código) e "com o código PROMO10" (código promocional). Na página do produto, só vale o bloco de preço e promoções do anúncio principal (`promoPriceBlockMessage`, `couponText`, `vpcButton`…), não os carrosséis de outros produtos. Na busca, cada card tem o seu. Sem código, a mensagem leva "🎟️ Cupom de 10%: marque “Aplicar cupom” na página antes de comprar" (`{{cupom_ativar}}`).
+- A Shopee (API e feed) e as outras lojas não informam cupom.
+
+## Cupom da loja inteira (05/11/2026)
+
+Cupons que não são de um produto (ex.: "R$ 20 OFF acima de R$ 99 na Shopee") viram um post próprio nos grupos.
+
+- **Cadastro:** `upsert_store_coupon` / `POST /v1/coupons` (`PUT /v1/coupons/:id` edita): loja, chamada, código (opcional: sem código, o resgate é pelo link), regras, link da página do cupom, imagem e validade. `list_store_coupons` / `GET /v1/coupons` (`status=active` traz só os que estão na validade) e `delete_store_coupon` / `DELETE /v1/coupons/:id` (cancela os envios agendados). Painel: Ofertas › **Cupons**.
+- **Link:** ao salvar, o link vira link de afiliado pela conta da loja (Shopee: link curto com sub-id `cupom`; Amazon: `?tag=`). Sem conta conectada, vai o endereço colado, e o painel avisa. No envio, vira link rastreado (`campaign: cupom`), menos na Amazon, que vai direto.
+- **Divulgar:** `schedule_posts(coupon_ids)` (até 20), com as mesmas janelas, intervalos e segmentos das ofertas. Painel: "Publicar nos grupos" no cupom, ou Publicações › "Cupons da loja". O mesmo cupom não se repete no mesmo grupo em 12 horas. Cupom vencido ou apagado não sai (o post fica `skipped`).
+- **Mensagem:** "🎟️ _CUPOM SHOPEE_", a chamada em negrito, as regras, "Código: _X_" (ou "👉 Resgate o cupom no link antes de comprar"), "⏰ Válido até 05/11 às 23:59" e o link. Vai a imagem do cupom, se tiver.
+- **Ainda não:** conferir na loja se o cupom continua valendo; buscar cupons sozinho (nenhuma loja expõe cupons pela API).
+
 ## Pesquisa de ofertas
 
-- **Filtros de vitrine** (painel e `search_offers`): palavra, categoria (`list_offer_categories` / `GET /v1/offers/categories`; no feed, as categorias principais da Shopee em português, com contagem), faixa de preço, desconto mínimo, avaliação mínima e ordenação (relevância, maior desconto, menor/maior preço, mais populares, maior comissão). Paginação por `page`, e `has_more` diz se há mais. Na conta feed, os filtros rodam direto no banco; nas outras, são aplicados depois da busca.
+- **Filtros de vitrine** (painel e `search_offers`): palavra, categoria (`list_offer_categories` / `GET /v1/offers/categories`; no feed, as categorias principais da Shopee em português, com contagem; na conta da API da Shopee, a lista fixa das mesmas categorias principais, sem contagem, porque a API não lista categorias e aceita o código em `productCatId`)., faixa de preço, desconto mínimo, avaliação mínima e ordenação (relevância, maior desconto, menor/maior preço, mais populares, maior comissão). Paginação por `page`, e `has_more` diz se há mais. Na conta feed, os filtros rodam direto no banco; nas outras, são aplicados depois da busca. A busca com categoria vai só para a loja dona dela (o painel manda `platforms`).
 - **Card do produto:** foto grande com selo de desconto e nota, loja, avaliação, preço "de/por" e link **Ver na loja** (página do produto, sem afiliação).
 
 - `search_offers(query, category?, min_discount?, price_min?, price_max?, platforms?, sort?)` consulta conectores em paralelo, normaliza e grava `product` + `price_point`.
@@ -139,8 +160,23 @@ Flags calculadas em `offer.quality_flags`:
 - **Desconto suspeito** exige 3+ observações em 3+ dias; **menor preço 30d** exige 7+ dias de histórico e **90d**, 30+ dias. Sem histórico, nenhum desses sinais aparece.
 - O preço só é gravado de novo se mudou ou se passou 1 h desde o último registro do produto.
 - A Shopee não devolve o preço "de": ele é derivado de `priceDiscountRate`.
+- **Limite da Open API:** 8.000 chamadas por hora (documentação oficial da Open API, 11/2026). Passou do limite, a Shopee recusa até a próxima janela; o erro (código `10030`) vira `RATE_LIMIT` com a mensagem "Limite de requisições da Shopee atingido".
 - `save_offer` sempre consulta o preço atual antes de salvar; produtos recusados não voltam pela busca automática.
 - O conector Shopee declara `conversionsReport: false` até a fase Financeiro implementar `fetchConversions`.
+- **Relatório de conversões (para a fase Financeiro), pela visão geral oficial da Open API:**
+  - Até 500 registros por página. A partir da segunda página, é obrigatório consultar com o `scrollId` devolvido pela anterior.
+  - O `scrollId` vale uma vez só e expira em 30 segundos, então as páginas seguintes precisam vir logo em sequência.
+  - Uma nova consulta sem `scrollId` exige 30 segundos de intervalo desde a anterior.
+  - Dá para consultar só os últimos 3 meses (o mesmo período do portal); um intervalo maior volta erro.
+- **Datas:** a Shopee guarda no horário local da região, mas os campos de data são timestamps (o mesmo instante em qualquer fuso).
+- **Teste manual de consultas:** explorer em `https://open-api.affiliate.shopee.com.br/explorer/v2`.
+- **Referência da Open API (conferida em 11/2026):**
+  - **`productOfferV2`** (busca): `keyword`, `productCatId`, `itemId`, `shopId`, `page`, `limit` (padrão 20). `sortType`: 1 relevância (só com palavra-chave), 2 mais vendidos, 3 maior preço, 4 menor preço, 5 maior comissão. Sem palavra-chave, a plataforma troca relevância por mais vendidos. Também aceita `listType` (1 maior comissão, 2 mais vendidos no momento, 3/4 categoria, 5 loja, 6 coleção, com `matchId`), ainda não usado.
+  - Campos por produto: comissão total e por origem (`appNewRate`, `appExistRate`, `webNewRate`, `webExistRate`, `sellerCommissionRate`, `shopeeCommissionRate`), `priceMin`/`priceMax`, `priceDiscountRate` (0–100) e `productCatIds` (níveis 1 a 3, os mesmos códigos globais do feed).
+  - **`generateShortLink`** (usado) e **`generateBatchShortLink`** (até 50 links por chamada; ainda não usado, serve para agendar muitos envios de uma vez).
+  - **`shopOfferV2`** (lojas com comissão extra) e **`shopeeOfferV2`** (campanhas da Shopee por coleção ou categoria): ainda não usados.
+  - **`listItemFeeds` / `getItemFeedData`:** o feed de produtos pela API, em páginas de até 500 linhas, completo (`FULL`) ou só as mudanças do dia (`DELTA`, com `updateType` NEW/UPDATE/DELETE). Alternativa futura ao download do CSV no modo feed.
+  - **`conversionReport`** (Financeiro): filtra por data do pedido ou da conclusão, status (`orderStatus`: UNPAID, PENDING, COMPLETED, CANCELLED), loja, produto, categoria e fraude. Cada conversão traz `utmContent` (os nossos sub-ids), `totalCommission`, `netCommission`, `clickTime`, `purchaseTime` e os pedidos com itens (preço, quantidade, comissão por item, status e motivo). Paginação só por `scrollId`. **`validatedReport(validationId)`** traz o relatório já validado de um fechamento.
 - Credenciais só entram pelo painel (nunca por agentes) e nunca vão para o log de auditoria.
 
 ## Oferta por link

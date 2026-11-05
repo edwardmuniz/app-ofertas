@@ -194,6 +194,16 @@ export const Offer = z.object({
   discount_pct: z.number().nullable(),
   coupon_code: z.string().nullable(),
   coupon_description: z.string().nullable(),
+  coupon_valid_until: z.string().nullable().describe("Até quando o cupom vale."),
+  coupon_source: z
+    .enum(["manual", "store"])
+    .nullable()
+    .describe(
+      "manual = definido à mão ou pelo agente; store = lido da página da loja e atualizado a cada conferência.",
+    ),
+  coupon_active: z
+    .boolean()
+    .describe("Tem cupom e ele está na validade: sai na mensagem e no card."),
   commission_rate: z.number().nullable(),
   commission_value: z.number().nullable(),
   rating: z.number().nullable(),
@@ -251,6 +261,10 @@ export const SaveOfferInput = z.object({
     .describe("approved = pronta para publicar; new = fica na fila de curadoria."),
   coupon_code: z.string().max(60).optional(),
   coupon_description: z.string().max(200).optional(),
+  coupon_valid_until: z.iso
+    .datetime({ offset: true })
+    .optional()
+    .describe("Até quando o cupom vale (ISO 8601). Depois disso ele some da mensagem."),
   notes: z.string().max(1000).optional(),
 });
 export type SaveOfferInput = z.input<typeof SaveOfferInput>;
@@ -275,6 +289,29 @@ export const UpdateOfferPricesInput = z.object({
     .optional(),
 });
 export type UpdateOfferPricesInput = z.input<typeof UpdateOfferPricesInput>;
+
+export const SetOfferCouponInput = z.object({
+  coupon_code: z
+    .string()
+    .trim()
+    .min(2)
+    .max(60)
+    .nullable()
+    .describe("Código do cupom, ex.: BLACK20. null = tirar o cupom da oferta."),
+  coupon_description: z
+    .string()
+    .trim()
+    .max(200)
+    .nullable()
+    .optional()
+    .describe("Regra curta, ex.: R$ 20 OFF acima de R$ 99. Sai abaixo do código na mensagem."),
+  coupon_valid_until: z.iso
+    .datetime({ offset: true })
+    .nullable()
+    .optional()
+    .describe("Até quando vale (ISO 8601). Vencido, some da mensagem sozinho. null = sem prazo."),
+});
+export type SetOfferCouponInput = z.input<typeof SetOfferCouponInput>;
 
 export const UpdateOfferStatusInput = z.object({
   offer_id: z.uuid(),
@@ -394,6 +431,10 @@ export const ImportOfferFromLinkInput = z.object({
     .describe("Parcelamento anunciado, ex.: 10x de R$ 52,19 sem juros."),
   coupon_code: z.string().max(60).optional(),
   coupon_description: z.string().max(200).optional(),
+  coupon_valid_until: z.iso
+    .datetime({ offset: true })
+    .optional()
+    .describe("Até quando o cupom vale (ISO 8601). Depois disso ele some da mensagem."),
   notes: z.string().max(1000).optional(),
   status: z
     .enum(["new", "approved"])

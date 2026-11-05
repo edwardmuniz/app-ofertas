@@ -7,6 +7,7 @@ import {
   GenerateOfferCopyInput,
   ImportOfferFromLinkInput,
   ListOffersQuery,
+  ListStoreCouponsQuery,
   Offer,
   OfferCandidate,
   OfferCategory,
@@ -20,10 +21,13 @@ import {
   SearchOffersInput,
   SearchOffersResult,
   SetOfferCopyInput,
+  SetOfferCouponInput,
+  StoreCoupon,
   UpdateAffiliateAccountInput,
   UpdateOfferPricesInput,
   UpdateOfferStatusInput,
   UpsertSavedSearchInput,
+  UpsertStoreCouponInput,
   ValidateOfferResult,
 } from "@ofertas/contracts";
 import {
@@ -32,6 +36,7 @@ import {
   createOfferLink,
   type Deps,
   deleteAffiliateAccount,
+  deleteStoreCoupon,
   findSimilarOffers,
   generateOfferCopy,
   getOffer,
@@ -40,16 +45,19 @@ import {
   listOfferCategories,
   listOffers,
   listSavedSearches,
+  listStoreCoupons,
   previewOfferFromLink,
   requestFeedSync,
   saveOffer,
   searchOffers,
   setAffiliateAccountStatus,
   setOfferCopy,
+  setOfferCoupon,
   setOfferStatus,
   updateAffiliateAccount,
   updateOfferPrices,
   upsertSavedSearch,
+  upsertStoreCoupon,
   validateOffer,
 } from "@ofertas/core";
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
@@ -276,6 +284,19 @@ export const offerRoutes: FastifyPluginAsyncZod<{ deps: Deps }> = async (app, { 
     },
     async (req) => updateOfferPrices(ctx(req), req.params.id, req.body, mutationOpts(req)),
   );
+  app.put(
+    "/offers/:id/coupon",
+    {
+      schema: {
+        tags: ["ofertas"],
+        params: IdParams,
+        body: SetOfferCouponInput,
+        ...mutationSchema,
+        response: { 200: MutationResult(Offer), ...errors },
+      },
+    },
+    async (req) => setOfferCoupon(ctx(req), req.params.id, req.body, mutationOpts(req)),
+  );
   app.post(
     "/offers/:id/status",
     {
@@ -380,5 +401,59 @@ export const offerRoutes: FastifyPluginAsyncZod<{ deps: Deps }> = async (app, { 
     },
     async (req) =>
       upsertSavedSearch(ctx(req), { ...req.body, id: req.params.id }, mutationOpts(req)),
+  );
+  app.get(
+    "/coupons",
+    {
+      schema: {
+        tags: ["ofertas"],
+        querystring: ListStoreCouponsQuery,
+        response: { 200: z.array(StoreCoupon), ...errors },
+      },
+    },
+    async (req) => listStoreCoupons(ctx(req), req.query),
+  );
+  app.post(
+    "/coupons",
+    {
+      schema: {
+        tags: ["ofertas"],
+        body: UpsertStoreCouponInput.omit({ id: true }),
+        ...mutationSchema,
+        response: { 200: MutationResult(StoreCoupon), ...errors },
+      },
+    },
+    async (req) => upsertStoreCoupon(ctx(req), req.body, mutationOpts(req)),
+  );
+  app.put(
+    "/coupons/:id",
+    {
+      schema: {
+        tags: ["ofertas"],
+        params: IdParams,
+        body: UpsertStoreCouponInput.omit({ id: true }),
+        ...mutationSchema,
+        response: { 200: MutationResult(StoreCoupon), ...errors },
+      },
+    },
+    async (req) =>
+      upsertStoreCoupon(ctx(req), { ...req.body, id: req.params.id }, mutationOpts(req)),
+  );
+  app.delete(
+    "/coupons/:id",
+    {
+      schema: {
+        tags: ["ofertas"],
+        params: IdParams,
+        ...mutationSchema,
+        response: {
+          200: MutationResult(
+            z.object({ deleted: z.literal(true), scheduled_posts_canceled: z.number() }),
+          ),
+          ...errors,
+        },
+      },
+    },
+    async (req) => deleteStoreCoupon(ctx(req), req.params.id, mutationOpts(req)),
   );
 };

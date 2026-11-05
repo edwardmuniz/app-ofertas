@@ -9,6 +9,7 @@ export * from "./channels";
 export * from "./clicks";
 export * from "./content";
 export * from "./context";
+export * from "./coupons";
 export * from "./creatives";
 export * from "./crypto";
 export * from "./cursor";

@@ -40,7 +40,14 @@ export type ProductOffer = {
   /** Preço à vista no Pix, quando a loja mostra um menor que o preço normal */
   pixPrice?: number | null;
   installments?: Installments | null;
+  /**
+   * Cupom mostrado pela loja no produto. undefined = a loja não informa; null = sem cupom.
+   * `code` null: cupom de marcar na página (ex.: "Aplicar cupom de 10%" da Amazon).
+   */
+  coupon?: StoreCoupon | null;
 };
+
+export type StoreCoupon = { code: string | null; description: string };
 
 export const SEARCH_SORTS = [
   "relevance",

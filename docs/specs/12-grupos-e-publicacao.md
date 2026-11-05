@@ -49,7 +49,7 @@ Decisão: **Evolution Go** atrás do adapter (`packages/connectors/messaging/evo
 
 ## Templates de mensagem
 
-Variáveis: `{{titulo}}`, `{{preco}}`, `{{preco_original}}`, `{{desconto}}`, `{{cupom}}`, `{{link}}`, `{{plataforma}}`, `{{loja}}`, `{{selo}}` (ex.: "🔥 MENOR PREÇO 90 DIAS"), `{{preco_pix}}`, `{{parcelas}}` (ex.: "5x de R$ 30,78 sem juros"), `{{linha_preco}}` e, quando a oferta tem texto próprio, `{{chamada}}`, `{{descricao}}` e `{{extra}}`.
+Variáveis: `{{titulo}}`, `{{preco}}`, `{{preco_original}}`, `{{desconto}}`, `{{cupom}}`, `{{cupom_regra}}` (ex.: "R$ 20 OFF acima de R$ 99"), `{{cupom_ativar}}` (cupom de marcar na página, sem código), `{{link}}`, `{{plataforma}}`, `{{loja}}`, `{{selo}}` (ex.: "🔥 MENOR PREÇO 90 DIAS"), `{{preco_pix}}`, `{{parcelas}}` (ex.: "5x de R$ 30,78 sem juros"), `{{linha_preco}}` e, quando a oferta tem texto próprio, `{{chamada}}`, `{{descricao}}` e `{{extra}}`.
 Cada template tem variações para evitar mensagens idênticas em massa. Linha com variável vazia some da mensagem.
 
 ### Preço no Pix e parcelamento
@@ -67,6 +67,7 @@ Formato de mensagem com chamada, descrição, linha de preço e fechamento:
 
 {{linha_preco}}          → De ~R$ 449,90~ por *R$ 395,91 no Pix* ou *12x de R$ 37,51 sem juros*
 🎟️ Cupom: *{{cupom}}*
+_{{cupom_regra}}_
 
 {{extra}}
 

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { SHOPEE_CATEGORY_PT, SHOPEE_TOP_CATEGORIES } from "./shopee-feed";
 import {
   type AffiliateConnector,
   ConnectorError,
@@ -9,10 +10,19 @@ import {
   sanitizeSubId,
 } from "./types";
 
-// Shopee Affiliate Open API (GraphQL).
-// [VERIFICAR com credenciais reais] endpoint, códigos de sortType, campos e formato dos erros.
+/** Nome em português da categoria principal do produto (o primeiro código da lista). */
+function categoryNameOf(ids: number[] | null | undefined): string | null {
+  const top = ids?.map(String).find((id) => SHOPEE_TOP_CATEGORIES[id]);
+  if (!top) return null;
+  const en = SHOPEE_TOP_CATEGORIES[top] ?? "";
+  return SHOPEE_CATEGORY_PT[en] ?? en;
+}
+
+// Shopee Affiliate Open API (GraphQL). Endpoint, limite (8.000 chamadas/hora), campos e códigos
+// de sortType conferidos na documentação oficial; busca testada com credenciais reais em 11/2026.
 export const SHOPEE_ENDPOINT = "https://open-api.affiliate.shopee.com.br/graphql";
 
+/** sortType do productOfferV2. RELEVANCE_DESC (1) só vale com palavra-chave. */
 const SORT_TYPE: Record<SearchSort, number> = {
   relevance: 1,
   sales: 2,
@@ -22,6 +32,8 @@ const SORT_TYPE: Record<SearchSort, number> = {
   // Sem ordenação por desconto na API: usa relevância e ordena depois.
   discount: 1,
 };
+/** Sem palavra-chave (só categoria), "relevância" vira "mais vendidos". */
+const ITEM_SOLD_DESC = 2;
 
 const OFFER_FIELDS = `itemId productName price priceMin priceMax priceDiscountRate
   commissionRate commission sales ratingStar imageUrl shopName productLink offerLink
@@ -93,7 +105,7 @@ export function mapShopeeNode(n: ShopeeNode): ProductOffer {
     soldCount: num(n.sales),
     shopName: n.shopName ?? null,
     categoryIds: (n.productCatIds ?? []).map(String),
-    categoryName: null,
+    categoryName: categoryNameOf(n.productCatIds),
     available: true,
     validUntil: n.periodEndTime ? new Date(n.periodEndTime * 1000) : null,
   };
@@ -155,7 +167,8 @@ export class ShopeeConnector implements AffiliateConnector {
       const msg = first.message ?? "erro desconhecido";
       const code = /auth|signature|credential|permission|invalid app/i.test(msg)
         ? "AUTH"
-        : /limit|frequen/i.test(msg)
+        : // 10030: limite de requisições da Open API.
+          String(first.extensions?.code) === "10030" || /limit|frequen/i.test(msg)
           ? "RATE_LIMIT"
           : "INVALID";
       throw new ConnectorError("shopee", code, `Shopee: ${msg}`);
@@ -175,11 +188,12 @@ export class ShopeeConnector implements AffiliateConnector {
   }
 
   async search(q: SearchQuery): Promise<SearchResult> {
+    const sort = SORT_TYPE[q.sort ?? "relevance"];
     const data = await this.gql<{
       productOfferV2: { nodes: ShopeeNode[]; pageInfo: { hasNextPage: boolean } };
     }>(SEARCH_QUERY, {
       keyword: q.keyword,
-      sortType: SORT_TYPE[q.sort ?? "relevance"],
+      sortType: sort === 1 && !q.keyword?.trim() ? ITEM_SOLD_DESC : sort,
       page: q.page ?? 1,
       limit: Math.min(q.limit ?? 20, 50),
       productCatId: q.categoryId ? Number(q.categoryId) : undefined,

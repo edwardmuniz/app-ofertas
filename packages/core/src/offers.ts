@@ -12,6 +12,7 @@ import {
   platformOfUrl,
   productIdOfUrl,
   SHOPEE_CATEGORY_PT,
+  SHOPEE_TOP_CATEGORIES,
   sanitizeSubId,
   titleFromUrl,
 } from "@ofertas/connectors";
@@ -30,6 +31,7 @@ import {
   SaveOfferInput,
   SearchOffersInput,
   type SearchOffersResult,
+  SetOfferCouponInput,
   UpdateOfferPricesInput,
   UpdateOfferStatusInput,
   type ValidateOfferResult,
@@ -63,6 +65,7 @@ import {
   qualityFlags,
   summaryOrEmpty,
 } from "./scoring";
+import { activeCoupon } from "./templates";
 
 type ProductRow = typeof products.$inferSelect;
 type OfferRow = typeof offers.$inferSelect;
@@ -381,6 +384,9 @@ function toOffer(o: OfferRow, p: ProductRow): Offer {
     discount_pct: o.discountPct,
     coupon_code: o.couponCode,
     coupon_description: o.couponDescription,
+    coupon_valid_until: o.couponValidUntil?.toISOString() ?? null,
+    coupon_source: o.couponSource,
+    coupon_active: activeCoupon(o) !== null,
     commission_rate: o.commissionRate,
     commission_value: o.commissionValue,
     rating: p.rating,
@@ -462,6 +468,28 @@ function offerValues(item: ProductOffer, score: number, flags: QualityFlag[]) {
   };
 }
 
+/**
+ * Cupom lido da loja para gravar na oferta. Não mexe em cupom definido à mão nem quando a loja
+ * não informa cupons (undefined); some quando a loja deixa de mostrar o cupom que ela mesma deu.
+ */
+function storeCouponValues(
+  item: ProductOffer,
+  current: Pick<OfferRow, "couponSource"> | null,
+): Partial<typeof offers.$inferInsert> {
+  if (item.coupon === undefined || current?.couponSource === "manual") return {};
+  if (item.coupon) {
+    return {
+      couponCode: item.coupon.code,
+      couponDescription: item.coupon.description,
+      couponValidUntil: null,
+      couponSource: "store",
+    };
+  }
+  return current?.couponSource === "store"
+    ? { couponCode: null, couponDescription: null, couponValidUntil: null, couponSource: null }
+    : {};
+}
+
 /** Consulta o produto agora na plataforma, grava o preço e calcula nota e sinais. */
 async function freshCandidate(
   deps: DbDeps,
@@ -532,8 +560,21 @@ export async function saveOffer(ctx: Ctx, raw: SaveOfferInput, opts: MutationOpt
       const values = {
         ...offerValues(p.item, p.score, p.flags),
         status: i.status,
-        couponCode: i.coupon_code ?? null,
-        couponDescription: i.coupon_description ?? null,
+        // Cupom informado vale como manual; sem ele, usa o que a loja mostra.
+        ...(i.coupon_code
+          ? {
+              couponCode: i.coupon_code,
+              couponDescription: i.coupon_description ?? null,
+              couponValidUntil: i.coupon_valid_until ? new Date(i.coupon_valid_until) : null,
+              couponSource: "manual" as const,
+            }
+          : {
+              couponCode: null,
+              couponDescription: null,
+              couponValidUntil: null,
+              couponSource: null,
+              ...storeCouponValues(p.item, null),
+            }),
         notes: i.notes ?? null,
         rejectReason: null,
         lastValidatedAt: now(ctx),
@@ -657,6 +698,55 @@ export async function updateOfferPrices(
           now(ctx),
         );
       }
+      return toOffer(row, await loadProduct(tx.db, wsId, row.productId));
+    },
+  });
+}
+
+/**
+ * Define, troca ou tira o cupom da oferta (código, regra e validade). O cupom sai na mensagem
+ * e no card enquanto estiver na validade.
+ */
+export async function setOfferCoupon(
+  ctx: Ctx,
+  offerId: string,
+  raw: SetOfferCouponInput,
+  opts: MutationOptions = {},
+) {
+  const input = SetOfferCouponInput.parse(raw);
+  const wsId = ctx.actor.workspaceId;
+  return runMutation(ctx, {
+    action: "offers.set_coupon",
+    scope: "offers:write",
+    input: { offer_id: offerId, ...input },
+    opts,
+    target: () => ({ type: "offer", id: offerId }),
+    preview: async (c) => {
+      const { offer } = await loadOffer(c.db, wsId, offerId);
+      const code = input.coupon_code;
+      const validUntil =
+        code && input.coupon_valid_until ? new Date(input.coupon_valid_until) : null;
+      if (validUntil && validUntil.getTime() <= now(ctx).getTime()) {
+        throw new AppError("VALIDATION_ERROR", "A validade do cupom já passou.", {
+          hint: "Informe uma data futura ou deixe sem prazo.",
+        });
+      }
+      const flags = offer.qualityFlags.filter((f) => f !== "coupon_required");
+      return {
+        couponCode: code,
+        couponDescription: code ? input.coupon_description || null : null,
+        couponValidUntil: validUntil,
+        couponSource: code ? ("manual" as const) : null,
+        qualityFlags: code ? [...flags, "coupon_required"] : flags,
+      };
+    },
+    execute: async (tx, _i, p) => {
+      const [row] = await tx.db
+        .update(offers)
+        .set(p)
+        .where(and(eq(offers.id, offerId), eq(offers.workspaceId, wsId)))
+        .returning();
+      if (!row) throw new AppError("NOT_FOUND", "Oferta não encontrada.");
       return toOffer(row, await loadProduct(tx.db, wsId, row.productId));
     },
   });
@@ -819,6 +909,7 @@ async function applyCheck(db: DbOrTx, offer: OfferRow, check: Check, at: Date) {
         : check.fresh.flags.filter((f) => f !== "fake_discount"),
     });
   }
+  if (check.ok && item) Object.assign(values, storeCouponValues(item, offer));
   await db
     .update(offers)
     .set({ status, lastValidatedAt: at, ...values })
@@ -1352,7 +1443,10 @@ export async function importOfferFromLink(
         affiliateAccountId: p.account_id,
         status: i.status,
         couponCode: i.coupon_code ?? null,
-        couponDescription: i.coupon_description ?? null,
+        couponDescription: i.coupon_code ? (i.coupon_description ?? null) : null,
+        couponValidUntil:
+          i.coupon_code && i.coupon_valid_until ? new Date(i.coupon_valid_until) : null,
+        couponSource: i.coupon_code ? ("manual" as const) : null,
         notes: i.notes ?? null,
         rejectReason: null,
         lastValidatedAt: at,
@@ -1375,7 +1469,10 @@ export async function importOfferFromLink(
 
 // ── Categorias ──────────────────────────────────────────────────
 
-/** Categorias para filtrar a busca: do catálogo do feed (com contagem) ou do simulado. */
+/**
+ * Categorias para filtrar a busca: do catálogo do feed (com contagem), a lista fixa da Shopee
+ * (conta da API) ou do simulado.
+ */
 export async function listOfferCategories(ctx: Ctx): Promise<OfferCategory[]> {
   requireScope(ctx.actor, "offers:read");
   const out: OfferCategory[] = [];
@@ -1404,6 +1501,16 @@ export async function listOfferCategories(ctx: Ctx): Promise<OfferCategory[]> {
           name: SHOPEE_CATEGORY_PT[r.name] ?? r.name ?? r.id,
           platform: account.platform,
           count: r.count,
+        });
+      }
+    } else if (account.mode === "live" && account.platform === "shopee") {
+      // API de afiliados: lista fixa das categorias principais (a API não lista categorias).
+      for (const [id, en] of Object.entries(SHOPEE_TOP_CATEGORIES)) {
+        out.push({
+          id,
+          name: SHOPEE_CATEGORY_PT[en] ?? en,
+          platform: account.platform,
+          count: null,
         });
       }
     } else if (account.mode === "fake") {

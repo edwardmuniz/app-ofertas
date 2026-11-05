@@ -134,6 +134,27 @@
       "when": 1793654543334,
       "tag": "0018_conteudo_revisao_dados",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793841218610,
+      "tag": "0019_validade_cupom",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1793841897805,
+      "tag": "0020_origem_cupom",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1793842069378,
+      "tag": "0021_cupons_da_loja",
+      "breakpoints": true
     }
   ]
 }

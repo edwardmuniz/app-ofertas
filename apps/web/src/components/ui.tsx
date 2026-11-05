@@ -1,7 +1,7 @@
 "use client";
 
-import { Check, Loader2 } from "lucide-react";
-import { useState } from "react";
+import { ArrowLeft, Check, Loader2, X } from "lucide-react";
+import { useEffect, useState } from "react";
 
 export function CopyButton({ value, label = "Copiar" }: { value: string; label?: string }) {
   const [copied, setCopied] = useState(false);
@@ -393,6 +393,75 @@ export function LoadingButton({
       {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
       {children}
     </button>
+  );
+}
+
+/**
+ * Janela por cima da página (no celular, sobe da parte de baixo). Fecha no X, no Esc ou
+ * clicando fora. `onBack` mostra "Voltar" para telas em etapas.
+ */
+export function Dialog({
+  title,
+  subtitle,
+  onClose,
+  onBack,
+  wide = false,
+  children,
+}: {
+  title: string;
+  subtitle?: React.ReactNode;
+  onClose: () => void;
+  onBack?: () => void;
+  wide?: boolean;
+  children: React.ReactNode;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = overflow;
+    };
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-label="Fechar janela"
+        className="absolute inset-0 cursor-default bg-black/50"
+        onClick={onClose}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className={`relative flex max-h-[92vh] w-full flex-col rounded-t-2xl border border-neutral-200 bg-[var(--surface-card)] shadow-xl sm:rounded-2xl dark:border-neutral-800 ${wide ? "sm:max-w-3xl" : "sm:max-w-lg"}`}
+      >
+        <div className="flex items-start gap-3 border-b border-neutral-200 p-4 dark:border-neutral-800">
+          {onBack && (
+            <button type="button" className="btn-ghost shrink-0" onClick={onBack}>
+              <ArrowLeft className="h-4 w-4" /> Voltar
+            </button>
+          )}
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg font-semibold">{title}</h2>
+            {subtitle && <div className="line-clamp-2 text-sm text-neutral-500">{subtitle}</div>}
+          </div>
+          <button
+            type="button"
+            className="btn-ghost shrink-0"
+            onClick={onClose}
+            aria-label="Fechar janela"
+          >
+            <X className="h-4 w-4" /> Fechar
+          </button>
+        </div>
+        <div className="overflow-y-auto p-4">{children}</div>
+      </div>
+    </div>
   );
 }
 

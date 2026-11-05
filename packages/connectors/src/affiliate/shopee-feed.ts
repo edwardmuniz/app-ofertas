@@ -150,6 +150,42 @@ export function shopeeFeedItem(r: Record<string, string>): ProductOffer | null {
 }
 
 /** Nomes em português das categorias principais da Shopee (o feed vem em inglês). */
+/**
+ * Categorias principais da Shopee Brasil (código global → nome em inglês). Os mesmos códigos
+ * valem no feed (`global_catid1`) e no filtro `productCatId` da API de afiliados.
+ */
+export const SHOPEE_TOP_CATEGORIES: Record<string, string> = {
+  "100636": "Home & Living",
+  "102187": "Spare Parts and Accessories for Vehicles",
+  "100630": "Beauty",
+  "100632": "Mom & Baby",
+  "100637": "Sports & Outdoors",
+  "100017": "Women Clothes",
+  "100009": "Fashion Accessories",
+  "100010": "Home Appliances",
+  "100631": "Pets",
+  "100643": "Books & Magazines",
+  "100633": "Baby & Kids Fashion",
+  "100644": "Computers & Accessories",
+  "100532": "Women Shoes",
+  "100001": "Health",
+  "100639": "Hobbies & Collections",
+  "100638": "Stationery",
+  "100629": "Food & Beverages",
+  "100013": "Mobile & Gadgets",
+  "100011": "Men Clothes",
+  "100534": "Watches",
+  "100012": "Men Shoes",
+  "100535": "Audio",
+  "100016": "Women Bags",
+  "100635": "Cameras & Drones",
+  "100533": "Men Bags",
+  "100015": "Travel & Luggage",
+  "100634": "Gaming & Consoles",
+  "100640": "Automobiles",
+  "100641": "Motorcycles",
+};
+
 export const SHOPEE_CATEGORY_PT: Record<string, string> = {
   "Home & Living": "Casa e Decoração",
   "Home Appliances": "Eletrodomésticos",

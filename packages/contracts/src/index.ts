@@ -4,6 +4,7 @@ export * from "./auth";
 export * from "./channels";
 export * from "./common";
 export * from "./content";
+export * from "./coupons";
 export * from "./creatives";
 export * from "./errors";
 export * from "./groups";

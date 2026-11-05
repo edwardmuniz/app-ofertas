@@ -3,6 +3,7 @@ import {
   AMAZON_TOKEN_URL,
   AmazonConnector,
   amazonAffiliateLink,
+  amazonCouponOf,
   amazonSearchUrl,
   asinOfUrl,
   ConnectorError,
@@ -61,6 +62,47 @@ const pages =
     if (!p) throw new Error(`sem página: ${url}`);
     return { url, status: p.status ?? 200, html: p.html };
   };
+
+describe("Amazon: cupom", () => {
+  it("lê o cupom de marcar e o código promocional", () => {
+    expect(amazonCouponOf(" Aplicar cupom de 10 % ")).toEqual({
+      code: null,
+      description: "Cupom de 10%: marque “Aplicar cupom” na página antes de comprar",
+    });
+    expect(amazonCouponOf("Economize R$ 20,00 com cupom")?.description).toContain("R$ 20,00");
+    expect(amazonCouponOf("Economize 15% com o código PROMO15 na finalização")).toEqual({
+      code: "PROMO15",
+      description: "15% de desconto",
+    });
+    expect(amazonCouponOf("Frete grátis em pedidos acima de R$ 99")).toBeNull();
+  });
+
+  it("só considera o cupom do anúncio principal, não o de outros produtos da página", () => {
+    expect(parseAmazonPage(PAGE).coupon).toBeNull();
+    const carousel = PAGE.replace(
+      "</body>",
+      '<div class="a-carousel"><span>Economize 5% com cupom</span></div></body>',
+    );
+    expect(parseAmazonPage(carousel).coupon).toBeNull();
+    const withCoupon = PAGE.replace(
+      "</body>",
+      '<div id="promoPriceBlockMessage_feature_div"><label id="couponTextpctch1" for="checkboxpct">Aplicar cupom de 10% </label></div></body>',
+    );
+    expect(parseAmazonPage(withCoupon).coupon).toMatchObject({ code: null });
+  });
+
+  it("lê o cupom no card da busca", () => {
+    const html = `<html><body>${card(
+      "B0BZJDLT6Z",
+      "Air Fryer",
+      "R$ 300,00",
+      '<span class="s-coupon-unclipped"><span class="s-coupon-highlight-color">Economize 10%</span><span class="a-letter-space"></span>com cupom</span>',
+    )}${card("B093MK3Z12", "Air Fryer 4L", "R$ 249,00")}</body></html>`;
+    const items = parseAmazonSearch(html).items;
+    expect(items[0]?.coupon?.description).toContain("10%");
+    expect(items[1]?.coupon).toBeNull();
+  });
+});
 
 describe("Amazon: links", () => {
   it("reconhece tag e ASIN", () => {

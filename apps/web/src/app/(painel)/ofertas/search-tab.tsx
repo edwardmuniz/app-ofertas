@@ -33,7 +33,7 @@ const STATUS_TAG: Record<
   { label: string; tone: "positive" | "info" | "negative" | "neutral" }
 > = {
   approved: { label: "Aprovada", tone: "positive" },
-  new: { label: "Na curadoria", tone: "info" },
+  new: { label: "Para revisar", tone: "info" },
   rejected: { label: "Rejeitada", tone: "negative" },
   expired: { label: "Expirada", tone: "neutral" },
 };
@@ -41,6 +41,8 @@ const STATUS_TAG: Record<
 type Filters = {
   keyword: string;
   category: string;
+  /** Loja da categoria: a busca com categoria vai só para ela. */
+  categoryPlatform: string;
   priceMin: string;
   priceMax: string;
   minDiscount: number;
@@ -50,6 +52,7 @@ type Filters = {
 const EMPTY: Filters = {
   keyword: "",
   category: "",
+  categoryPlatform: "",
   priceMin: "",
   priceMax: "",
   minDiscount: 0,
@@ -63,6 +66,7 @@ function toQuery(f: Filters) {
   return {
     keyword: f.keyword.trim() || undefined,
     category_id: f.category || undefined,
+    platforms: f.category && f.categoryPlatform ? [f.categoryPlatform] : undefined,
     price_min: num(f.priceMin),
     price_max: num(f.priceMax),
     min_discount: f.minDiscount || undefined,
@@ -177,7 +181,7 @@ export function SearchTab({ run, onSaved }: { run: Runner; onSaved: () => void }
     );
     if (res) {
       setSaving(false);
-      setMsg("Busca salva. Ela roda sozinha e manda as ofertas boas para a Curadoria.");
+      setMsg("Busca salva. Ela roda sozinha e manda as ofertas boas para “Para revisar”.");
     }
   }
 
@@ -190,7 +194,7 @@ export function SearchTab({ run, onSaved }: { run: Runner; onSaved: () => void }
       ? [
           {
             label: categories.find((c) => c.id === filters.category)?.name ?? "Categoria",
-            clear: { category: "" },
+            clear: { category: "", categoryPlatform: "" },
           },
         ]
       : []),
@@ -218,7 +222,7 @@ export function SearchTab({ run, onSaved }: { run: Runner; onSaved: () => void }
           <div className="flex max-h-64 flex-col gap-0.5 overflow-y-auto pr-1">
             <button
               type="button"
-              onClick={() => set({ category: "" })}
+              onClick={() => set({ category: "", categoryPlatform: "" })}
               className={`rounded-md px-2 py-1 text-left text-sm ${
                 filters.category === ""
                   ? "bg-neutral-100 font-medium dark:bg-neutral-800"
@@ -231,7 +235,7 @@ export function SearchTab({ run, onSaved }: { run: Runner; onSaved: () => void }
               <button
                 key={`${c.platform}:${c.id}`}
                 type="button"
-                onClick={() => set({ category: c.id })}
+                onClick={() => set({ category: c.id, categoryPlatform: c.platform })}
                 className={`flex justify-between gap-2 rounded-md px-2 py-1 text-left text-sm ${
                   filters.category === c.id
                     ? "bg-neutral-100 font-medium dark:bg-neutral-800"
@@ -408,8 +412,8 @@ export function SearchTab({ run, onSaved }: { run: Runner; onSaved: () => void }
               <div>
                 <div className="text-sm font-medium">Salvar busca</div>
                 <p className="text-xs text-neutral-500">
-                  A busca roda sozinha com estes filtros e manda as ofertas com nota boa para a
-                  Curadoria.
+                  A busca roda sozinha com estes filtros e manda as ofertas com nota boa para “Para
+                  revisar”.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -445,12 +449,12 @@ export function SearchTab({ run, onSaved }: { run: Runner; onSaved: () => void }
             </Empty>
           ) : (
             <>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(13rem,1fr))]">
+              <div className="grid gap-4 sm:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
                 {items.map((c) => (
                   <ProductCard
                     key={c.product_id}
                     p={c}
-                    badge={
+                    status={
                       c.offer_status ? (
                         <Tag tone={STATUS_TAG[c.offer_status].tone} dot>
                           {STATUS_TAG[c.offer_status].label}
@@ -459,13 +463,13 @@ export function SearchTab({ run, onSaved }: { run: Runner; onSaved: () => void }
                     }
                     footer={
                       c.offer_status === "approved" || c.offer_status === "new" ? (
-                        <span className="text-xs text-neutral-500">
-                          Já está em {c.offer_status === "approved" ? "Aprovadas" : "Curadoria"}
-                        </span>
+                        <p className="py-2.5 text-center text-sm text-neutral-500">
+                          Já está em {c.offer_status === "approved" ? "Aprovadas" : "Para revisar"}
+                        </p>
                       ) : (
                         <>
                           <LoadingButton
-                            className="flex-1 px-2"
+                            className="h-11 w-full text-[15px]"
                             busy={busy === `approved:${c.product_id}`}
                             disabled={busy !== null}
                             onClick={() => save(c, "approved")}
@@ -474,12 +478,12 @@ export function SearchTab({ run, onSaved }: { run: Runner; onSaved: () => void }
                           </LoadingButton>
                           <LoadingButton
                             variant="btn-ghost"
-                            className="flex-1 px-2"
+                            className="h-11 w-full text-[15px]"
                             busy={busy === `new:${c.product_id}`}
                             disabled={busy !== null}
                             onClick={() => save(c, "new")}
                           >
-                            Depois
+                            Revisar depois
                           </LoadingButton>
                         </>
                       )

@@ -69,6 +69,8 @@ export type ScoreInput = {
   title: string;
   categoryName: string | null;
   couponCode?: string | null;
+  /** Cupom lido da loja (ex.: "Aplicar cupom de 10%" da Amazon). */
+  coupon?: { code: string | null; description: string } | null;
 };
 
 /** Sinais de qualidade. Só acusa desconto falso e "menor preço" com histórico suficiente. */
@@ -85,7 +87,7 @@ export function qualityFlags(p: ScoreInput, h: PriceSummary): QualityFlag[] {
   }
   if (p.rating !== null && p.rating < 4) flags.push("low_rating");
   if (!p.available) flags.push("unavailable");
-  if (p.couponCode) flags.push("coupon_required");
+  if (p.couponCode || p.coupon) flags.push("coupon_required");
   return flags;
 }
 

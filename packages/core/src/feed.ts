@@ -10,9 +10,15 @@ import {
   shopeeFeedItem,
 } from "@ofertas/connectors";
 import { affiliateAccounts, type DbOrTx, type FeedInfo, feedItems } from "@ofertas/db";
-import { and, asc, desc, eq, gte, ilike, isNull, lt, lte, or, type SQL, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull, lt, lte, or, type SQL, sql } from "drizzle-orm";
 import { type Deps, now } from "./context";
 import type { StreamOpener } from "./safe-fetch";
+
+const ACCENTS = "áàâãäéèêëíìîïóòôõöúùûüçñ";
+const PLAIN = "aaaaaeeeeiiiiooooouuuucn";
+/** Minúsculas e sem acento, igual ao `translate(lower(...))` da consulta. */
+const fold = (s: string) =>
+  [...s.toLowerCase()].map((ch) => PLAIN[ACCENTS.indexOf(ch)] ?? ch).join("");
 
 type AccountRow = typeof affiliateAccounts.$inferSelect;
 type FeedRow = typeof feedItems.$inferSelect;
@@ -87,7 +93,9 @@ export class FeedConnector implements AffiliateConnector {
     const page = Math.max(q.page ?? 1, 1);
     const conds: SQL[] = [eq(feedItems.accountId, this.accountId)];
     for (const word of (q.keyword ?? "").split(/\s+/).filter((w) => w.length >= 2)) {
-      conds.push(ilike(feedItems.title, `%${word}%`));
+      // Sem diferenciar acento: "camera" acha "Câmera".
+      const term = `%${fold(word).replace(/[%_\\]/g, "\\$&")}%`;
+      conds.push(sql`translate(lower(${feedItems.title}), ${ACCENTS}, ${PLAIN}) like ${term}`);
     }
     if (q.categoryId) conds.push(sql`${q.categoryId} = any(${feedItems.categoryIds})`);
     if (q.minDiscount) conds.push(gte(feedItems.discountPct, q.minDiscount));

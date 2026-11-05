@@ -127,6 +127,9 @@ describe("feed de produtos", () => {
     const { items } = await searchOffers(ctx, { keyword: "air fryer" });
     expect(items.map((i) => i.title)).toEqual(["Air Fryer Philco 4L"]);
     expect(items[0]).toMatchObject({ price: 299.9, original_price: 400, discount_pct: 25 });
+    // Sem acento e com maiúsculas também acha ("AIR FRYÉR" → "Air Fryer").
+    const folded = await searchOffers(ctx, { keyword: "AIR FRYÉR philco" });
+    expect(folded.items.map((i) => i.title)).toEqual(["Air Fryer Philco 4L"]);
 
     const offer = done(await saveOffer(ctx, { product_id: items[0]?.product_id ?? "" }));
     const link = done(await createOfferLink(ctx, { offer_id: offer.id, source: "wa" }));
@@ -194,6 +197,28 @@ describe("busca no catálogo e gestão da conta", () => {
     expect(byDiscount.items.map((i) => i.discount_pct)).toEqual([30, 25]);
     const page2 = await searchOffers(ctx, { limit: 1, page: 2, sort: "discount" });
     expect(page2.items.map((i) => i.title)).toEqual(["Air Fryer Philco 4L"]);
+  });
+
+  it("conta da API da Shopee lista as categorias principais em português", async () => {
+    const { ctx } = await setup("api");
+    await deps.db
+      .update(affiliateAccounts)
+      .set({ status: "disabled" })
+      .where(eq(affiliateAccounts.workspaceId, ctx.actor.workspaceId));
+    await deps.db.insert(affiliateAccounts).values({
+      workspaceId: ctx.actor.workspaceId,
+      platform: "shopee",
+      label: "Shopee API",
+      mode: "live",
+    });
+    const cats = await listOfferCategories(ctx);
+    expect(cats.length).toBeGreaterThan(20);
+    expect(cats).toContainEqual({
+      id: "100644",
+      name: "Computadores e Acessórios",
+      platform: "shopee",
+      count: null,
+    });
   });
 
   it("edita nome e links (pede nova importação) e remove mantendo as ofertas", async () => {

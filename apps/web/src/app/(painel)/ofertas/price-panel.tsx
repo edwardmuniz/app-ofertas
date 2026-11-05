@@ -15,15 +15,7 @@ const toNumber = (v: string): number | null => {
 const toText = (n: number | null | undefined) => (n ? n.toFixed(2).replace(".", ",") : "");
 
 /** Corrige preço, "De", Pix e parcelas com o que a página da loja mostra. */
-export function OfferPricePanel({
-  offer,
-  onClose,
-  onSaved,
-}: {
-  offer: Offer;
-  onClose: () => void;
-  onSaved: (o: Offer) => void;
-}) {
+export function OfferPricePanel({ offer, onSaved }: { offer: Offer; onSaved: (o: Offer) => void }) {
   const [price, setPrice] = useState(toText(offer.price));
   const [original, setOriginal] = useState(toText(offer.original_price));
   const [pix, setPix] = useState(toText(offer.pix_price));
@@ -60,22 +52,13 @@ export function OfferPricePanel({
   }
 
   return (
-    <form onSubmit={save} className="flex h-full flex-col gap-2 text-sm">
-      <div className="flex items-center justify-between">
-        <span className="font-medium">Ajustar preços</span>
-        <button
-          type="button"
-          className="text-xs text-neutral-500 hover:underline"
-          onClick={onClose}
-        >
-          Cancelar
-        </button>
-      </div>
-      <p className="text-xs text-neutral-500">
-        Copie da página da loja. Deixe “De” vazio se a página não mostra preço riscado.
+    <form onSubmit={save} className="flex flex-col gap-3">
+      <p className="text-sm text-neutral-500">
+        Copie os valores da página da loja. Deixe “Preço De” vazio se a página não mostra preço
+        riscado.
       </p>
       <label className="flex items-center gap-2">
-        <span className="w-14 shrink-0 text-xs text-neutral-500">Preço</span>
+        <span className="w-28 shrink-0 text-sm font-medium">Preço</span>
         <input
           className="input"
           inputMode="decimal"
@@ -84,7 +67,7 @@ export function OfferPricePanel({
         />
       </label>
       <label className="flex items-center gap-2">
-        <span className="w-14 shrink-0 text-xs text-neutral-500">De</span>
+        <span className="w-28 shrink-0 text-sm font-medium">Preço De</span>
         <input
           className="input"
           inputMode="decimal"
@@ -94,7 +77,7 @@ export function OfferPricePanel({
         />
       </label>
       <label className="flex items-center gap-2">
-        <span className="w-14 shrink-0 text-xs text-neutral-500">Pix</span>
+        <span className="w-28 shrink-0 text-sm font-medium">No Pix</span>
         <input
           className="input"
           inputMode="decimal"
@@ -103,16 +86,16 @@ export function OfferPricePanel({
         />
       </label>
       <div className="flex items-center gap-2">
-        <span className="w-14 shrink-0 text-xs text-neutral-500">Parcelas</span>
+        <span className="w-28 shrink-0 text-sm font-medium">Parcelas</span>
         <input
-          className="input w-14"
+          className="input w-16"
           inputMode="numeric"
           aria-label="Quantidade de parcelas"
           value={count}
           placeholder="12"
           onChange={(e) => setCount(e.target.value.replace(/\D/g, "").slice(0, 2))}
         />
-        <span className="text-xs text-neutral-500">x</span>
+        <span className="text-sm text-neutral-500">x de R$</span>
         <input
           className="input min-w-0 flex-1"
           inputMode="decimal"
@@ -123,7 +106,7 @@ export function OfferPricePanel({
         />
       </div>
       <ErrorText error={error} />
-      <LoadingButton busy={busy} type="submit" className="mt-auto">
+      <LoadingButton busy={busy} type="submit" className="mt-2 h-11 w-full text-[15px]">
         Salvar preços
       </LoadingButton>
     </form>

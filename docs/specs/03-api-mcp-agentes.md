@@ -83,6 +83,10 @@ Nomes em inglês snake_case (melhor compatibilidade entre clientes); descriçõe
 | `search_offers`               | Busca nos conectores (termo, categoria, desconto mín., preço, plataforma, ordenação) |
 | `get_offer`                   | Detalhe + histórico de preço + flags de qualidade                                    |
 | `validate_offer`              | Revalida preço/estoque/cupom agora                                                   |
+| `set_offer_coupon`            | Define, troca ou tira o cupom da oferta (código, regra e validade)                   |
+| `list_store_coupons`          | Cupons da loja inteira (os que estão na validade, por padrão)                        |
+| `upsert_store_coupon`         | Cadastra ou edita cupom da loja inteira; divulga com `schedule_posts(coupon_ids)`    |
+| `delete_store_coupon`         | Apaga o cupom da loja e cancela os envios agendados dele                             |
 | `find_similar_offers`         | Substitutas para uma oferta expirada                                                 |
 | `save_offer` / `reject_offer` | Curadoria                                                                            |
 | `list_offers`                 | Ofertas salvas por status                                                            |

@@ -16,6 +16,8 @@ De ~{{preco_original}}~
 💳 {{parcelas}}
 📉 {{desconto}} OFF
 🎟️ Cupom: *{{cupom}}*
+_{{cupom_regra}}_
+🎟️ {{cupom_ativar}}
 
 👉 {{link}}
 ---
@@ -26,6 +28,8 @@ De ~{{preco_original}}~
 ⚡ *{{preco_pix}}* no Pix
 💳 {{parcelas}}
 🎟️ Use o cupom *{{cupom}}*
+_{{cupom_regra}}_
+🎟️ {{cupom_ativar}}
 
 Compre aqui: {{link}}
 ---
@@ -37,6 +41,8 @@ De {{preco_original}} por {{preco}} — {{desconto}} de desconto
 ⚡ No Pix: *{{preco_pix}}*
 💳 {{parcelas}}
 🎟️ Cupom: {{cupom}}
+_{{cupom_regra}}_
+🎟️ {{cupom_ativar}}
 
 🔗 {{link}}`;
 
@@ -50,12 +56,14 @@ export const COPY_TEMPLATE_BODY = `*{{chamada}}*
 
 {{linha_preco}}
 🎟️ Cupom: *{{cupom}}*
+_{{cupom_regra}}_
+🎟️ {{cupom_ativar}}
 
 {{extra}}
 
 {{link}}`;
 
-const PLATFORM_NAMES: Record<string, string> = {
+export const PLATFORM_NAMES: Record<string, string> = {
   shopee: "Shopee",
   amazon: "Amazon",
   mercadolivre: "Mercado Livre",
@@ -66,6 +74,20 @@ const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" 
 
 export type TemplateVars = Record<string, string | null | undefined>;
 
+/**
+ * Cupom que vale agora: tem código e não passou da validade. Vencido, some da mensagem, do card
+ * e do texto da IA sem ninguém precisar tirar.
+ */
+export function activeCoupon(
+  offer: Pick<typeof offers.$inferSelect, "couponCode" | "couponDescription" | "couponValidUntil">,
+  at: Date = new Date(),
+): { code: string | null; description: string | null } | null {
+  // Sem código, mas com descrição: cupom de marcar na página (ex.: Amazon).
+  if (!offer.couponCode && !offer.couponDescription) return null;
+  if (offer.couponValidUntil && offer.couponValidUntil.getTime() <= at.getTime()) return null;
+  return { code: offer.couponCode, description: offer.couponDescription };
+}
+
 /** Variáveis de uma oferta para o modelo. */
 export function offerVars(
   offer: typeof offers.$inferSelect,
@@ -73,6 +95,7 @@ export function offerVars(
   link: string,
 ): TemplateVars {
   const flags = offer.qualityFlags;
+  const coupon = activeCoupon(offer);
   const selo = flags.includes("lowest_90d")
     ? "🏆 MENOR PREÇO EM 90 DIAS"
     : flags.includes("lowest_30d")
@@ -102,7 +125,9 @@ export function offerVars(
     preco: brl.format(offer.price),
     preco_original: hasOriginal && offer.originalPrice ? brl.format(offer.originalPrice) : null,
     desconto: offer.discountPct ? `${offer.discountPct}%` : null,
-    cupom: offer.couponCode,
+    cupom: coupon?.code ?? null,
+    cupom_regra: coupon?.code ? coupon.description : null,
+    cupom_ativar: coupon && !coupon.code ? coupon.description : null,
     link,
     plataforma: PLATFORM_NAMES[product.platform] ?? product.platform,
     loja: product.shopName,

@@ -22,15 +22,7 @@ const errText = (err: unknown) =>
  * Texto próprio da mensagem da oferta: chamada, descrição e fechamento. A IA (Gemini) sugere,
  * a pessoa revisa e salva. Preço, Pix, parcelas e link entram sozinhos no envio.
  */
-export function CopyEditor({
-  offer,
-  onClose,
-  onSaved,
-}: {
-  offer: Offer;
-  onClose: () => void;
-  onSaved: (o: Offer) => void;
-}) {
+export function CopyEditor({ offer, onSaved }: { offer: Offer; onSaved: (o: Offer) => void }) {
   const [draft, setDraft] = useState<Draft>({
     headline: offer.copy?.headline ?? "",
     body: offer.copy?.body ?? "",
@@ -105,25 +97,14 @@ export function CopyEditor({
     setDraft((d) => ({ ...d, [k]: e.target.value }));
 
   return (
-    <section id="copy-editor" className="card space-y-4">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2 font-medium">
-            Texto da mensagem
-            {current.copy && <Tag tone="info">{SOURCE_LABEL[current.copy.source]}</Tag>}
-          </div>
-          <p className="line-clamp-1 text-sm text-neutral-500">{offer.title}</p>
+    <section className="space-y-4">
+      {current.copy && (
+        <div>
+          <Tag tone="info">{SOURCE_LABEL[current.copy.source]}</Tag>
         </div>
-        <button
-          type="button"
-          className="text-xs text-neutral-500 hover:underline"
-          onClick={onClose}
-        >
-          Fechar
-        </button>
-      </div>
+      )}
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_minmax(0,22rem)]">
+      <div className="grid gap-4 md:grid-cols-[1fr_minmax(0,18rem)]">
         <div className="space-y-3">
           <div className="flex flex-wrap gap-2">
             <input
@@ -201,7 +182,7 @@ export function CopyEditor({
           <div className="mb-1 text-xs text-neutral-500">
             Como a mensagem vai ficar {current.copy ? "" : "(modelo padrão)"}
           </div>
-          <pre className="max-h-96 overflow-auto rounded-lg bg-[#e7ffdb] p-3 text-xs whitespace-pre-wrap text-neutral-900 dark:bg-emerald-950 dark:text-emerald-50">
+          <pre className="max-h-96 overflow-auto rounded-lg bg-[#e7ffdb] p-3 text-sm whitespace-pre-wrap text-neutral-900 dark:bg-emerald-950 dark:text-emerald-50">
             {preview ?? "…"}
           </pre>
         </div>

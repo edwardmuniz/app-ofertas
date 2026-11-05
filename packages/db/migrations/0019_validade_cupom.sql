@@ -1,0 +1,1 @@
+ALTER TABLE "offers" ADD COLUMN "coupon_valid_until" timestamp with time zone;

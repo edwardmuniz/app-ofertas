@@ -583,6 +583,10 @@ export const offers = pgTable(
     discountPct: integer(),
     couponCode: text(),
     couponDescription: text(),
+    /** Fim da validade do cupom: depois disso ele some da mensagem e do card. */
+    couponValidUntil: timestamp({ withTimezone: true }),
+    /** manual = definido por pessoa ou agente (não muda sozinho); store = lido da loja a cada conferência */
+    couponSource: text({ enum: ["manual", "store"] }),
     commissionRate: numeric({ precision: 6, scale: 4, mode: "number" }),
     commissionValue: money(),
     affiliateUrl: text(),
@@ -706,6 +710,38 @@ export const automationRules = pgTable(
   (t) => [index().on(t.workspaceId)],
 );
 
+/**
+ * Cupom da loja inteira (ex.: "R$ 20 OFF acima de R$ 99 na Shopee"), divulgado nos grupos como
+ * um post próprio, sem produto.
+ */
+export const storeCoupons = pgTable(
+  "store_coupons",
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    platform: platform(),
+    /** Chamada do cupom, ex.: "R$ 20 OFF acima de R$ 99" */
+    title: text().notNull(),
+    /** Código a digitar no carrinho; vazio = o cupom é resgatado pelo link */
+    code: text(),
+    /** Regras extras, ex.: "Só no app, limitado aos primeiros 1.000" */
+    details: text(),
+    /** Página onde o cupom está (como a pessoa colou) */
+    url: text().notNull(),
+    /** Mesmo endereço com a sua afiliação, quando a loja permite gerar */
+    affiliateUrl: text(),
+    imageUrl: text(),
+    validUntil: timestamp({ withTimezone: true }),
+    status: text({ enum: ["active", "archived"] })
+      .notNull()
+      .default("active"),
+    createdBy: text().notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index().on(t.workspaceId, t.createdAt)],
+);
+
 export const posts = pgTable(
   "posts",
   {
@@ -715,6 +751,8 @@ export const posts = pgTable(
       .notNull()
       .references(() => channels.id, { onDelete: "cascade" }),
     offerId: uuid().references(() => offers.id, { onDelete: "set null" }),
+    /** Post de cupom da loja inteira */
+    couponId: uuid().references(() => storeCoupons.id, { onDelete: "set null" }),
     /** Texto livre (posts sem oferta) */
     customText: text(),
     templateId: uuid().references(() => messageTemplates.id, { onDelete: "set null" }),

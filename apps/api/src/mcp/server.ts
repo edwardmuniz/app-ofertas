@@ -19,6 +19,7 @@ import {
   ListCreativesQuery,
   ListOffersQuery,
   ListPostsQuery,
+  ListStoreCouponsQuery,
   ListTrackedLinksQuery,
   MarkContentPostedInput,
   MetricsBreakdownQuery,
@@ -35,6 +36,7 @@ import {
   SearchOffersInput,
   SeasonalCalendarQuery,
   SetOfferCopyInput,
+  SetOfferCouponInput,
   SubmitVideoInput,
   SyncGroupsInput,
   UpdateBrandKitInput,
@@ -51,6 +53,7 @@ import {
   UpsertMessageTemplateInput,
   UpsertSavedSearchInput,
   UpsertSegmentInput,
+  UpsertStoreCouponInput,
   ValidateCreativeInput,
 } from "@ofertas/contracts";
 import {
@@ -66,6 +69,7 @@ import {
   deleteCreative,
   deleteSegment,
   deleteSentPost,
+  deleteStoreCoupon,
   findSimilarOffers,
   generateCreative,
   getAudienceStats,
@@ -103,6 +107,7 @@ import {
   listPosts,
   listSavedSearches,
   listSegments,
+  listStoreCoupons,
   listTeamContacts,
   listTrackedLinks,
   markContentPosted,
@@ -117,6 +122,7 @@ import {
   searchOffers,
   setChannelAdminOnly,
   setOfferCopy,
+  setOfferCoupon,
   setOfferStatus,
   submitVideo,
   syncGroups,
@@ -134,6 +140,7 @@ import {
   upsertMessageTemplate,
   upsertSavedSearch,
   upsertSegment,
+  upsertStoreCoupon,
   validateCreative,
   validateOffer,
 } from "@ofertas/core";
@@ -503,6 +510,60 @@ export function createMcpServer(ctx: Ctx): McpServer {
       annotations: WRITE,
     },
     safe(async (args) => importOfferFromLink(ctx, ...splitOpts(args))),
+  );
+
+  server.registerTool(
+    "list_store_coupons",
+    {
+      title: "Cupons da loja",
+      description:
+        "Cupons da loja inteira (ex.: R$ 20 OFF acima de R$ 99 na Shopee), que viram posts próprios nos grupos. status active (padrão) traz só os que estão na validade.",
+      inputSchema: ListStoreCouponsQuery.shape,
+      annotations: READ,
+    },
+    safe(async (args) => listStoreCoupons(ctx, args)),
+  );
+
+  server.registerTool(
+    "upsert_store_coupon",
+    {
+      title: "Criar ou editar cupom da loja",
+      description:
+        "Cadastra (sem id) ou edita um cupom da loja inteira: loja, chamada, código (ou nenhum, se o resgate é pelo link), regras, link da página do cupom e validade. O link vira link de afiliado quando a conta da loja permite. Para divulgar, use schedule_posts com coupon_ids.",
+      inputSchema: { ...UpsertStoreCouponInput.shape, ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async (args) => upsertStoreCoupon(ctx, ...splitOpts(args))),
+  );
+
+  server.registerTool(
+    "delete_store_coupon",
+    {
+      title: "Apagar cupom da loja",
+      description: "Apaga o cupom e cancela os envios dele que ainda estão agendados.",
+      inputSchema: { coupon_id: z.uuid(), ...MutationOptions.shape },
+      annotations: { ...WRITE, destructiveHint: true },
+    },
+    safe(async (args) => {
+      const [rest, opts] = splitOpts(args);
+      return deleteStoreCoupon(ctx, rest.coupon_id, opts);
+    }),
+  );
+
+  server.registerTool(
+    "set_offer_coupon",
+    {
+      title: "Cupom da oferta",
+      description:
+        "Define, troca ou tira (coupon_code null) o cupom da oferta: código, regra curta (ex.: R$ 20 OFF acima de R$ 99) e validade. O cupom sai na mensagem e no card enquanto estiver na validade; vencido, some sozinho. Não escreva o cupom no texto da oferta.",
+      inputSchema: {
+        offer_id: z.uuid(),
+        ...SetOfferCouponInput.shape,
+        ...MutationOptions.shape,
+      },
+      annotations: WRITE,
+    },
+    safe(async ({ offer_id, ...args }) => setOfferCoupon(ctx, offer_id, ...splitOpts(args))),
   );
 
   server.registerTool(

@@ -1,6 +1,6 @@
 "use client";
 
-import type { Channel, Offer, Segment } from "@ofertas/contracts";
+import type { Channel, Offer, Segment, StoreCoupon } from "@ofertas/contracts";
 import { Check, Image as ImageIcon, Loader2, Search, Tag as TagIcon, Type } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -99,6 +99,10 @@ export function Schedule({ run, onDone }: { run: Runner; onDone: () => void }) {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [unlinked, setUnlinked] = useState(0);
   const [selected, setSelected] = useState<string[]>([]);
+  /** O que publicar: ofertas aprovadas ou cupons da loja inteira. */
+  const [kind, setKind] = useState<"offers" | "coupons">("offers");
+  const [coupons, setCoupons] = useState<StoreCoupon[]>([]);
+  const [couponIds, setCouponIds] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [target, setTarget] = useState<"segments" | "groups">("segments");
   const [segIds, setSegIds] = useState<string[]>([]);
@@ -120,8 +124,10 @@ export function Schedule({ run, onDone }: { run: Runner; onDone: () => void }) {
       api<{ items: Offer[] }>("/offers?status=approved&limit=100"),
       api<Segment[]>("/segments"),
       api<Channel[]>("/channels"),
-    ]).then(([o, s, c]) => {
+      api<StoreCoupon[]>("/coupons?status=active").catch(() => [] as StoreCoupon[]),
+    ]).then(([o, s, c, cp]) => {
       setOffers(o.items);
+      setCoupons(cp);
       setSegments(s);
       setChannels(
         c.filter((x) => x.status === "active" && x.messaging_account_id && x.external_id),
@@ -129,14 +135,23 @@ export function Schedule({ run, onDone }: { run: Runner; onDone: () => void }) {
       setUnlinked(
         c.filter((x) => x.status === "active" && x.external_id && !x.messaging_account_id).length,
       );
-      const pre = new URLSearchParams(window.location.search).get("offer");
+      const params = new URLSearchParams(window.location.search);
+      const pre = params.get("offer");
       if (pre) setSelected([pre]);
+      const preCoupon = params.get("coupon");
+      if (preCoupon) {
+        setKind("coupons");
+        setCouponIds([preCoupon]);
+      }
     });
   }, []);
 
   // Qualquer mudança invalida o plano mostrado.
   // biome-ignore lint/correctness/useExhaustiveDependencies: dependências são os gatilhos
-  useEffect(() => setPlan(null), [selected, target, segIds, chIds, image, when, at, spacing]);
+  useEffect(
+    () => setPlan(null),
+    [selected, kind, couponIds, target, segIds, chIds, image, when, at, spacing],
+  );
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -150,8 +165,11 @@ export function Schedule({ run, onDone }: { run: Runner; onDone: () => void }) {
     return channels.filter((c) => c.segment_ids.some((s) => segIds.includes(s)));
   }, [target, channels, chIds, segIds]);
 
-  const missing = !selected.length
-    ? "Escolha ao menos uma oferta."
+  const picked = kind === "coupons" ? couponIds.length : selected.length;
+  const missing = !picked
+    ? kind === "coupons"
+      ? "Escolha ao menos um cupom."
+      : "Escolha ao menos uma oferta."
     : !targetGroups.length
       ? target === "segments" && segIds.length
         ? "Os segmentos escolhidos não têm grupos ativos."
@@ -161,12 +179,15 @@ export function Schedule({ run, onDone }: { run: Runner; onDone: () => void }) {
         : null;
 
   const body = () => ({
-    offer_ids: selected,
+    ...(kind === "coupons" ? { coupon_ids: couponIds } : { offer_ids: selected }),
     ...(target === "segments" ? { segment_ids: segIds } : { channel_ids: chIds }),
     ...(when === "later" && at ? { at: new Date(at).toISOString() } : {}),
     spacing_minutes: spacing,
-    with_image: image !== "none",
-    ...(image === "card_preco" || image === "cupom_destaque" ? { creative_template: image } : {}),
+    // Cupom: vai a imagem dele, se tiver.
+    with_image: kind === "coupons" || image !== "none",
+    ...(kind === "offers" && (image === "card_preco" || image === "cupom_destaque")
+      ? { creative_template: image }
+      : {}),
   });
 
   async function preview() {
@@ -203,7 +224,7 @@ export function Schedule({ run, onDone }: { run: Runner; onDone: () => void }) {
   const minDate = new Date(Date.now() - new Date().getTimezoneOffset() * 60_000)
     .toISOString()
     .slice(0, 16);
-  const total = selected.length * targetGroups.length;
+  const total = picked * targetGroups.length;
   const byGroup = plan
     ? Object.entries(
         plan.posts.reduce<Record<string, Plan["posts"]>>((acc, p) => {
@@ -227,14 +248,19 @@ export function Schedule({ run, onDone }: { run: Runner; onDone: () => void }) {
         n={1}
         title="O que publicar"
         aside={
-          offers.length > 0 && (
-            <span className="text-sm text-neutral-500 tabular-nums">
-              {selected.length} selecionada(s)
-            </span>
-          )
+          <Segmented
+            value={kind}
+            onChange={setKind}
+            options={[
+              { value: "offers", label: "Ofertas" },
+              { value: "coupons", label: "Cupons da loja" },
+            ]}
+          />
         }
       >
-        {offers.length === 0 ? (
+        {kind === "coupons" ? (
+          <CouponPicker coupons={coupons} selected={couponIds} onChange={setCouponIds} />
+        ) : offers.length === 0 ? (
           <p className="text-sm text-neutral-500">
             Nenhuma oferta aprovada. Aprove em{" "}
             <Link className="underline" href="/ofertas">
@@ -421,46 +447,48 @@ export function Schedule({ run, onDone }: { run: Runner; onDone: () => void }) {
         )}
       </Step>
 
-      <Step n={3} title="Imagem">
-        {cards === false && (
-          <p className="text-xs text-neutral-500">
-            Cards desligados nas{" "}
-            <Link className="underline" href="/preferencias">
-              Preferências
-            </Link>
-            : os envios vão com a foto do produto.
-          </p>
-        )}
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          {imageOptions.map((opt) => {
-            const on = image === opt.value;
-            const Icon = opt.icon;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                aria-pressed={on}
-                onClick={() => setImage(opt.value)}
-                className={`flex items-start gap-2 rounded-lg border p-3 text-left transition-colors ${
-                  on
-                    ? "border-brand-500 bg-brand-50/60 dark:bg-brand-500/10"
-                    : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-800 dark:hover:border-neutral-700"
-                }`}
-              >
-                <Icon
-                  className={`mt-0.5 h-4 w-4 shrink-0 ${on ? "text-brand-600" : "text-neutral-400"}`}
-                />
-                <span>
-                  <span className="block text-sm font-medium">{opt.label}</span>
-                  <span className="block text-xs text-neutral-500">{opt.hint}</span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </Step>
+      {kind === "offers" && (
+        <Step n={3} title="Imagem">
+          {cards === false && (
+            <p className="text-xs text-neutral-500">
+              Cards desligados nas{" "}
+              <Link className="underline" href="/preferencias">
+                Preferências
+              </Link>
+              : os envios vão com a foto do produto.
+            </p>
+          )}
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {imageOptions.map((opt) => {
+              const on = image === opt.value;
+              const Icon = opt.icon;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => setImage(opt.value)}
+                  className={`flex items-start gap-2 rounded-lg border p-3 text-left transition-colors ${
+                    on
+                      ? "border-brand-500 bg-brand-50/60 dark:bg-brand-500/10"
+                      : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-800 dark:hover:border-neutral-700"
+                  }`}
+                >
+                  <Icon
+                    className={`mt-0.5 h-4 w-4 shrink-0 ${on ? "text-brand-600" : "text-neutral-400"}`}
+                  />
+                  <span>
+                    <span className="block text-sm font-medium">{opt.label}</span>
+                    <span className="block text-xs text-neutral-500">{opt.hint}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </Step>
+      )}
 
-      <Step n={4} title="Quando">
+      <Step n={kind === "offers" ? 4 : 3} title="Quando">
         <div className="flex flex-wrap items-center gap-3">
           <Segmented
             options={[
@@ -557,8 +585,8 @@ export function Schedule({ run, onDone }: { run: Runner; onDone: () => void }) {
             ) : (
               <>
                 <span className="font-medium tabular-nums">
-                  {selected.length} oferta(s) × {targetGroups.length} grupo(s) = até {total}{" "}
-                  envio(s)
+                  {picked} {kind === "coupons" ? "cupom(ns)" : "oferta(s)"} × {targetGroups.length}{" "}
+                  grupo(s) = até {total} envio(s)
                 </span>
                 <span className="text-neutral-500">
                   {" "}
@@ -598,6 +626,66 @@ export function Schedule({ run, onDone }: { run: Runner; onDone: () => void }) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Escolha dos cupons da loja inteira que vão para os grupos. */
+function CouponPicker({
+  coupons,
+  selected,
+  onChange,
+}: {
+  coupons: StoreCoupon[];
+  selected: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  if (coupons.length === 0) {
+    return (
+      <p className="text-sm text-neutral-500">
+        Nenhum cupom valendo agora. Cadastre em{" "}
+        <Link className="underline" href="/ofertas">
+          Ofertas › Cupons
+        </Link>
+        .
+      </p>
+    );
+  }
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      {coupons.map((c) => {
+        const on = selected.includes(c.id);
+        return (
+          <button
+            key={c.id}
+            type="button"
+            aria-pressed={on}
+            onClick={() => onChange(toggleIn(selected, c.id))}
+            className={`flex items-center gap-3 rounded-lg border p-3 text-left transition-colors ${
+              on
+                ? "border-brand-500 bg-brand-50/60 dark:bg-brand-500/10"
+                : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-800 dark:hover:border-neutral-700"
+            }`}
+          >
+            <span
+              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
+                on
+                  ? "border-brand-500 bg-brand-500 text-white"
+                  : "border-neutral-300 dark:border-neutral-600"
+              }`}
+            >
+              {on && <Check className="h-3.5 w-3.5" />}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block font-medium">{c.title}</span>
+              <span className="block text-sm text-neutral-500">
+                {c.code ? `Código ${c.code}` : "Resgate pelo link"}
+                {c.valid_until ? ` · até ${fmtDate(c.valid_until)}` : ""}
+              </span>
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }
