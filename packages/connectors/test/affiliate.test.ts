@@ -56,7 +56,7 @@ describe("Shopee (real, com fetch simulado)", () => {
     );
     await c.lookup("22094198289");
     const body = JSON.parse(calls[0]?.body ?? "{}");
-    expect(body.variables).toEqual({ itemId: 22094198289, limit: 1 });
+    expect(body.variables).toEqual({ itemId: "22094198289", limit: 1 });
     expect(body.query).toContain("query Search($limit: Int, $itemId: Int64)");
     expect(body.query).not.toContain("keyword");
   });

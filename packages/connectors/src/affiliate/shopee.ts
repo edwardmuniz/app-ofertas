@@ -231,7 +231,8 @@ export class ShopeeConnector implements AffiliateConnector {
 
   async lookup(externalId: string) {
     const data = await this.gql<{ productOfferV2: { nodes: ShopeeNode[] } }>(
-      ...shopeeSearchQuery({ itemId: Number(externalId), limit: 1 }),
+      // Int64 vai como texto: como número a API responde "wrong type".
+      ...shopeeSearchQuery({ itemId: String(externalId), limit: 1 }),
     );
     const node = data.productOfferV2.nodes[0];
     return node ? mapShopeeNode(node) : null;
