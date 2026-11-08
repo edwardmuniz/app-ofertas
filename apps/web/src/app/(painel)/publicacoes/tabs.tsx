@@ -600,6 +600,7 @@ export function Rules({ run }: { run: Runner }) {
                 {imageLabel(r.creative_template)}
                 {r.last_run_at && ` · última rodada ${fmtDate(r.last_run_at)}`}
               </div>
+              <RuleCounters rule={r} />
             </div>
             <div className="flex gap-2">
               <button
@@ -619,6 +620,38 @@ export function Rules({ run }: { run: Runner }) {
           </div>
         ),
       )}
+    </div>
+  );
+}
+
+/** O que a regra já publicou e se o limite do dia foi atingido. */
+function RuleCounters({ rule }: { rule: AutomationRule }) {
+  const s = rule.stats;
+  const cap = rule.max_per_day * s.groups;
+  const full = s.groups > 0 && s.groups_at_limit >= s.groups;
+  const items: [string, string][] = [
+    ["Hoje", cap ? `${s.today} de ${cap}` : String(s.today)],
+    ["Agendadas", String(s.scheduled)],
+    ["7 dias", s.sent_7d.toLocaleString("pt-BR")],
+    ["Total", s.sent_total.toLocaleString("pt-BR")],
+  ];
+  return (
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-2">
+      {items.map(([label, value]) => (
+        <div key={label} className="flex flex-col">
+          <span className="text-xs text-neutral-500">{label}</span>
+          <span className="text-base font-semibold tabular-nums">{value}</span>
+        </div>
+      ))}
+      {full ? (
+        <Tag tone="warning" dot>
+          Limite do dia atingido: volta amanhã
+        </Tag>
+      ) : s.groups_at_limit > 0 ? (
+        <Tag tone="info" dot>
+          {s.groups_at_limit} de {s.groups} grupos no limite de hoje
+        </Tag>
+      ) : null}
     </div>
   );
 }

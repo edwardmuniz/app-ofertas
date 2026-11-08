@@ -111,6 +111,8 @@ aprovacao: auto | revisar_antes
 
 Regras podem ser criadas/editadas por agente (`upsert_automation_rule`) e respeitam limites.
 
+Cada regra mostra o que já publicou (`stats` em `list_automation_rules`/`GET /automation-rules`): **hoje** (enviadas + agendadas desde 0h no fuso do workspace, o que conta para `max_por_dia`), agendadas, enviadas nos últimos 7 dias e total, mais quantos grupos já bateram o máximo do dia. No painel, todos os grupos no limite aparecem como "Limite do dia atingido: volta amanhã".
+
 ## Gestão de grupos
 
 A plataforma deve cobrir **tudo o que a Evolution Go faz com grupos**, pelo painel, pela API e pelo MCP. Levantamento feito no código-fonte da Evolution Go (`pkg/routes`, `pkg/group`, `pkg/community`) e da whatsmeow em 31/10/2026. Toda ação que altera o grupo passa por `runMutation` (escopo `channels:write`, `dry_run`, idempotência, auditoria) e respeita os limites anti-banimento.

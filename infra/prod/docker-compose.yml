@@ -113,6 +113,8 @@ services:
     entrypoint: ["sh", "/backup.sh"]
     depends_on:
       postgres: { condition: service_healthy }
+      # A API cria o volume de mídia primeiro, já com o dono certo (usuário node).
+      api: { condition: service_started }
     restart: unless-stopped
     logging: *logging
 

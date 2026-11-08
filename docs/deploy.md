@@ -57,6 +57,16 @@ Quando o servidor é compartilhado e já roda um nginx com certbot, o Caddy não
 
 Evolution Go compartilhada com outros sistemas: o OfZap só mexe nas instâncias que ele mesmo criou.
 
+## Atualizar
+
+No servidor, um comando baixa o código novo, refaz a imagem, reinicia e confere a saúde (banco, imagens e `.env` ficam):
+
+```bash
+bash /root/projetos/app-ofertas/infra/prod/update.sh
+```
+
+Ele detecta sozinho o servidor com nginx próprio. Sem novidade no Git, não faz nada (use `--force` para refazer mesmo assim).
+
 ## Evolution Go
 
 - **Na mesma VPS (recomendado):** rode a Evolution Go em Docker e use `EVOLUTION_GO_URL=http://IP_PRIVADO_OU_172.17.0.1:PORTA`. Não exponha a porta dela na internet (firewall).

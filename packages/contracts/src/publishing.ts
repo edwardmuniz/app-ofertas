@@ -275,6 +275,18 @@ export const AutomationRule = z.object({
   creative_template: z.string().nullable(),
   last_run_at: z.string().nullable(),
   created_at: z.string(),
+  stats: z
+    .object({
+      today: z
+        .number()
+        .describe("Ofertas da regra hoje (enviadas + agendadas), somando os grupos."),
+      scheduled: z.number().describe("Agendadas pela regra que ainda não saíram."),
+      sent_7d: z.number(),
+      sent_total: z.number(),
+      groups: z.number().describe("Grupos ativos nos segmentos da regra."),
+      groups_at_limit: z.number().describe("Grupos que já bateram o máximo do dia."),
+    })
+    .describe("Contadores do dia no fuso do workspace."),
 });
 export type AutomationRule = z.infer<typeof AutomationRule>;
 

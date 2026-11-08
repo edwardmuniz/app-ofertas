@@ -40,6 +40,7 @@ import {
   getOffer,
   handleMessagingWebhook,
   importOfferFromLink,
+  listAutomationRules,
   listChannels,
   listContents,
   listMessagingAccounts,
@@ -1402,6 +1403,34 @@ describe("regras automáticas", () => {
     const planned = (await listPosts(ctx, { status: "scheduled" })).items;
     expect(planned.every((p) => p.title?.toLowerCase().includes("air fryer"))).toBe(true);
     expect((await runAutomationRules(deps)).scheduled).toBe(0);
+  });
+
+  it("mostra quantas ofertas a regra já publicou e quando o limite do dia foi atingido", async () => {
+    const { ctx, seg } = await setup();
+    await approvedOffer(ctx, "air fryer", 0);
+    const rule = done(
+      await upsertAutomationRule(ctx, {
+        name: "Uma por dia",
+        segment_ids: [seg.id],
+        windows: [],
+        max_per_day: 1,
+      }),
+    );
+    expect((await listAutomationRules(ctx))[0]?.stats).toMatchObject({ today: 0, groups: 3 });
+    await runAutomationRules(deps);
+    await deps.db
+      .update(posts)
+      .set({ status: "sent", sentAt: new Date() })
+      .where(eq(posts.ruleId, rule.id));
+    const [after] = await listAutomationRules(ctx);
+    expect(after?.stats).toEqual({
+      today: 3,
+      scheduled: 0,
+      sent_7d: 3,
+      sent_total: 3,
+      groups: 3,
+      groups_at_limit: 3,
+    });
   });
 });
 

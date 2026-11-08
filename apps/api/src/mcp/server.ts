@@ -893,7 +893,8 @@ export function createMcpServer(ctx: Ctx): McpServer {
     "list_automation_rules",
     {
       title: "Regras de publicação automática",
-      description: "Regras que publicam sozinhas as ofertas aprovadas nos grupos.",
+      description:
+        "Regras que publicam sozinhas as ofertas aprovadas nos grupos, com o que cada uma já publicou (hoje, agendadas, 7 dias, total) e quantos grupos bateram o limite do dia.",
       annotations: READ,
     },
     safe(async () => listAutomationRules(ctx)),

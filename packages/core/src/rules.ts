@@ -19,7 +19,19 @@ import { isWithinWindows, localDate, tzOffsetMs } from "./tz";
 
 type RuleRow = typeof automationRules.$inferSelect;
 
-const toRule = (r: RuleRow): AutomationRule => ({
+const DAY = 86_400_000;
+
+type RuleStats = AutomationRule["stats"];
+const NO_STATS: RuleStats = {
+  today: 0,
+  scheduled: 0,
+  sent_7d: 0,
+  sent_total: 0,
+  groups: 0,
+  groups_at_limit: 0,
+};
+
+const toRule = (r: RuleRow, stats: RuleStats = NO_STATS): AutomationRule => ({
   id: r.id,
   name: r.name,
   active: r.active,
@@ -32,6 +44,7 @@ const toRule = (r: RuleRow): AutomationRule => ({
   creative_template: r.creativeTemplate,
   last_run_at: r.lastRunAt?.toISOString() ?? null,
   created_at: r.createdAt.toISOString(),
+  stats,
 });
 
 export async function listAutomationRules(ctx: Ctx) {
@@ -41,7 +54,68 @@ export async function listAutomationRules(ctx: Ctx) {
     .from(automationRules)
     .where(eq(automationRules.workspaceId, ctx.actor.workspaceId))
     .orderBy(asc(automationRules.createdAt));
-  return rows.map(toRule);
+  if (!rows.length) return [];
+  const stats = await ruleStats(ctx, rows);
+  return rows.map((r) => toRule(r, stats.get(r.id)));
+}
+
+/**
+ * Quanto cada regra já publicou: hoje (o que conta para o limite diário, por grupo),
+ * agendadas, últimos 7 dias e total; e quantos grupos já bateram o máximo do dia.
+ */
+async function ruleStats(ctx: Ctx, rules: RuleRow[]) {
+  const wsId = ctx.actor.workspaceId;
+  const at = now(ctx);
+  const { tz } = await workspaceSchedule(ctx.db, wsId);
+  const today = localDate(at, tz);
+  const dayStart = new Date(Date.parse(`${today}T00:00:00Z`) - tzOffsetMs(at, tz)).toISOString();
+  const weekAgo = new Date(at.getTime() - 7 * DAY).toISOString();
+
+  const counts = await ctx.db
+    .select({
+      ruleId: posts.ruleId,
+      channelId: posts.channelId,
+      today: sql<number>`count(*) filter (where ${posts.status} in ('scheduled', 'sending', 'sent') and ${posts.createdAt} >= ${dayStart})::int`,
+      scheduled: sql<number>`count(*) filter (where ${posts.status} in ('scheduled', 'sending'))::int`,
+      sent7d: sql<number>`count(*) filter (where ${posts.status} = 'sent' and ${posts.sentAt} >= ${weekAgo})::int`,
+      sentTotal: sql<number>`count(*) filter (where ${posts.status} = 'sent')::int`,
+    })
+    .from(posts)
+    .where(
+      and(
+        eq(posts.workspaceId, wsId),
+        inArray(
+          posts.ruleId,
+          rules.map((r) => r.id),
+        ),
+      ),
+    )
+    .groupBy(posts.ruleId, posts.channelId);
+
+  const links = await ctx.db
+    .select({ segmentId: channelSegments.segmentId, channelId: channels.id })
+    .from(channelSegments)
+    .innerJoin(channels, eq(channels.id, channelSegments.channelId))
+    .where(and(eq(channels.workspaceId, wsId), eq(channels.status, "active")));
+
+  const out = new Map<string, RuleStats>();
+  for (const rule of rules) {
+    const segs = new Set(rule.segmentIds);
+    const groups = new Set(links.filter((l) => segs.has(l.segmentId)).map((l) => l.channelId));
+    const mine = counts.filter((c) => c.ruleId === rule.id);
+    const sum = (k: "today" | "scheduled" | "sent7d" | "sentTotal") =>
+      mine.reduce((n, c) => n + c[k], 0);
+    out.set(rule.id, {
+      today: sum("today"),
+      scheduled: sum("scheduled"),
+      sent_7d: sum("sent7d"),
+      sent_total: sum("sentTotal"),
+      groups: groups.size,
+      groups_at_limit: mine.filter((c) => groups.has(c.channelId) && c.today >= rule.maxPerDay)
+        .length,
+    });
+  }
+  return out;
 }
 
 /** Cria ou edita uma regra que publica ofertas aprovadas automaticamente. */
@@ -107,8 +181,6 @@ export async function upsertAutomationRule(
     },
   });
 }
-
-const DAY = 86_400_000;
 
 /**
  * Roda as regras ativas: em cada grupo, dentro da janela, agenda no máximo 1 oferta por vez,
