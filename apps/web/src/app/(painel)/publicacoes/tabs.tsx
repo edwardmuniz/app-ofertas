@@ -1,7 +1,7 @@
 "use client";
 
 import type { AutomationRule, MessageTemplate, Post, Segment } from "@ofertas/contracts";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { AlertCircle, ChevronDown, ChevronRight, Clock, Package, Send } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type DateRange, DateRangePicker, rangeToIso } from "@/components/date-range";
@@ -509,6 +509,8 @@ export function Rules({ run }: { run: Runner }) {
   }, []);
   useEffect(() => {
     load();
+    const t = setInterval(load, 60_000);
+    return () => clearInterval(t);
   }, [load]);
 
   async function toggle(r: AutomationRule) {
@@ -583,7 +585,7 @@ export function Rules({ run }: { run: Runner }) {
           />
         ) : (
           <div key={r.id} className="card flex flex-wrap items-start justify-between gap-3 p-4">
-            <div className="space-y-1 text-sm">
+            <div className="min-w-0 flex-1 basis-[28rem] space-y-1 text-sm">
               <div className="flex items-center gap-2">
                 <span className="font-medium">{r.name}</span>
                 <Badge on={r.active} onLabel="Ativa" offLabel="Pausada" />
@@ -600,7 +602,7 @@ export function Rules({ run }: { run: Runner }) {
                 {imageLabel(r.creative_template)}
                 {r.last_run_at && ` · última rodada ${fmtDate(r.last_run_at)}`}
               </div>
-              <RuleCounters rule={r} />
+              <RulePanel rule={r} />
             </div>
             <div className="flex gap-2">
               <button
@@ -624,34 +626,152 @@ export function Rules({ run }: { run: Runner }) {
   );
 }
 
-/** O que a regra já publicou e se o limite do dia foi atingido. */
-function RuleCounters({ rule }: { rule: AutomationRule }) {
-  const s = rule.stats;
-  const cap = rule.max_per_day * s.groups;
-  const full = s.groups > 0 && s.groups_at_limit >= s.groups;
-  const items: [string, string][] = [
-    ["Hoje", cap ? `${s.today} de ${cap}` : String(s.today)],
-    ["Agendadas", String(s.scheduled)],
-    ["7 dias", s.sent_7d.toLocaleString("pt-BR")],
-    ["Total", s.sent_total.toLocaleString("pt-BR")],
-  ];
+const RULE_STATE: Record<
+  AutomationRule["stats"]["state"],
+  { label: string; tone: Tone; hint: string }
+> = {
+  running: { label: "Publicando", tone: "positive", hint: "Agenda a próxima oferta sozinha." },
+  off_hours: { label: "Fora do horário", tone: "info", hint: "Volta na próxima janela de envio." },
+  limit: { label: "Limite do dia atingido", tone: "warning", hint: "Volta amanhã." },
+  no_offers: {
+    label: "Sem ofertas",
+    tone: "warning",
+    hint: "Aprove ofertas que caibam nos filtros da regra.",
+  },
+  no_groups: {
+    label: "Sem grupos",
+    tone: "negative",
+    hint: "Nenhum grupo ativo e ligado a um número nos segmentos.",
+  },
+  paused: { label: "Pausada", tone: "neutral", hint: "Ative para voltar a publicar." },
+};
+
+/** "45 s", "12 min", "hoje às 20:30", "amanhã às 08:00". */
+function untilLabel(iso: string, nowMs: number) {
+  const at = new Date(iso);
+  const secs = Math.round((at.getTime() - nowMs) / 1000);
+  if (secs <= 0) return "agora";
+  if (secs < 60) return `${secs} s`;
+  if (secs < 3600) return `${Math.ceil(secs / 60)} min`;
+  const time = at.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const day = (d: Date) => d.toLocaleDateString("pt-BR");
+  if (day(at) === day(new Date(nowMs))) return `hoje às ${time}`;
+  if (day(at) === day(new Date(nowMs + 86_400_000))) return `amanhã às ${time}`;
+  return `${at.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit" })} às ${time}`;
+}
+
+function useNow(everyMs: number) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), everyMs);
+    return () => clearInterval(t);
+  }, [everyMs]);
+  return now;
+}
+
+function RuleTile({
+  icon: Icon,
+  value,
+  label,
+  tone,
+}: {
+  icon: typeof Send;
+  value: number;
+  label: string;
+  tone: string;
+}) {
   return (
-    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-2">
-      {items.map(([label, value]) => (
-        <div key={label} className="flex flex-col">
-          <span className="text-xs text-neutral-500">{label}</span>
-          <span className="text-base font-semibold tabular-nums">{value}</span>
+    <div className="flex items-start gap-2.5 rounded-lg bg-neutral-50 p-3 dark:bg-neutral-800/60">
+      <Icon className={`mt-0.5 size-4 shrink-0 ${tone}`} aria-hidden />
+      <div className="flex flex-col">
+        <span className="text-lg leading-6 font-semibold tabular-nums">
+          {value.toLocaleString("pt-BR")}
+        </span>
+        <span className="text-xs text-neutral-500">{label}</span>
+      </div>
+    </div>
+  );
+}
+
+/** Painel da regra: situação, progresso do dia, próximo envio e contadores. */
+function RulePanel({ rule }: { rule: AutomationRule }) {
+  const s = rule.stats;
+  const now = useNow(1000);
+  const state = RULE_STATE[s.state];
+  const cap = rule.max_per_day * s.groups;
+  const pct = cap ? Math.min(100, Math.round((s.today / cap) * 100)) : 0;
+  const next = s.next_at ? untilLabel(s.next_at, now) : null;
+  // Barra do próximo envio: enche ao longo do intervalo da regra.
+  const left = s.next_at ? new Date(s.next_at).getTime() - now : 0;
+  const span = rule.min_interval_minutes * 60_000;
+  const nextPct = s.next_at && left < span ? Math.round(100 - (Math.max(0, left) / span) * 100) : 0;
+
+  return (
+    <div className="mt-2 space-y-3 rounded-xl border border-neutral-200 p-3 dark:border-neutral-800">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Tag tone={state.tone} dot>
+            {state.label}
+          </Tag>
+          <span className="text-xs text-neutral-500">{state.hint}</span>
         </div>
-      ))}
-      {full ? (
-        <Tag tone="warning" dot>
-          Limite do dia atingido: volta amanhã
-        </Tag>
-      ) : s.groups_at_limit > 0 ? (
-        <Tag tone="info" dot>
-          {s.groups_at_limit} de {s.groups} grupos no limite de hoje
-        </Tag>
-      ) : null}
+        <span className="text-sm font-medium tabular-nums">
+          Hoje {s.today}
+          {cap ? <span className="text-neutral-500">/{cap}</span> : null}
+        </span>
+      </div>
+
+      <div
+        className="h-1.5 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800"
+        role="progressbar"
+        aria-label="Ofertas de hoje"
+        aria-valuenow={s.today}
+        aria-valuemax={cap || undefined}
+      >
+        <div
+          className={`h-full rounded-full transition-[width] duration-500 ${
+            s.state === "limit" ? "bg-amber-500" : "bg-brand-500"
+          }`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-sm">
+          <span className="font-medium">Próximo envio</span>
+          <span className="font-semibold tabular-nums">
+            {next ?? (s.state === "paused" ? "pausada" : "sem previsão")}
+          </span>
+        </div>
+        <div className="h-1.5 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
+          <div
+            className="h-full rounded-full bg-emerald-500 transition-[width] duration-1000"
+            style={{ width: `${nextPct}%` }}
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <RuleTile icon={Send} value={s.sent_today} label="Enviadas hoje" tone="text-emerald-500" />
+        <RuleTile icon={Clock} value={s.scheduled} label="Agendadas" tone="text-sky-500" />
+        <RuleTile icon={Package} value={s.available} label="Disponíveis" tone="text-brand-500" />
+        <RuleTile
+          icon={AlertCircle}
+          value={s.failed_today}
+          label="Falharam hoje"
+          tone="text-red-500"
+        />
+      </div>
+
+      <div className="flex flex-wrap gap-x-3 text-xs text-neutral-500">
+        <span>7 dias: {s.sent_7d.toLocaleString("pt-BR")} enviadas</span>
+        <span>Total: {s.sent_total.toLocaleString("pt-BR")}</span>
+        {s.groups_at_limit > 0 && s.groups_at_limit < s.groups && (
+          <span>
+            {s.groups_at_limit} de {s.groups} grupos no limite de hoje
+          </span>
+        )}
+      </div>
     </div>
   );
 }

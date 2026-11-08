@@ -106,7 +106,7 @@ export function OfferPricePanel({ offer, onSaved }: { offer: Offer; onSaved: (o:
         />
       </div>
       <ErrorText error={error} />
-      <LoadingButton busy={busy} type="submit" className="mt-2 h-11 w-full text-[15px]">
+      <LoadingButton busy={busy} type="submit" className="mt-2 h-11 w-full text-base">
         Salvar preços
       </LoadingButton>
     </form>

@@ -55,11 +55,12 @@ export function requireActor(req: FastifyRequest): Actor {
   return req.actor;
 }
 
-/** Rate limit por ator. */
+/** Rate limit por ator. O painel (pessoa logada) tem um limite próprio, maior. */
 export async function enforceRateLimit(deps: Deps, actor: Actor) {
-  const max = await getLimit(deps, actor.workspaceId, "api.requests_per_minute");
+  const key = actor.type === "user" ? "api.session_requests_per_minute" : "api.requests_per_minute";
+  const max = await getLimit(deps, actor.workspaceId, key);
   await consumeLimit(deps, {
-    key: "api.requests_per_minute",
+    key,
     bucket: `${actor.type}:${actor.id}`,
     max,
     windowSec: 60,

@@ -1,6 +1,8 @@
 import { CREDENTIAL_FIELDS, FAKE_CATEGORIES } from "@ofertas/connectors";
 import {
   AffiliateAccount,
+  BulkOfferStatusInput,
+  BulkOfferStatusResult,
   ConnectAffiliateAccountInput,
   CreateOfferLinkInput,
   FindSimilarInput,
@@ -54,6 +56,7 @@ import {
   setOfferCopy,
   setOfferCoupon,
   setOfferStatus,
+  setOffersStatus,
   updateAffiliateAccount,
   updateOfferPrices,
   upsertSavedSearch,
@@ -310,6 +313,18 @@ export const offerRoutes: FastifyPluginAsyncZod<{ deps: Deps }> = async (app, { 
     },
     async (req) =>
       setOfferStatus(ctx(req), { ...req.body, offer_id: req.params.id }, mutationOpts(req)),
+  );
+  app.post(
+    "/offers/bulk-status",
+    {
+      schema: {
+        tags: ["ofertas"],
+        body: BulkOfferStatusInput,
+        ...mutationSchema,
+        response: { 200: MutationResult(BulkOfferStatusResult), ...errors },
+      },
+    },
+    async (req) => setOffersStatus(ctx(req), req.body, mutationOpts(req)),
   );
   app.post(
     "/offers/:id/validate",

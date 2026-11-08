@@ -105,7 +105,7 @@ export function PlatformBadge({
 }) {
   const p = PLATFORMS[platform] ?? { label: platform, color: "var(--text-tertiary)" };
   return (
-    <span className="inline-flex items-center gap-1.5 text-[13px] whitespace-nowrap text-neutral-600 dark:text-neutral-400">
+    <span className="inline-flex items-center gap-1.5 text-sm whitespace-nowrap text-neutral-600 dark:text-neutral-400">
       <span
         title={p.label}
         className="size-2 shrink-0 rounded-[2px]"
@@ -162,10 +162,8 @@ export function Panel({
           className={`flex items-start justify-between gap-3 px-5 pt-5 ${padding ? "" : "pb-4"}`}
         >
           <div className="min-w-0 flex-1">
-            {title ? <h2 className="text-[15px] leading-[22px] font-semibold">{title}</h2> : null}
-            {subtitle ? (
-              <p className="mt-0.5 text-[13px] leading-[18px] text-neutral-500">{subtitle}</p>
-            ) : null}
+            {title ? <h2 className="text-lg font-semibold">{title}</h2> : null}
+            {subtitle ? <p className="mt-0.5 text-sm text-neutral-500">{subtitle}</p> : null}
           </div>
           {actions ? <div className="flex shrink-0 gap-2">{actions}</div> : null}
         </header>
@@ -204,10 +202,8 @@ export function StatCard({
 }) {
   return (
     <div className="card flex flex-col gap-2.5 !p-4">
-      <span className="text-[13px] leading-[18px] font-medium text-neutral-600 dark:text-neutral-400">
-        {label}
-      </span>
-      <span className="text-2xl leading-[30px] font-semibold tracking-[-0.015em] whitespace-nowrap tabular-nums">
+      <span className="text-sm font-medium text-neutral-600 dark:text-neutral-400">{label}</span>
+      <span className="text-2xl font-semibold tracking-[-0.015em] whitespace-nowrap tabular-nums">
         {typeof value === "number" ? value.toLocaleString("pt-BR") : value}
       </span>
       {delta !== undefined || hint ? (
@@ -242,7 +238,7 @@ export function Segmented<T extends string>({
           role="tab"
           aria-selected={o.value === value}
           onClick={() => onChange(o.value)}
-          className={`rounded-md px-3 text-[13px] font-medium whitespace-nowrap transition-colors ${
+          className={`rounded-md px-3 text-sm font-medium whitespace-nowrap transition-colors ${
             o.value === value
               ? "bg-white text-neutral-900 shadow-sm dark:bg-neutral-800 dark:text-neutral-50"
               : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"

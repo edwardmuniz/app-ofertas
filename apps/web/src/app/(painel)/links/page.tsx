@@ -44,9 +44,16 @@ export default function LinksPage() {
   const [q, setQ] = useState("");
   const [error, setError] = useState<string | null>(null);
 
+  // Busca só depois de parar de digitar (cada busca faz 4 chamadas).
+  const [query, setQuery] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setQuery(q), 350);
+    return () => clearTimeout(t);
+  }, [q]);
+
   const load = useCallback(async () => {
     const params = new URLSearchParams({ limit: "50" });
-    if (q) params.set("q", q);
+    if (query) params.set("q", query);
     const [page, ch, total, byLink] = await Promise.all([
       api<Page>(`/links?${params}`),
       api<Channel[]>("/channels"),
@@ -57,7 +64,7 @@ export default function LinksPage() {
     setChannels(ch);
     setTotals(total.totals);
     setClicksByLink(Object.fromEntries(byLink.rows.map((r) => [r.key ?? "", r.human])));
-  }, [q]);
+  }, [query]);
   useEffect(() => {
     load();
   }, [load]);

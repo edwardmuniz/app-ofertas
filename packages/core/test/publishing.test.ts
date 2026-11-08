@@ -1416,21 +1416,48 @@ describe("regras automáticas", () => {
         max_per_day: 1,
       }),
     );
-    expect((await listAutomationRules(ctx))[0]?.stats).toMatchObject({ today: 0, groups: 3 });
+    const before = (await listAutomationRules(ctx))[0]?.stats;
+    expect(before).toMatchObject({ state: "running", today: 0, groups: 3, available: 1 });
+    // Sem nada enviado ainda, o próximo envio é agora.
+    expect(Math.abs(Date.parse(before?.next_at ?? "") - Date.now())).toBeLessThan(5_000);
+
     await runAutomationRules(deps);
+    const planned = (await listAutomationRules(ctx))[0]?.stats;
+    expect(planned).toMatchObject({ scheduled: 3, today: 3 });
+    expect(planned?.next_at).not.toBeNull();
+
     await deps.db
       .update(posts)
       .set({ status: "sent", sentAt: new Date() })
       .where(eq(posts.ruleId, rule.id));
     const [after] = await listAutomationRules(ctx);
-    expect(after?.stats).toEqual({
+    expect(after?.stats).toMatchObject({
+      state: "limit",
       today: 3,
+      sent_today: 3,
+      failed_today: 0,
       scheduled: 0,
+      available: 0,
       sent_7d: 3,
       sent_total: 3,
       groups: 3,
       groups_at_limit: 3,
     });
+  });
+
+  it("regra pausada não tem próximo envio", async () => {
+    const { ctx, seg } = await setup();
+    await approvedOffer(ctx, "fone", 0);
+    done(
+      await upsertAutomationRule(ctx, {
+        name: "Pausada",
+        segment_ids: [seg.id],
+        windows: [],
+        active: false,
+      }),
+    );
+    const [r] = await listAutomationRules(ctx);
+    expect(r?.stats).toMatchObject({ state: "paused", next_at: null, available: 1 });
   });
 });
 

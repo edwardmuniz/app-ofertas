@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import {
   AuditQuery,
+  BulkOfferStatusInput,
   CompleteUploadInput,
   ContentKitQuery,
   CreateContentInput,
@@ -124,6 +125,7 @@ import {
   setOfferCopy,
   setOfferCoupon,
   setOfferStatus,
+  setOffersStatus,
   submitVideo,
   syncGroups,
   updateBrandKit,
@@ -593,6 +595,21 @@ export function createMcpServer(ctx: Ctx): McpServer {
     safe(async (args) => {
       const [rest, opts] = splitOpts(args);
       return setOfferStatus(ctx, { offer_id: rest.offer_id, status: "approved" }, opts);
+    }),
+  );
+
+  server.registerTool(
+    "set_offers_status",
+    {
+      title: "Mudar a situação de várias ofertas",
+      description:
+        "Aprova, rejeita (tira das aprovadas) ou devolve para revisar até 200 ofertas de uma vez. Expiradas não são aprovadas; as que já estão na situação pedida são ignoradas.",
+      inputSchema: { ...BulkOfferStatusInput.shape, ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async (args) => {
+      const [input, opts] = splitOpts(args);
+      return setOffersStatus(ctx, input, opts);
     }),
   );
 

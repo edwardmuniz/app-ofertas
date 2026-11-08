@@ -132,6 +132,11 @@ Cupons que não são de um produto (ex.: "R$ 20 OFF acima de R$ 99 na Shopee") v
 - **Mensagem:** "🎟️ _CUPOM SHOPEE_", a chamada em negrito, as regras, "Código: _X_" (ou "👉 Resgate o cupom no link antes de comprar"), "⏰ Válido até 05/11 às 23:59" e o link. Vai a imagem do cupom, se tiver.
 - **Ainda não:** conferir na loja se o cupom continua valendo; buscar cupons sozinho (nenhuma loja expõe cupons pela API).
 
+## Painel de ofertas (08/11/2026)
+
+- **Abas com endereço próprio:** `/ofertas/buscar`, `/ofertas/revisar`, `/ofertas/aprovadas`, `/ofertas/cupons`, `/ofertas/rejeitadas`, `/ofertas/buscas-salvas` (o mesmo vale para `/publicacoes/fila`, `/agendar`, `/regras`, `/modelos`). Atualizar a página ou voltar no navegador mantém a aba. Links antigos `/publicacoes?offer=` abrem em Agendar.
+- **Seleção de várias:** "Selecionar várias" em Para revisar, Aprovadas e Rejeitadas. A foto vira caixa de marcar, há "Marcar todas", e uma barra fixa embaixo oferece Aprovar, Voltar para revisar e Tirar das aprovadas/Rejeitar (com motivo). Usa `set_offers_status` / `POST /v1/offers/bulk-status` (até 200 por vez; expiradas não são aprovadas; as que já estão na situação são ignoradas).
+
 ## Pesquisa de ofertas
 
 - **Filtros de vitrine** (painel e `search_offers`): palavra, categoria (`list_offer_categories` / `GET /v1/offers/categories`; no feed, as categorias principais da Shopee em português, com contagem; na conta da API da Shopee, a lista fixa das mesmas categorias principais, sem contagem, porque a API não lista categorias e aceita o código em `productCatId`)., faixa de preço, desconto mínimo, avaliação mínima e ordenação (relevância, maior desconto, menor/maior preço, mais populares, maior comissão). Paginação por `page`, e `has_more` diz se há mais. Na conta feed, os filtros rodam direto no banco; nas outras, são aplicados depois da busca. A busca com categoria vai só para a loja dona dela (o painel manda `platforms`).

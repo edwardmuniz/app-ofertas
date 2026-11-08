@@ -3,18 +3,24 @@
 import { useEffect, useState } from "react";
 import { ErrorText, PageHeader } from "@/components/ui";
 import { ApiError } from "@/lib/api";
+import { TabBar, useRouteTab } from "@/lib/tabs";
 import { Schedule } from "./schedule";
 import { Queue, Rules, Templates } from "./tabs";
 
-type Tab = "fila" | "agendar" | "regras" | "modelos";
+const TABS = ["fila", "agendar", "regras", "modelos"] as const;
+type Tab = (typeof TABS)[number];
 
 export default function PublicacoesPage() {
-  const [tab, setTab] = useState<Tab>("fila");
+  const [tab, setTab] = useRouteTab<Tab>("/publicacoes", TABS, "fila");
   const [error, setError] = useState<string | null>(null);
 
+  // Links antigos (/publicacoes?offer=... ou ?coupon=...) abrem direto em Agendar.
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("offer")) setTab("agendar");
-  }, []);
+    const q = window.location.search;
+    if (/[?&](offer|coupon)=/.test(q) && window.location.pathname === "/publicacoes") {
+      setTab("agendar", q.slice(1));
+    }
+  }, [setTab]);
 
   async function run<T>(fn: () => Promise<T>): Promise<T | null> {
     setError(null);
@@ -36,22 +42,7 @@ export default function PublicacoesPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title="Publicações" subtitle="Agende envios nos grupos e automatize com regras" />
-      <div className="flex gap-1 overflow-x-auto border-b border-neutral-200 dark:border-neutral-800">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            className={`border-b-2 px-3 py-2 text-sm whitespace-nowrap ${
-              tab === t.key
-                ? "border-brand-500 font-medium text-neutral-900 dark:text-neutral-50"
-                : "border-transparent text-neutral-500"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <TabBar base="/publicacoes" tabs={tabs} active={tab} />
       <ErrorText error={error} />
       {tab === "fila" && <Queue run={run} onSchedule={() => setTab("agendar")} />}
       {tab === "agendar" && <Schedule run={run} onDone={() => setTab("fila")} />}

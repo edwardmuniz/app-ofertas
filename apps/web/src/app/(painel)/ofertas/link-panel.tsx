@@ -94,7 +94,7 @@ export function OfferLinkPanel({ offerId }: { offerId: string }) {
         />
       </div>
       <div>
-        <button className="btn h-11 w-full gap-1.5 text-[15px]" type="submit" disabled={busy}>
+        <button className="btn h-11 w-full gap-1.5 text-base" type="submit" disabled={busy}>
           {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           {busy ? "Gerando…" : `Gerar link para ${sourceLabel(source)}`}
         </button>

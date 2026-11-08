@@ -37,7 +37,10 @@ export class RedisCounterStore implements CounterStore {
 
 /** Limites padrão. Cada workspace pode sobrescrever na tabela `limits`. */
 export const DEFAULT_LIMITS = {
+  /** Por token (agentes, extensão, integrações) */
   "api.requests_per_minute": 120,
+  /** Por pessoa logada no painel: cada tela faz várias chamadas de uma vez */
+  "api.session_requests_per_minute": 600,
   /** Intervalo mínimo entre mensagens no mesmo grupo (piso; cada regra escolhe o seu) */
   "posts.min_interval_minutes": 1,
   /** Máximo de mensagens por hora em um mesmo número */

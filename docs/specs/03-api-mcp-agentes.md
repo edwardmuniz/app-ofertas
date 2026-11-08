@@ -78,18 +78,19 @@ Nomes em inglês snake_case (melhor compatibilidade entre clientes); descriçõe
 
 ### Ofertas
 
-| Tool                          | Descrição                                                                            |
-| ----------------------------- | ------------------------------------------------------------------------------------ |
-| `search_offers`               | Busca nos conectores (termo, categoria, desconto mín., preço, plataforma, ordenação) |
-| `get_offer`                   | Detalhe + histórico de preço + flags de qualidade                                    |
-| `validate_offer`              | Revalida preço/estoque/cupom agora                                                   |
-| `set_offer_coupon`            | Define, troca ou tira o cupom da oferta (código, regra e validade)                   |
-| `list_store_coupons`          | Cupons da loja inteira (os que estão na validade, por padrão)                        |
-| `upsert_store_coupon`         | Cadastra ou edita cupom da loja inteira; divulga com `schedule_posts(coupon_ids)`    |
-| `delete_store_coupon`         | Apaga o cupom da loja e cancela os envios agendados dele                             |
-| `find_similar_offers`         | Substitutas para uma oferta expirada                                                 |
-| `save_offer` / `reject_offer` | Curadoria                                                                            |
-| `list_offers`                 | Ofertas salvas por status                                                            |
+| Tool                          | Descrição                                                                                          |
+| ----------------------------- | -------------------------------------------------------------------------------------------------- |
+| `search_offers`               | Busca nos conectores (termo, categoria, desconto mín., preço, plataforma, ordenação)               |
+| `get_offer`                   | Detalhe + histórico de preço + flags de qualidade                                                  |
+| `validate_offer`              | Revalida preço/estoque/cupom agora                                                                 |
+| `set_offer_coupon`            | Define, troca ou tira o cupom da oferta (código, regra e validade)                                 |
+| `list_store_coupons`          | Cupons da loja inteira (os que estão na validade, por padrão)                                      |
+| `upsert_store_coupon`         | Cadastra ou edita cupom da loja inteira; divulga com `schedule_posts(coupon_ids)`                  |
+| `delete_store_coupon`         | Apaga o cupom da loja e cancela os envios agendados dele                                           |
+| `find_similar_offers`         | Substitutas para uma oferta expirada                                                               |
+| `save_offer` / `reject_offer` | Curadoria                                                                                          |
+| `set_offers_status`           | Aprova, rejeita ou devolve para revisar até 200 ofertas de uma vez (`POST /v1/offers/bulk-status`) |
+| `list_offers`                 | Ofertas salvas por status                                                                          |
 
 ### Canais
 

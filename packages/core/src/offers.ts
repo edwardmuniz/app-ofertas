@@ -17,6 +17,8 @@ import {
   titleFromUrl,
 } from "@ofertas/connectors";
 import {
+  BulkOfferStatusInput,
+  type BulkOfferStatusResult,
   CreateOfferLinkInput,
   FindSimilarInput,
   ImportOfferFromLinkInput,
@@ -47,7 +49,7 @@ import {
   products,
   workspaces,
 } from "@ofertas/db";
-import { and, desc, eq, gte, ilike, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, inArray, ne, sql } from "drizzle-orm";
 import { activeAccounts, connectorFor, providerError, recordAccountHealth } from "./affiliates";
 import { requireScope } from "./authz";
 import { getChannelRow } from "./channels";
@@ -633,6 +635,58 @@ export async function setOfferStatus(
         .returning();
       if (!row) throw new AppError("NOT_FOUND", "Oferta não encontrada.");
       return toOffer(row, await loadProduct(tx.db, wsId, row.productId));
+    },
+  });
+}
+
+/**
+ * Muda a situação de várias ofertas de uma vez (seleção no painel): aprovar, tirar das aprovadas
+ * ou voltar para revisar. Expiradas não são aprovadas; as que já estão na situação ficam como estão.
+ */
+export async function setOffersStatus(
+  ctx: Ctx,
+  raw: BulkOfferStatusInput,
+  opts: MutationOptions = {},
+) {
+  const input = BulkOfferStatusInput.parse(raw);
+  const wsId = ctx.actor.workspaceId;
+  const ids = [...new Set(input.offer_ids)];
+  const eligible = (i: BulkOfferStatusInput) =>
+    and(
+      eq(offers.workspaceId, wsId),
+      inArray(offers.id, ids),
+      ne(offers.status, i.status),
+      ...(i.status === "approved" ? [ne(offers.status, "expired")] : []),
+    );
+  return runMutation(ctx, {
+    action: `offers.bulk_${input.status === "approved" ? "approve" : input.status === "rejected" ? "reject" : "review"}`,
+    scope: "offers:write",
+    input,
+    opts,
+    target: () => ({ type: "offer", id: ids.length === 1 ? ids[0] : undefined }),
+    preview: async (c, i) => {
+      const rows = await c.db.select({ id: offers.id }).from(offers).where(eligible(i));
+      if (!rows.length) {
+        throw new AppError(
+          "CONFLICT",
+          "Nenhuma das ofertas selecionadas pode mudar para essa situação.",
+          {
+            hint: "Elas já estão nessa situação ou expiraram.",
+          },
+        );
+      }
+      return { updated: rows.length, skipped: ids.length - rows.length };
+    },
+    execute: async (tx, i): Promise<BulkOfferStatusResult> => {
+      const rows = await tx.db
+        .update(offers)
+        .set({
+          status: i.status,
+          rejectReason: i.status === "rejected" ? (i.reason ?? null) : null,
+        })
+        .where(eligible(i))
+        .returning({ id: offers.id });
+      return { updated: rows.length, skipped: ids.length - rows.length };
     },
   });
 }

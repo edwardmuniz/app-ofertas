@@ -120,7 +120,7 @@ export function OfferCouponPanel({
         busy={busy === "save"}
         disabled={busy !== null}
         type="submit"
-        className="h-11 w-full text-[15px]"
+        className="h-11 w-full text-base"
       >
         Salvar cupom
       </LoadingButton>
@@ -130,7 +130,7 @@ export function OfferCouponPanel({
           busy={busy === "remove"}
           disabled={busy !== null}
           onClick={() => send(true)}
-          className="h-11 w-full text-[15px]"
+          className="h-11 w-full text-base"
         >
           Tirar o cupom
         </LoadingButton>

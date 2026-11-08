@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, ImageOff, Star } from "lucide-react";
+import { Check, ExternalLink, ImageOff, Star } from "lucide-react";
 import { PlatformBadge } from "@/components/ui";
 import { FLAG_LABELS, money, scoreClass, TONE_CLASS } from "@/lib/format";
 
@@ -83,8 +83,13 @@ export function ProductCard({
   showScore = true,
   footer,
   children,
+  selected,
+  onSelect,
 }: {
   p: CardProduct;
+  /** Modo seleção: a foto vira uma caixa de marcar. */
+  selected?: boolean;
+  onSelect?: () => void;
   /** Situação da oferta (ex.: "Ainda não enviada"), em destaque logo abaixo da foto. */
   status?: React.ReactNode;
   /** Texto curto ao lado de "Ver na loja" (ex.: quando foi conferida). */
@@ -97,7 +102,11 @@ export function ProductCard({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="card flex flex-col overflow-hidden p-0">
+    <div
+      className={`card flex flex-col overflow-hidden p-0 transition-shadow ${
+        selected ? "ring-2 ring-brand-500" : ""
+      }`}
+    >
       {/* Foto em área quadrada fixa: imagem alta ou larga não muda o tamanho do card. */}
       <div className="relative aspect-square shrink-0 overflow-hidden bg-white dark:bg-neutral-950">
         {p.image_url ? (
@@ -123,6 +132,25 @@ export function ProductCard({
             <Score value={p.score} />
           </span>
         )}
+        {onSelect && (
+          <button
+            type="button"
+            onClick={onSelect}
+            aria-pressed={selected}
+            aria-label={selected ? "Desmarcar oferta" : "Selecionar oferta"}
+            className={`absolute inset-0 flex items-end p-3 ${selected ? "bg-brand-500/10" : ""}`}
+          >
+            <span
+              className={`flex size-8 items-center justify-center rounded-lg border-2 shadow-sm ${
+                selected
+                  ? "border-brand-500 bg-brand-500 text-white"
+                  : "border-neutral-300 bg-white/95 dark:border-neutral-600 dark:bg-neutral-900/95"
+              }`}
+            >
+              {selected && <Check className="size-5" strokeWidth={3} />}
+            </span>
+          </button>
+        )}
       </div>
       <div className="flex flex-1 flex-col gap-2 p-4">
         <div className="flex items-center justify-between gap-2 text-sm text-neutral-500">
@@ -134,7 +162,7 @@ export function ProductCard({
           href={p.url}
           target="_blank"
           rel="noreferrer"
-          className="line-clamp-2 min-h-12 text-[15px] leading-6 hover:underline"
+          className="line-clamp-2 min-h-12 text-base leading-6 hover:underline"
           title={p.title}
         >
           {p.title}

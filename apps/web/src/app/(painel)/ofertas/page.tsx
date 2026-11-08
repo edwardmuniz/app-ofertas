@@ -5,6 +5,7 @@ import {
   BadgeDollarSign,
   Check,
   CheckCircle2,
+  CheckSquare,
   ChevronRight,
   Clock,
   Link2,
@@ -12,6 +13,7 @@ import {
   MoreHorizontal,
   PenLine,
   RefreshCw,
+  RotateCcw,
   Send,
   Ticket,
   Trash2,
@@ -29,6 +31,7 @@ import {
 } from "@/components/ui";
 import { ApiError, api, fmtDate } from "@/lib/api";
 import { ago, money } from "@/lib/format";
+import { TabBar, useRouteTab } from "@/lib/tabs";
 import { CopyEditor } from "./copy-editor";
 import { OfferCouponPanel } from "./coupon-panel";
 import { CouponsTab } from "./coupons-tab";
@@ -38,11 +41,12 @@ import { ProductCard } from "./parts";
 import { OfferPricePanel } from "./price-panel";
 import { SearchTab } from "./search-tab";
 
-type Tab = "buscar" | "curadoria" | "aprovadas" | "cupons" | "rejeitadas" | "buscas";
+const TABS = ["buscar", "revisar", "aprovadas", "cupons", "rejeitadas", "buscas-salvas"] as const;
+type Tab = (typeof TABS)[number];
 type Mutation<T> = { status: string; result?: T };
 
 export default function OfertasPage() {
-  const [tab, setTab] = useState<Tab>("buscar");
+  const [tab, setTab] = useRouteTab<Tab>("/ofertas", TABS, "buscar");
   const [error, setError] = useState<string | null>(null);
   const [newCount, setNewCount] = useState(0);
   const [pasting, setPasting] = useState(false);
@@ -68,11 +72,11 @@ export default function OfertasPage() {
 
   const tabs: { key: Tab; label: string }[] = [
     { key: "buscar", label: "Buscar" },
-    { key: "curadoria", label: `Para revisar${newCount ? ` (${newCount})` : ""}` },
+    { key: "revisar", label: `Para revisar${newCount ? ` (${newCount})` : ""}` },
     { key: "aprovadas", label: "Aprovadas" },
     { key: "cupons", label: "Cupons" },
     { key: "rejeitadas", label: "Rejeitadas" },
-    { key: "buscas", label: "Buscas salvas" },
+    { key: "buscas-salvas", label: "Buscas salvas" },
   ];
 
   return (
@@ -93,31 +97,16 @@ export default function OfertasPage() {
           onClose={() => setPasting(false)}
           onSaved={(o) => {
             setPasting(false);
-            setTab(o.status === "approved" ? "aprovadas" : "curadoria");
+            setTab(o.status === "approved" ? "aprovadas" : "revisar");
             setListKey((k) => k + 1);
             refreshCount();
           }}
         />
       )}
-      <div className="flex gap-1 overflow-x-auto border-b border-neutral-200 dark:border-neutral-800">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            className={`border-b-2 px-4 py-2.5 text-[15px] whitespace-nowrap ${
-              tab === t.key
-                ? "border-brand-500 font-medium text-neutral-900 dark:text-neutral-50"
-                : "border-transparent text-neutral-500"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <TabBar base="/ofertas" tabs={tabs} active={tab} />
       <ErrorText error={error} />
       {tab === "buscar" && <SearchTab run={run} onSaved={refreshCount} />}
-      {tab === "curadoria" && (
+      {tab === "revisar" && (
         <OfferList key={`new-${listKey}`} status="new" run={run} onChange={refreshCount} />
       )}
       {tab === "aprovadas" && (
@@ -127,7 +116,7 @@ export default function OfertasPage() {
         <OfferList key={`rej-${listKey}`} status="rejected" run={run} onChange={refreshCount} />
       )}
       {tab === "cupons" && <CouponsTab />}
-      {tab === "buscas" && <SavedSearchesTab run={run} />}
+      {tab === "buscas-salvas" && <SavedSearchesTab run={run} />}
     </div>
   );
 }
@@ -232,6 +221,10 @@ function OfferList({
   const [check, setCheck] = useState<{ id: string; ok: boolean; text: string } | null>(null);
   /** Aprovadas: primeiro as que ainda não foram enviadas */
   const [sentFilter, setSentFilter] = useState<"no" | "yes" | "all">("no");
+  /** Modo seleção: marca várias ofertas para agir de uma vez. */
+  const [selecting, setSelecting] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [rejectMany, setRejectMany] = useState(false);
 
   const load = useCallback(async () => {
     const sent = status === "approved" && sentFilter !== "all" ? `&sent=${sentFilter}` : "";
@@ -257,6 +250,36 @@ function OfferList({
     setBusy(null);
     if (res) {
       close();
+      await load();
+      onChange();
+    }
+  }
+
+  const toggle = (id: string) =>
+    setPicked((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const stopSelecting = () => {
+    setSelecting(false);
+    setPicked(new Set());
+    setRejectMany(false);
+  };
+
+  /** Muda a situação das ofertas marcadas. */
+  async function setMany(next: "approved" | "rejected" | "new", reason?: string) {
+    setBusy(`many:${next}`);
+    const res = await run(() =>
+      api("/offers/bulk-status", {
+        method: "POST",
+        body: { offer_ids: [...picked], status: next, reason },
+      }),
+    );
+    setBusy(null);
+    if (res) {
+      stopSelecting();
       await load();
       onChange();
     }
@@ -288,6 +311,7 @@ function OfferList({
         value={sentFilter}
         onChange={(v) => {
           setItems(null);
+          stopSelecting();
           setSentFilter(v);
         }}
         options={[
@@ -297,13 +321,35 @@ function OfferList({
         ]}
       />
     ) : null;
+  const toolbar = (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      {sentTabs ?? <span />}
+      {items && items.length > 0 && (
+        <button
+          type="button"
+          className="btn-ghost h-10 gap-2"
+          onClick={() => (selecting ? stopSelecting() : setSelecting(true))}
+        >
+          {selecting ? (
+            <>
+              <X className="h-4 w-4" /> Cancelar seleção
+            </>
+          ) : (
+            <>
+              <CheckSquare className="h-4 w-4" /> Selecionar várias
+            </>
+          )}
+        </button>
+      )}
+    </div>
+  );
 
   if (!items) return <Loading />;
   if (items.length === 0) {
     if (status === "approved" && sentFilter !== "all") {
       return (
         <div className="space-y-4">
-          {sentTabs}
+          {toolbar}
           <Empty>
             {sentFilter === "no"
               ? "Todas as ofertas aprovadas já foram enviadas. Aprove novas em “Buscar” ou “Para revisar”."
@@ -324,16 +370,26 @@ function OfferList({
   }
 
   const current = open ? items.find((x) => x.id === open.id) : undefined;
-  const bigBtn = "h-11 w-full gap-2 text-[15px]";
+  const bigBtn = "h-11 w-full gap-2 text-base";
+
+  const allPicked = picked.size === items.length;
+  const pickedLabel = `${picked.size} ${picked.size === 1 ? "oferta marcada" : "ofertas marcadas"}`;
 
   return (
     <div className="space-y-4">
-      {sentTabs}
+      {toolbar}
+      {selecting && (
+        <p className="text-sm text-neutral-500">
+          Toque na foto das ofertas para marcar. Depois escolha o que fazer na barra de baixo.
+        </p>
+      )}
       <div className="grid gap-4 sm:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
         {items.map((o) => (
           <ProductCard
             key={o.id}
             p={o}
+            selected={picked.has(o.id)}
+            onSelect={selecting ? () => toggle(o.id) : undefined}
             showScore={status === "new"}
             status={<OfferStatus o={o} status={o.status} />}
             meta={
@@ -360,7 +416,21 @@ function OfferList({
               ) : null
             }
             footer={
-              status === "rejected" ? (
+              selecting ? (
+                <button
+                  type="button"
+                  className={`${picked.has(o.id) ? "btn" : "btn-ghost"} ${bigBtn}`}
+                  onClick={() => toggle(o.id)}
+                >
+                  {picked.has(o.id) ? (
+                    <>
+                      <Check className="h-5 w-5" /> Marcada
+                    </>
+                  ) : (
+                    "Marcar"
+                  )}
+                </button>
+              ) : status === "rejected" ? (
                 <LoadingButton
                   className={bigBtn}
                   busy={busy === `approved:${o.id}`}
@@ -387,7 +457,7 @@ function OfferList({
                 </>
               ) : (
                 <>
-                  <a className={`btn ${bigBtn}`} href={`/publicacoes?offer=${o.id}`}>
+                  <a className={`btn ${bigBtn}`} href={`/publicacoes/agendar?offer=${o.id}`}>
                     <Send className="h-5 w-5" /> Publicar nos grupos
                   </a>
                   <button
@@ -403,6 +473,87 @@ function OfferList({
           />
         ))}
       </div>
+
+      {selecting && (
+        <div className="sticky bottom-4 z-20 flex flex-wrap items-center gap-3 rounded-2xl border border-neutral-200 bg-white p-3 shadow-lg dark:border-neutral-800 dark:bg-neutral-900">
+          <span className="font-medium">{pickedLabel}</span>
+          <button
+            type="button"
+            className="text-sm text-neutral-600 underline dark:text-neutral-400"
+            onClick={() => setPicked(allPicked ? new Set() : new Set(items.map((x) => x.id)))}
+          >
+            {allPicked ? "Desmarcar todas" : `Marcar todas (${items.length})`}
+          </button>
+          <div className="ml-auto flex flex-wrap gap-2">
+            {status !== "approved" && (
+              <LoadingButton
+                className="h-11 gap-2"
+                disabled={!picked.size || busy !== null}
+                busy={busy === "many:approved"}
+                onClick={() => setMany("approved")}
+              >
+                <Check className="h-5 w-5" /> Aprovar
+              </LoadingButton>
+            )}
+            {status !== "new" && (
+              <LoadingButton
+                variant="btn-ghost"
+                className="h-11 gap-2"
+                disabled={!picked.size || busy !== null}
+                busy={busy === "many:new"}
+                onClick={() => setMany("new")}
+              >
+                <RotateCcw className="h-5 w-5" /> Voltar para revisar
+              </LoadingButton>
+            )}
+            {status !== "rejected" && (
+              <button
+                type="button"
+                className="btn-ghost h-11 gap-2 text-red-600 dark:text-red-400"
+                disabled={!picked.size || busy !== null}
+                onClick={() => setRejectMany(true)}
+              >
+                <Trash2 className="h-5 w-5" />
+                {status === "approved" ? "Tirar das aprovadas" : "Rejeitar"}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {rejectMany && (
+        <Dialog
+          title={status === "approved" ? "Tirar das aprovadas" : "Rejeitar"}
+          subtitle={pickedLabel}
+          onClose={() => setRejectMany(false)}
+        >
+          <div className="space-y-2">
+            <p className="text-sm text-neutral-500">
+              O motivo ajuda as buscas automáticas a trazer ofertas melhores.
+            </p>
+            {REJECT_REASONS.map((reason) => (
+              <button
+                key={reason}
+                type="button"
+                disabled={busy !== null}
+                onClick={() => setMany("rejected", reason)}
+                className="w-full rounded-xl border border-neutral-200 p-3 text-left font-medium hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-800 dark:hover:bg-neutral-800/50"
+              >
+                {reason}
+              </button>
+            ))}
+            <LoadingButton
+              variant="btn-ghost"
+              className={bigBtn}
+              busy={busy === "many:rejected"}
+              disabled={busy !== null}
+              onClick={() => setMany("rejected")}
+            >
+              Tirar sem dizer o motivo
+            </LoadingButton>
+          </div>
+        </Dialog>
+      )}
 
       {open && current && (
         <Dialog

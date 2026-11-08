@@ -111,7 +111,7 @@ aprovacao: auto | revisar_antes
 
 Regras podem ser criadas/editadas por agente (`upsert_automation_rule`) e respeitam limites.
 
-Cada regra mostra o que já publicou (`stats` em `list_automation_rules`/`GET /automation-rules`): **hoje** (enviadas + agendadas desde 0h no fuso do workspace, o que conta para `max_por_dia`), agendadas, enviadas nos últimos 7 dias e total, mais quantos grupos já bateram o máximo do dia. No painel, todos os grupos no limite aparecem como "Limite do dia atingido: volta amanhã".
+Cada regra tem um painel (`stats` em `list_automation_rules`/`GET /automation-rules`): **situação** (`running` publicando, `off_hours` fora do horário, `limit` todos os grupos no máximo do dia, `no_offers` nenhuma oferta aprovada nos filtros, `no_groups` nenhum grupo ativo ligado a um número, `paused`), **próximo envio** (`next_at`: o post já agendado ou a estimativa por intervalo, limite diário e janelas; o worker roda a cada minuto), **hoje** (enviadas + agendadas desde 0h no fuso do workspace, o que conta para `max_por_dia`), enviadas e falhas de hoje, agendadas, **disponíveis** (ofertas aprovadas nos filtros que ainda podem sair sem repetir em 7 dias), enviadas em 7 dias e total, e grupos no limite. O painel atualiza sozinho a cada minuto, com contagem regressiva até o próximo envio.
 
 ## Gestão de grupos
 

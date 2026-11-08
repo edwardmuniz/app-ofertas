@@ -24,6 +24,7 @@ import {
   saveOffer,
   searchOffers,
   setOfferStatus,
+  setOffersStatus,
   updatePreferences,
   upsertSavedSearch,
   validateOffer,
@@ -229,6 +230,40 @@ describe("curadoria", () => {
     await deps.db.update(offers).set({ status: "expired" }).where(eq(offers.id, offer.id));
     await expect(
       setOfferStatus(ctx, { offer_id: offer.id, status: "approved" }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+});
+
+describe("várias de uma vez", () => {
+  it("tira das aprovadas, devolve para revisar e não aprova expirada", async () => {
+    const ctx = await shopCtx();
+    const { items } = await searchOffers(ctx, { keyword: "air fryer", limit: 5 });
+    const [a, b] = await Promise.all(
+      items.slice(0, 2).map(async (c) => done(await saveOffer(ctx, { product_id: c.product_id }))),
+    );
+    if (!a || !b) throw new Error("faltam ofertas");
+
+    const dry = await setOffersStatus(
+      ctx,
+      { offer_ids: [a.id, b.id], status: "rejected" },
+      { dryRun: true },
+    );
+    expect(dry).toMatchObject({ status: "dry_run", preview: { updated: 2, skipped: 0 } });
+
+    expect(
+      done(
+        await setOffersStatus(ctx, { offer_ids: [a.id, b.id], status: "rejected", reason: "x" }),
+      ),
+    ).toEqual({ updated: 2, skipped: 0 });
+    expect((await listOffers(ctx, { status: "approved" })).items).toHaveLength(0);
+
+    done(await setOffersStatus(ctx, { offer_ids: [a.id], status: "new" }));
+    await deps.db.update(offers).set({ status: "expired" }).where(eq(offers.id, b.id));
+    expect(
+      done(await setOffersStatus(ctx, { offer_ids: [a.id, b.id], status: "approved" })),
+    ).toEqual({ updated: 1, skipped: 1 });
+    await expect(
+      setOffersStatus(ctx, { offer_ids: [b.id], status: "approved" }),
     ).rejects.toMatchObject({ code: "CONFLICT" });
   });
 });

@@ -134,7 +134,7 @@ function Sidebar({
           {initials(me.workspace.name)}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-semibold">{me.workspace.name}</span>
+          <span className="block truncate text-sm font-semibold">{me.workspace.name}</span>
           <span className="block text-xs text-neutral-500">
             {{ owner: "Dono", admin: "Admin", operator: "Operador", viewer: "Leitura" }[me.role] ??
               me.role}
@@ -288,7 +288,7 @@ export default function PainelLayout({ children }: { children: React.ReactNode }
               </span>
             ) : null}
           </Link>
-          <Link href="/ofertas" className="btn-accent !min-h-7 !px-2.5 !text-[13px]">
+          <Link href="/ofertas" className="btn-accent !min-h-7 !px-2.5 !text-sm">
             <Plus size={14} />
             <span className="hidden sm:inline">Nova oferta</span>
           </Link>

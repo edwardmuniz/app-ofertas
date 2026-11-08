@@ -469,7 +469,7 @@ export function SearchTab({ run, onSaved }: { run: Runner; onSaved: () => void }
                       ) : (
                         <>
                           <LoadingButton
-                            className="h-11 w-full text-[15px]"
+                            className="h-11 w-full text-base"
                             busy={busy === `approved:${c.product_id}`}
                             disabled={busy !== null}
                             onClick={() => save(c, "approved")}
@@ -478,7 +478,7 @@ export function SearchTab({ run, onSaved }: { run: Runner; onSaved: () => void }
                           </LoadingButton>
                           <LoadingButton
                             variant="btn-ghost"
-                            className="h-11 w-full text-[15px]"
+                            className="h-11 w-full text-base"
                             busy={busy === `new:${c.product_id}`}
                             disabled={busy !== null}
                             onClick={() => save(c, "new")}

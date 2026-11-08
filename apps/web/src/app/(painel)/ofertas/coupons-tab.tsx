@@ -88,7 +88,7 @@ export function CouponsTab() {
         />
         <button
           type="button"
-          className="btn h-11 gap-2 text-[15px]"
+          className="btn h-11 gap-2 text-base"
           onClick={() => setEditing("new")}
         >
           <Plus className="h-5 w-5" /> Novo cupom
@@ -147,8 +147,8 @@ export function CouponsTab() {
               <div className="mt-auto flex flex-col gap-2 pt-1">
                 {c.active && (
                   <a
-                    className="btn h-11 w-full gap-2 text-[15px]"
-                    href={`/publicacoes?coupon=${c.id}`}
+                    className="btn h-11 w-full gap-2 text-base"
+                    href={`/publicacoes/agendar?coupon=${c.id}`}
                   >
                     <Send className="h-5 w-5" /> Publicar nos grupos
                   </a>
@@ -156,13 +156,13 @@ export function CouponsTab() {
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    className="btn-ghost h-11 gap-2 text-[15px]"
+                    className="btn-ghost h-11 gap-2 text-base"
                     onClick={() => setEditing(c)}
                   >
                     <Pencil className="h-4 w-4" /> Editar
                   </button>
                   <ConfirmButton
-                    className="h-11 w-full gap-2 text-[15px]"
+                    className="h-11 w-full gap-2 text-base"
                     message="Apagar este cupom? Os envios agendados dele são cancelados."
                     confirmLabel="Apagar"
                     onConfirm={() => remove(c)}
@@ -325,7 +325,7 @@ function CouponForm({
         shape="wide"
       />
       <ErrorText error={error} />
-      <LoadingButton busy={busy} type="submit" className="h-11 w-full text-[15px]">
+      <LoadingButton busy={busy} type="submit" className="h-11 w-full text-base">
         Salvar cupom
       </LoadingButton>
     </form>

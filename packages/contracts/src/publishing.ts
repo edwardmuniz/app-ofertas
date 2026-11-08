@@ -277,10 +277,24 @@ export const AutomationRule = z.object({
   created_at: z.string(),
   stats: z
     .object({
+      state: z
+        .enum(["running", "off_hours", "limit", "no_offers", "no_groups", "paused"])
+        .describe(
+          "running: publicando; off_hours: fora do horário; limit: todos os grupos bateram o máximo do dia; no_offers: nenhuma oferta aprovada nos filtros; no_groups: nenhum grupo ativo nos segmentos; paused: pausada.",
+        ),
+      next_at: z
+        .string()
+        .nullable()
+        .describe("Quando sai o próximo envio (estimativa; o worker roda a cada minuto)."),
       today: z
         .number()
         .describe("Ofertas da regra hoje (enviadas + agendadas), somando os grupos."),
+      sent_today: z.number(),
+      failed_today: z.number(),
       scheduled: z.number().describe("Agendadas pela regra que ainda não saíram."),
+      available: z
+        .number()
+        .describe("Ofertas aprovadas nos filtros que ainda podem sair (sem repetir em 7 dias)."),
       sent_7d: z.number(),
       sent_total: z.number(),
       groups: z.number().describe("Grupos ativos nos segmentos da regra."),
@@ -289,6 +303,7 @@ export const AutomationRule = z.object({
     .describe("Contadores do dia no fuso do workspace."),
 });
 export type AutomationRule = z.infer<typeof AutomationRule>;
+export type RuleFilters = z.infer<typeof RuleFilters>;
 
 export const UpsertAutomationRuleInput = z.object({
   id: z.uuid().optional().describe("Informe para editar; omita para criar."),

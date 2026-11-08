@@ -320,6 +320,27 @@ export const UpdateOfferStatusInput = z.object({
 });
 export type UpdateOfferStatusInput = z.infer<typeof UpdateOfferStatusInput>;
 
+export const BulkOfferStatusInput = z.object({
+  offer_ids: z.array(z.uuid()).min(1).max(200),
+  status: z
+    .enum(["approved", "rejected", "new"])
+    .describe(
+      "approved: aprovar; rejected: tirar das aprovadas/rejeitar; new: voltar para revisar.",
+    ),
+  reason: z.string().max(300).optional().describe("Motivo da rejeição."),
+});
+export type BulkOfferStatusInput = z.infer<typeof BulkOfferStatusInput>;
+
+export const BulkOfferStatusResult = z.object({
+  updated: z.number().describe("Ofertas que mudaram de situação."),
+  skipped: z
+    .number()
+    .describe(
+      "Ignoradas: já estavam na situação pedida, expiradas (ao aprovar) ou de outro workspace.",
+    ),
+});
+export type BulkOfferStatusResult = z.infer<typeof BulkOfferStatusResult>;
+
 export const ListOffersQuery = z.object({
   status: z.enum(OFFER_STATUS).optional(),
   platform: z.enum(PLATFORMS).optional(),
