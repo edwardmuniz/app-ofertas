@@ -8,6 +8,7 @@ FROM base AS build
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/api/package.json apps/api/
 COPY apps/cli/package.json apps/cli/
+COPY apps/extension/package.json apps/extension/
 COPY apps/redirect/package.json apps/redirect/
 COPY apps/web/package.json apps/web/
 COPY apps/worker/package.json apps/worker/

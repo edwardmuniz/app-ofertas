@@ -45,6 +45,18 @@ Quando o domínio chegar, troque esses valores e suba de novo. Os links curtos j
 
 Atualizar depois: `git pull` e o mesmo comando do passo 5 (as migrations rodam sozinhas antes da API subir).
 
+## Servidor que já tem nginx (portas 80/443 ocupadas)
+
+Quando o servidor é compartilhado e já roda um nginx com certbot, o Caddy não sobe:
+
+1. Suba com o arquivo extra, que desliga o Caddy e abre painel, API e links só em portas locais (8100, 8101 e 8102):
+   `docker compose -f infra/prod/docker-compose.yml -f infra/prod/docker-compose.nginx.yml --env-file infra/prod/.env up -d --build`
+2. Copie `infra/prod/nginx-ofzap.conf` para `/etc/nginx/conf.d/ofzap.conf` e rode `nginx -t && systemctl reload nginx`.
+3. Com os registros A apontando para o IP público do servidor, gere o HTTPS:
+   `certbot --nginx -d painel.ofzap.com.br -d api.ofzap.com.br -d go.ofzap.com.br`
+
+Evolution Go compartilhada com outros sistemas: o OfZap só mexe nas instâncias que ele mesmo criou.
+
 ## Evolution Go
 
 - **Na mesma VPS (recomendado):** rode a Evolution Go em Docker e use `EVOLUTION_GO_URL=http://IP_PRIVADO_OU_172.17.0.1:PORTA`. Não exponha a porta dela na internet (firewall).

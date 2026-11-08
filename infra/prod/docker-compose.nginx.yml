@@ -1,0 +1,16 @@
+# Servidor que já tem nginx nas portas 80/443 (HTTPS pelo certbot do host).
+# O Caddy não sobe; painel, API e links abrem só em portas locais, e o nginx repassa.
+# Uso: docker compose -f infra/prod/docker-compose.yml -f infra/prod/docker-compose.nginx.yml --env-file infra/prod/.env up -d --build
+# Exemplo de configuração do nginx: infra/prod/nginx-ofzap.conf
+services:
+  caddy:
+    profiles: ["caddy"]
+  web:
+    ports:
+      - "127.0.0.1:${WEB_HOST_PORT:-8100}:3000"
+  api:
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-8101}:3001"
+  redirect:
+    ports:
+      - "127.0.0.1:${REDIRECT_HOST_PORT:-8102}:3002"
