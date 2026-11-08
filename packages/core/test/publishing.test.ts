@@ -1445,6 +1445,23 @@ describe("regras automáticas", () => {
     });
   });
 
+  it("depois de uma falha, a regra passa para outra oferta em vez de insistir na mesma", async () => {
+    const { ctx, seg } = await setup();
+    await approvedOffer(ctx, "air fryer", 0);
+    await approvedOffer(ctx, "fone", 0);
+    const rule = done(
+      await upsertAutomationRule(ctx, { name: "Tudo", segment_ids: [seg.id], windows: [] }),
+    );
+    await runAutomationRules(deps);
+    const first = (await listPosts(ctx, { status: "scheduled" })).items;
+    const failedTitles = new Set(first.map((p) => p.title));
+    await deps.db.update(posts).set({ status: "failed" }).where(eq(posts.ruleId, rule.id));
+
+    expect((await runAutomationRules(deps)).scheduled).toBe(3);
+    const next = (await listPosts(ctx, { status: "scheduled" })).items;
+    expect(next.every((p) => !failedTitles.has(p.title))).toBe(true);
+  });
+
   it("regra pausada não tem próximo envio", async () => {
     const { ctx, seg } = await setup();
     await approvedOffer(ctx, "fone", 0);

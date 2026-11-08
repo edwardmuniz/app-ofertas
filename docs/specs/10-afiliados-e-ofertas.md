@@ -53,6 +53,10 @@ O Mercado Livre fechou o acesso de fora: a API de busca (`/sites/MLB/search`) e 
 
 Quando não há API de link: a plataforma aceita **link de afiliado colado** (humano ou agente) e trata como oferta manual; o rastreamento próprio (redirect) continua funcionando.
 
+### Shopee: consulta só com os campos usados (08/11/2026)
+
+A Open API passou a responder `graphql: got null for non-null` quando a consulta declara uma variável que vai vazia (ex.: consultar por `itemId` com `keyword`, `page` e `sortType` declarados e sem valor). A mesma consulta com só `itemId` e `limit` funciona. O conector monta o `productOfferV2` só com os argumentos preenchidos.
+
 ### Shopee: modos da conta
 
 A conta Shopee tem três modos:

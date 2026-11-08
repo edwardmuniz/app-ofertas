@@ -39,12 +39,35 @@ const OFFER_FIELDS = `itemId productName price priceMin priceMax priceDiscountRa
   commissionRate commission sales ratingStar imageUrl shopName productLink offerLink
   periodEndTime productCatIds`;
 
-const SEARCH_QUERY = `query Search($keyword: String, $sortType: Int, $page: Int, $limit: Int, $productCatId: Int, $itemId: Int64) {
-  productOfferV2(keyword: $keyword, sortType: $sortType, page: $page, limit: $limit, productCatId: $productCatId, itemId: $itemId) {
+/** Tipos dos argumentos do productOfferV2. */
+const SEARCH_ARGS = {
+  keyword: "String",
+  sortType: "Int",
+  page: "Int",
+  limit: "Int",
+  productCatId: "Int",
+  itemId: "Int64",
+} as const;
+type SearchVars = Partial<Record<keyof typeof SEARCH_ARGS, string | number>>;
+
+/**
+ * Monta a consulta só com os argumentos preenchidos. A Shopee responde
+ * "graphql: got null for non-null" quando uma variável declarada vai vazia (visto em 11/2026).
+ */
+export function shopeeSearchQuery(vars: SearchVars): [string, Record<string, unknown>] {
+  const keys = (Object.keys(SEARCH_ARGS) as (keyof typeof SEARCH_ARGS)[]).filter(
+    (k) => vars[k] !== undefined && vars[k] !== "",
+  );
+  const decl = keys.map((k) => `$${k}: ${SEARCH_ARGS[k]}`).join(", ");
+  const args = keys.map((k) => `${k}: $${k}`).join(", ");
+  const query = `query Search(${decl}) {
+  productOfferV2(${args}) {
     nodes { ${OFFER_FIELDS} }
     pageInfo { page limit hasNextPage }
   }
 }`;
+  return [query, Object.fromEntries(keys.map((k) => [k, vars[k]]))];
+}
 
 const SHORT_LINK_MUTATION = `mutation ShortLink($originUrl: String!, $subIds: [String]) {
   generateShortLink(input: { originUrl: $originUrl, subIds: $subIds }) { shortLink }
@@ -191,13 +214,15 @@ export class ShopeeConnector implements AffiliateConnector {
     const sort = SORT_TYPE[q.sort ?? "relevance"];
     const data = await this.gql<{
       productOfferV2: { nodes: ShopeeNode[]; pageInfo: { hasNextPage: boolean } };
-    }>(SEARCH_QUERY, {
-      keyword: q.keyword,
-      sortType: sort === 1 && !q.keyword?.trim() ? ITEM_SOLD_DESC : sort,
-      page: q.page ?? 1,
-      limit: Math.min(q.limit ?? 20, 50),
-      productCatId: q.categoryId ? Number(q.categoryId) : undefined,
-    });
+    }>(
+      ...shopeeSearchQuery({
+        keyword: q.keyword?.trim(),
+        sortType: sort === 1 && !q.keyword?.trim() ? ITEM_SOLD_DESC : sort,
+        page: q.page ?? 1,
+        limit: Math.min(q.limit ?? 20, 50),
+        productCatId: q.categoryId ? Number(q.categoryId) : undefined,
+      }),
+    );
     return {
       items: data.productOfferV2.nodes.map(mapShopeeNode),
       hasMore: data.productOfferV2.pageInfo.hasNextPage,
@@ -205,10 +230,9 @@ export class ShopeeConnector implements AffiliateConnector {
   }
 
   async lookup(externalId: string) {
-    const data = await this.gql<{ productOfferV2: { nodes: ShopeeNode[] } }>(SEARCH_QUERY, {
-      itemId: Number(externalId),
-      limit: 1,
-    });
+    const data = await this.gql<{ productOfferV2: { nodes: ShopeeNode[] } }>(
+      ...shopeeSearchQuery({ itemId: Number(externalId), limit: 1 }),
+    );
     const node = data.productOfferV2.nodes[0];
     return node ? mapShopeeNode(node) : null;
   }

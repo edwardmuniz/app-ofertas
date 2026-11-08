@@ -20,6 +20,8 @@ import { isWithinWindows, localDate, localMidnight, nextAllowedTime, tzOffsetMs 
 type RuleRow = typeof automationRules.$inferSelect;
 
 const DAY = 86_400_000;
+/** Horas que a regra espera antes de tentar de novo um produto que falhou no grupo. */
+const FAILED_RETRY_HOURS = 6;
 
 type RuleStats = AutomationRule["stats"];
 const NO_STATS: RuleStats = {
@@ -266,6 +268,13 @@ function offerConds(rule: RuleRow, filters: RuleFilters, channelId: string, at: 
       where p.channel_id = ${channelId} and o2.product_id = ${products.id}
         and p.status in ('scheduled', 'sending', 'sent')
         and p.created_at >= ${new Date(at.getTime() - 7 * DAY).toISOString()}
+    )`,
+    // Falhou há pouco neste grupo: tenta outra oferta em vez de insistir na mesma.
+    sql`not exists (
+      select 1 from posts p join offers o2 on o2.id = p.offer_id
+      where p.channel_id = ${channelId} and o2.product_id = ${products.id}
+        and p.status = 'failed'
+        and p.created_at >= ${new Date(at.getTime() - FAILED_RETRY_HOURS * 3_600_000).toISOString()}
     )`,
   ];
   if (filters.min_score !== undefined) conds.push(gte(offers.score, filters.min_score));

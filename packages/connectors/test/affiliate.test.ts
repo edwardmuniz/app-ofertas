@@ -50,6 +50,17 @@ describe("Shopee (real, com fetch simulado)", () => {
     expect(vars[1]).toMatchObject({ sortType: 4 });
   });
 
+  it("consulta por código só declara os argumentos usados (a Shopee recusa variáveis vazias)", async () => {
+    const { c, calls } = connector(() =>
+      Response.json({ data: { productOfferV2: { nodes: [], pageInfo: { hasNextPage: false } } } }),
+    );
+    await c.lookup("22094198289");
+    const body = JSON.parse(calls[0]?.body ?? "{}");
+    expect(body.variables).toEqual({ itemId: 22094198289, limit: 1 });
+    expect(body.query).toContain("query Search($limit: Int, $itemId: Int64)");
+    expect(body.query).not.toContain("keyword");
+  });
+
   it("normaliza o produto e deriva o preço original do desconto", () => {
     const p = mapShopeeNode({
       itemId: 22_001,
