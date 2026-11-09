@@ -5,9 +5,12 @@ import {
   BrowserJobResultInput,
   Channel,
   ClaimBrowserJobInput,
+  DiscoverFacebookGroupsInput,
+  DiscoverFacebookGroupsResult,
   FacebookAccount,
   FacebookHeartbeatInput,
   FacebookHeartbeatResult,
+  PrepareFacebookJoinInput,
   SetGroupPostingPolicyInput,
 } from "@ofertas/contracts";
 import {
@@ -18,8 +21,10 @@ import {
   claimBrowserJob,
   completeBrowserJob,
   type Deps,
+  discoverFacebookGroups,
   facebookHeartbeat,
   listFacebookAccounts,
+  prepareFacebookJoin,
   resumeFacebookAccount,
   setGroupPostingPolicy,
 } from "@ofertas/core";
@@ -40,6 +45,17 @@ export const facebookRoutes: FastifyPluginAsyncZod<{ deps: Deps }> = async (app,
 
   // ── Painel, agentes ────────────────────────────────────────────
   app.get(
+    "/facebook/discover",
+    {
+      schema: {
+        tags,
+        querystring: DiscoverFacebookGroupsInput,
+        response: { 200: DiscoverFacebookGroupsResult, ...errors },
+      },
+    },
+    async (req) => discoverFacebookGroups(ctx(req), req.query),
+  );
+  app.get(
     "/facebook/accounts",
     { schema: { tags, response: { 200: z.array(FacebookAccount), ...errors } } },
     async (req) => listFacebookAccounts(ctx(req)),
@@ -58,6 +74,21 @@ export const facebookRoutes: FastifyPluginAsyncZod<{ deps: Deps }> = async (app,
   );
 
   // ── Extensão ───────────────────────────────────────────────────
+  app.post(
+    "/facebook/joins/prepare",
+    {
+      schema: {
+        tags,
+        body: PrepareFacebookJoinInput,
+        ...mutationSchema,
+        response: {
+          200: MutationResult(z.object({ group_id: z.string(), url: z.url() })),
+          ...errors,
+        },
+      },
+    },
+    async (req) => prepareFacebookJoin(ctx(req), req.body, mutationOpts(req)),
+  );
   app.post(
     "/facebook/heartbeat",
     {

@@ -1,5 +1,5 @@
 import { fakeAffiliateControls } from "@ofertas/connectors";
-import { browserJobs, facebookAccounts, limits, posts } from "@ofertas/db";
+import { facebookAccounts, limits, posts } from "@ofertas/db";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -10,14 +10,19 @@ import {
   type Ctx,
   claimBrowserJob,
   completeBrowserJob,
+  completeUpload,
   connectAffiliateAccount,
   createToken,
   type Deps,
+  discoverFacebookGroups,
   facebookHeartbeat,
   listChannels,
   listFacebookAccounts,
   listPosts,
+  prepareFacebookJoin,
+  receiveUpload,
   recoverBrowserJobs,
+  requestUpload,
   resolveSession,
   resumeFacebookAccount,
   runPublisher,
@@ -26,7 +31,7 @@ import {
   searchOffers,
   setGroupPostingPolicy,
 } from "../src";
-import { createOwner, setupTestDeps } from "./helpers";
+import { createOwner, fakeFetchMedia, setupTestDeps } from "./helpers";
 
 let deps: Deps & { close: () => Promise<void> };
 
@@ -83,6 +88,65 @@ async function postStatus(id: string) {
 }
 
 describe("grupos do Facebook pela extensão", () => {
+  it("audita a tentativa de entrada, aceita dry_run e limita a dez por dia", async () => {
+    const { ext, fbUserId } = await setup();
+    const input = { fb_user_id: fbUserId, group_id: "333333", name: "Grupo" };
+    expect((await prepareFacebookJoin(ext, input, { dryRun: true })).status).toBe("dry_run");
+    for (let n = 0; n < 10; n++) {
+      const res = await prepareFacebookJoin(ext, { ...input, group_id: String(333333 + n) });
+      expect(res.status).toBe("done");
+    }
+    await expect(prepareFacebookJoin(ext, { ...input, group_id: "444444" })).rejects.toMatchObject({
+      code: "LIMIT_EXCEEDED",
+    });
+  });
+  it("agenda convite com imagem própria e entrega trabalho automático, sem oferta", async () => {
+    const { ext, fbUserId, groups } = await setup();
+    const png = (await fakeFetchMedia("x")).data;
+    const ticket = done(
+      await requestUpload(ext, {
+        filename: "convite.png",
+        mime: "image/png",
+        size_bytes: png.length,
+      }),
+    );
+    const url = new URL(ticket.put_url);
+    await receiveUpload(
+      deps,
+      ticket.upload_id,
+      Number(url.searchParams.get("e")),
+      url.searchParams.get("s") ?? "",
+      png,
+    );
+    const creative = done(await completeUpload(ext, { upload_id: ticket.upload_id }));
+    const group = groups[0];
+    if (!group) throw new Error("grupo");
+    const planned = done(
+      await schedulePosts(ext, {
+        text: "Entre no grupo: https://chat.whatsapp.com/abc",
+        channel_ids: [group.id],
+        creative_id: creative.id,
+        auto_publish: true,
+        at: past(),
+      }),
+    );
+    expect(planned.scheduled).toHaveLength(1);
+    await runPublisher(deps);
+    const job = await claimBrowserJob(ext, { fb_user_id: fbUserId });
+    expect(job).toMatchObject({ auto_publish: true, has_image: true });
+    expect(new Date(job?.lease_until ?? 0).getTime() - Date.now()).toBeGreaterThan(15 * 60_000);
+    const image = await browserJobImage(ext, job?.id ?? "");
+    expect(image.contentType).toBe("image/png");
+  });
+  it("monta buscas do nicho para a pessoa avaliar", async () => {
+    const { ext } = await setup();
+    const result = discoverFacebookGroups(ext, { niche: "  casa  ", location: "São Paulo" });
+    expect(result.searches).toHaveLength(3);
+    expect(result.searches[0]).toEqual({
+      query: "casa São Paulo",
+      url: "https://www.facebook.com/search/groups/?q=casa%20S%C3%A3o%20Paulo",
+    });
+  });
   it("registra o perfil e o grupo pela extensão", async () => {
     const { ctx, groups } = await setup();
     expect(groups[0]).toMatchObject({
@@ -233,30 +297,21 @@ describe("grupos do Facebook pela extensão", () => {
     expect(p?.error).toContain("pode ter saído");
   });
 
-  it("post de oferta leva o card, baixado pela API com o token", async () => {
+  it("não agenda ofertas nos grupos do Facebook", async () => {
     const { ctx, ext, fbUserId, groups } = await setup();
     await connectAffiliateAccount(ctx, { platform: "shopee", label: "Shopee", mode: "fake" });
     const { items } = await searchOffers(ctx, { keyword: "air fryer", limit: 1 });
     const offer = done(await saveOffer(ctx, { product_id: items[0]?.product_id ?? "" }));
-    done(
+    const planned = done(
       await schedulePosts(ctx, {
         offer_ids: [offer.id],
         channel_ids: [groups[0]?.id ?? ""],
         at: past(),
       }),
     );
-    await runPublisher(deps);
-    const job = await claimBrowserJob(ext, { fb_user_id: fbUserId });
-    expect(job?.has_image).toBe(true);
-    expect(job?.text).toContain("http://go.test/");
-    const img = await browserJobImage(ext, job?.id ?? "");
-    expect(img.contentType).toMatch(/^image\//);
-    expect(img.data.length).toBeGreaterThan(100);
-    const [row] = await deps.db
-      .select()
-      .from(browserJobs)
-      .where(eq(browserJobs.id, job?.id ?? ""));
-    expect(row?.status).toBe("claimed");
+    expect(planned.scheduled).toHaveLength(0);
+    expect(planned.skipped[0]?.reason).toContain("apenas convites");
+    expect(await claimBrowserJob(ext, { fb_user_id: fbUserId })).toBeNull();
   });
 
   it("token sem o escopo da extensão não pega trabalhos", async () => {

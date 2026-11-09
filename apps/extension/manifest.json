@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "OfZap",
-  "version": "0.2.0",
-  "description": "Cadastra ofertas no OfZap (Mercado Livre, Amazon, Shopee) e prepara os posts dos grupos do Facebook para você revisar e publicar.",
+  "version": "0.3.0",
+  "description": "Cadastra ofertas, descobre grupos do Facebook e publica convites pontuais com imagem e texto escolhidos por você.",
   "action": {
     "default_title": "OfZap",
     "default_popup": "popup.html"
@@ -24,7 +24,8 @@
     "clipboardRead",
     "clipboardWrite",
     "alarms",
-    "tabs"
+    "tabs",
+    "unlimitedStorage"
   ],
   "optional_host_permissions": ["http://*/*", "https://*/*"]
 }

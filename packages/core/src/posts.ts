@@ -23,7 +23,7 @@ import { recordAudit } from "./audit";
 import { requireScope } from "./authz";
 import { type Ctx, type Deps, now, systemActor } from "./context";
 import { couponIsLive, couponMessage, loadCoupons } from "./coupons";
-import { creativeImageForPost } from "./creatives";
+import { creativeImageForPost, customPostImage } from "./creatives";
 import { olderThan, toPage } from "./cursor";
 import { AppError } from "./errors";
 import { emitEvent } from "./events";
@@ -259,17 +259,30 @@ export async function schedulePosts(ctx: Ctx, raw: SchedulePostsInput, opts: Mut
       if (!i.offer_ids?.length && !i.coupon_ids?.length && !i.text) {
         throw new AppError("VALIDATION_ERROR", "Informe offer_ids, coupon_ids ou text.");
       }
+      if (
+        i.auto_publish &&
+        (i.offer_ids?.length || i.coupon_ids?.length || !i.text || !i.creative_id)
+      ) {
+        throw new AppError(
+          "VALIDATION_ERROR",
+          "Publicação automática é só para texto livre com imagem de convite.",
+        );
+      }
       if (i.creative_id) {
-        if (i.offer_ids?.length !== 1) {
-          throw new AppError("VALIDATION_ERROR", "creative_id só pode ser usado com uma oferta.", {
-            hint: "Para várias ofertas, use creative_template (gera um card por oferta).",
-          });
+        if ((i.offer_ids?.length ?? 0) > 1 || i.coupon_ids?.length) {
+          throw new AppError("VALIDATION_ERROR", "Escolha uma imagem por publicação.");
         }
         const [cr] = await c.db
           .select({ id: creatives.id, offerId: creatives.offerId })
           .from(creatives)
           .where(and(eq(creatives.id, i.creative_id), eq(creatives.workspaceId, wsId)));
         if (!cr) throw new AppError("NOT_FOUND", "Criativo não encontrado.");
+        if (i.offer_ids?.length === 1 && cr.offerId !== i.offer_ids[0]) {
+          throw new AppError("VALIDATION_ERROR", "A imagem não pertence à oferta selecionada.");
+        }
+        if (!i.offer_ids?.length && (!i.text || cr.offerId)) {
+          throw new AppError("VALIDATION_ERROR", "Use uma imagem sem oferta com o texto livre.");
+        }
       }
       const { targets, skipped } = await resolveTargets(c.db, wsId, i.channel_ids, i.segment_ids);
       const sched = await workspaceSchedule(c.db, wsId);
@@ -371,6 +384,14 @@ export async function schedulePosts(ctx: Ctx, raw: SchedulePostsInput, opts: Mut
         const last = await lastSlot(c.db, ch.id);
         let cursor = new Date(Math.max(start.getTime(), last ? last.getTime() + minInterval : 0));
         for (const item of items) {
+          if (ch.type === "fb_group" && (item.offerId || item.couponId)) {
+            skipped.push({
+              channel_id: ch.id,
+              offer_id: item.offerId,
+              reason: "Grupos do Facebook recebem apenas convites em texto livre.",
+            });
+            continue;
+          }
           if (item.couponId && recentCoupons.has(`${ch.id}:${item.couponId}`)) {
             skipped.push({
               channel_id: ch.id,
@@ -416,6 +437,7 @@ export async function schedulePosts(ctx: Ctx, raw: SchedulePostsInput, opts: Mut
             customText: x.offer_id || x.coupon_id ? null : (i.text ?? null),
             templateId: i.template_id ?? null,
             withImage: i.with_image,
+            autoPublish: i.auto_publish,
             creativeId: i.creative_id ?? null,
             creativeTemplate: i.creative_template ?? null,
             scheduledAt: new Date(x.scheduled_at),
@@ -813,6 +835,11 @@ export async function publishPost(deps: Deps, postId: string): Promise<PublishOu
         }
         imageUrl = creative?.url ?? o.product.imageUrls[0] ?? null;
       }
+    }
+
+    if (!post.offerId && !post.couponId && post.creativeId && post.withImage) {
+      imageUrl = await customPostImage(deps, wsId, post.creativeId);
+      if (!imageUrl) return finish(deps, post, "failed", "Imagem do convite não encontrada.");
     }
 
     if (fbAccount) {

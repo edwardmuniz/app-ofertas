@@ -2,24 +2,24 @@
 
 **Objetivo principal: captação de membros.** Divulgar os grupos de WhatsApp do negócio em grupos do Facebook do nicho de que o usuário participa e que aceitam divulgação — um post (imagem + texto) com o **link de convite do grupo de WhatsApp** (o `invite_url` já cadastrado no OfZap), para atrair gente para os grupos. (A mesma estrutura também publica ofertas, se o usuário quiser.)
 
-O Facebook não tem API para postar em grupos (a API de grupos foi encerrada em 2024), então a publicação é **semiautomática**: a **extensão do Chrome** prepara cada post na interface normal do Facebook e **o usuário confirma e publica**. Usa a mesma fila, regras e limites dos grupos de WhatsApp.
+O Facebook não tem API para postar em grupos (a API de grupos foi encerrada em 2024). Para **convites pontuais**, a extensão pode preencher imagem e texto e clicar em Publicar pela interface visível, após o usuário criar a campanha na extensão. Ofertas e cupons não são agendados para grupos do Facebook. A fila, política do grupo e limites são do OfZap.
 
 ## Princípios
 
-- **Semiautomático: a pessoa publica.** A extensão preenche o texto, oferece a imagem e abre o grupo; a ação de postar é um clique do usuário no botão **Publicar** do próprio Facebook. A extensão não publica sozinha.
-- **Sem burlar o Facebook.** A extensão não lê nem envia cookies de sessão, não captura nem repete tokens (`fb_dtsg`, `lsd`, `doc_id`), não chama endpoints internos e não tenta driblar bloqueios, CAPTCHA ou detecção. Usa só a interface visível e o que a pessoa faz.
+- **Convite pontual automático, criado pela pessoa.** A pessoa informa na extensão o link do seu grupo de WhatsApp, uma ou mais imagens, textos e grupos de destino. A extensão tenta publicar cada convite na interface visível. Se não confirmar imagem e conclusão na tela, deixa o trabalho para revisão.
+- **Interface visível.** A extensão não lê nem envia cookies de sessão, não captura nem repete tokens (`fb_dtsg`, `lsd`, `doc_id`), não chama endpoints internos e não tenta driblar bloqueios ou CAPTCHA. Os cliques automáticos de convite e entrada usam os controles da página e podem falhar quando o Facebook muda a interface.
 - **O servidor decide, a extensão prepara.** Fila, regras, limites, deduplicação, link rastreado, texto e imagem ficam no `core`, como no WhatsApp. A extensão busca o próximo trabalho, prepara o post e devolve o resultado (link do post ou erro).
 - **Só grupos que aceitam divulgação.** O usuário importa e mantém apenas grupos que permitem divulgar. Um grupo marcado como "não deixa postar" é pausado e não recebe mais posts (ver [Política do grupo](#política-do-grupo)).
 - **Parar ao primeiro sinal de bloqueio.** Se o Facebook avisa bloqueio, o perfil é pausado por 24 h e só uma pessoa religa.
 
 ## Como a extensão prepara o post
 
-Fluxo semiautomático, sem automação de clique nem leitura interna do Facebook:
+Fluxo assistido para ofertas e automático para convites pontuais, sempre pela interface visível:
 
 1. **Pega o trabalho.** O service worker (MV3) consulta a fila do OfZap a cada minuto e, quando há um post para um perfil, baixa a imagem pela API do OfZap (com o token) e guarda o trabalho. Um de cada vez.
 2. **Prepara na página do grupo.** Na aba do grupo (`facebook.com/groups/<id>`), um painel do OfZap mostra o texto pronto e a imagem. A pessoa clica em **Preencher no Facebook** (o texto vai para o campo "Escreva algo…") e **Copiar imagem** (a imagem vai para a área de transferência; cola com Ctrl+V) — ou usa os botões de copiar/baixar como alternativa.
-3. **Publica.** A pessoa revisa e clica em **Publicar** no Facebook.
-4. **Confirma.** A pessoa copia o link do post (menu "…" do post → Copiar link) e cola no painel. A extensão valida o link e registra a publicação no OfZap (ou marca o erro, ex.: "grupo não deixa postar").
+3. **Publica.** Para posts assistidos já existentes, a pessoa revisa e clica em **Publicar**. Para convites pontuais com `auto_publish`, a extensão anexa a imagem, verifica a prévia e clica em **Publicar**. Se houver dúvida, mostra o erro e não confirma no OfZap.
+4. **Confirma.** No fluxo assistido, a pessoa cola o link do post. No convite automático, a extensão registra a conclusão quando o editor fecha após o clique; o link do post pode ficar indisponível e precisa ser conferido no grupo. Se houver erro, a pessoa pode usar o painel da extensão.
 
 Tipos de post: texto, e texto + imagem (card da oferta ou foto do produto, montados pelo servidor).
 
@@ -56,7 +56,7 @@ Token com escopo novo `facebook:execute`, no preset **Extensão do Chrome** (cri
 
 ## Importar grupos
 
-Nesta primeira etapa, o grupo entra pela extensão ao preparar/registrar (`POST /v1/facebook/groups`). A leitura automática de "Seus grupos" fica para a etapa 2, sempre com escolha do usuário (nada entra sozinho), como no WhatsApp.
+O grupo entra pela extensão ao preparar/registrar (`POST /v1/facebook/groups`). Na descoberta, a pessoa escolhe os candidatos; a extensão tenta entrar nos selecionados e registra apenas entradas confirmadas. A leitura automática de "Seus grupos" ainda não foi feita.
 
 ## Política do grupo
 
@@ -78,11 +78,13 @@ A análise do grupo (`analyze_facebook_group`) é feita pela extensão na págin
 
 ## Campanha de convite
 
-O post de divulgação é um post comum com **texto livre + imagem**, agendado nos grupos `fb_group` aptos: o texto traz o **link de convite do grupo de WhatsApp** (o `invite_url` do canal `wa_group`, de preferência um convite rastreado para medir quantos entraram) e a imagem é uma arte de convite (upload próprio ou criativo). A fila, os limites e a confirmação são os mesmos. Um atalho de "campanha de convite" (escolher o grupo de WhatsApp e a arte, e disparar nos grupos aptos de uma vez) é a próxima entrega.
+O post de divulgação é um post comum com **texto livre + imagem**, agendado nos grupos `fb_group` aptos. A pessoa cola o link do grupo de WhatsApp na extensão e escolhe as imagens e textos. A extensão distribui variações pelos grupos escolhidos e agenda um convite por grupo. A fila e os limites são os existentes. Buscar o `invite_url` cadastrado e criar um link rastreado automaticamente ficam para outra entrega.
 
 ## Etapas
 
 1. **Publicar em 1 grupo (semiautomático) ✅** — extensão (service worker + painel no grupo), `browser_jobs`, heartbeat, fila, limites, bloqueio, confirmação pelo link do post. Aceite: post com texto e imagem preparado num grupo, publicado pelo usuário, com o link voltando para a Fila.
 2. **Política do grupo ✅** — "Analisar este grupo" na extensão, classificação por regras/descrição/últimos posts, correção por pessoa ou agente, e a trava que impede postar em grupo que não aceita (ou não analisado).
 3. **Campanha de convite** — atalho que pega o `invite_url` do grupo de WhatsApp + a arte e agenda o convite nos grupos aptos; convite rastreado para medir entradas.
-4. **Descobrir grupos do nicho** — sugerir grupos para o usuário avaliar e entrar (sem adicionar ninguém sem consentimento).
+4. **Descobrir grupos do nicho 🟨** — a extensão monta buscas por nicho e localidade e lê até 40 links visíveis na aba, sob comando da pessoa. Ela escolhe até 10 grupos por vez; o `core` autoriza e audita cada tentativa com `prepare_facebook_join` / `POST /v1/facebook/joins/prepare` (limite de 10 por perfil em 24 h), e a extensão tenta entrar pela interface visível, um a cada 5 min. Pedidos pendentes, perguntas de entrada e aceite de regras exigem a pessoa na aba. Grupos com entrada confirmada são cadastrados pela API `POST /v1/facebook/groups`; antes de publicar, a política precisa estar allowed/approval/restricted. API `GET /v1/facebook/discover` e tool MCP `discover_facebook_groups` geram as buscas. Sem varredura invisível nem coleta de membros. Validar no Facebook real.
+
+5. **Convite pontual 🟨** — a extensão recebe link do grupo de WhatsApp, uma ou mais imagens e variações de texto separadas por `---`; alterna imagens/textos pelos grupos selecionados e agenda um post por grupo a cada 10 min via `schedule_posts` (`auto_publish: true`, somente texto livre + imagem). Usa os uploads de criativos e a fila existente. O token da extensão precisa `posts:write` e `creatives:write`. Convites não estão rastreados automaticamente nesta etapa. Validar a anexação e a confirmação do post no Facebook real.

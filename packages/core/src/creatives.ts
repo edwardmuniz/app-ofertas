@@ -783,6 +783,18 @@ export async function creativeImageForPost(
   return null;
 }
 
+/** Imagem enviada pela extensão para um post de texto livre, sem oferta associada. */
+export async function customPostImage(deps: Deps, workspaceId: string, creativeId: string) {
+  const [row] = await deps.db
+    .select()
+    .from(creatives)
+    .where(and(eq(creatives.id, creativeId), eq(creatives.workspaceId, workspaceId)));
+  if (!row || row.offerId) return null;
+  const variants = (await variantsOf(deps.db, [row.id])).get(row.id) ?? [];
+  const variant = variants.find((x) => x.v.format === "wa_image") ?? variants[0];
+  return variant ? externalMediaUrl(deps, variant.asset) : null;
+}
+
 // ── Remoção ─────────────────────────────────────────────────────
 
 /**

@@ -9,6 +9,7 @@ runInNewContext(readFileSync(new URL("../fb-core.js", import.meta.url), "utf8"),
 const {
   fbzGroupIdFromUrl,
   fbzIsGroupPage,
+  fbzGroupCandidateFromLink,
   fbzJobMatchesPage,
   fbzComposerText,
   fbzPickVariation,
@@ -29,6 +30,26 @@ describe("grupo da aba", () => {
     expect(fbzGroupIdFromUrl("https://www.facebook.com/groups/feed/")).toBeNull();
     expect(fbzGroupIdFromUrl("https://example.com/groups/1")).toBeNull();
     expect(fbzIsGroupPage("https://www.facebook.com/watch")).toBe(false);
+  });
+});
+
+describe("candidatos visíveis na busca", () => {
+  it("aceita só a página principal de um grupo e limpa o link", () => {
+    expect(
+      fbzGroupCandidateFromLink(
+        "https://www.facebook.com/groups/123/?ref=search",
+        "  Ofertas   SP  ",
+      ),
+    ).toEqual({
+      id: "123",
+      name: "Ofertas SP",
+      url: "https://www.facebook.com/groups/123/",
+    });
+    expect(
+      fbzGroupCandidateFromLink("https://www.facebook.com/groups/123/posts/9", "Post"),
+    ).toBeNull();
+    expect(fbzGroupCandidateFromLink("https://example.com/groups/123", "Outro")).toBeNull();
+    expect(fbzGroupCandidateFromLink("https://www.facebook.com/groups/123/", " ")).toBeNull();
   });
 });
 

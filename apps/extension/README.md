@@ -1,7 +1,7 @@
 # Extensão do Chrome do OfZap
 
-Faz duas coisas: **cadastra ofertas** a partir da página de um produto e ajuda a **publicar posts
-nos grupos do Facebook** (de forma semiautomática — ver no fim).
+**Cadastra ofertas** a partir da página de um produto e ajuda a **descobrir grupos do Facebook,
+participar dos selecionados e publicar convites pontuais** com imagem e texto.
 
 ## Cadastrar oferta
 
@@ -47,11 +47,12 @@ título, foto, preço, Pix, parcelas, cupom e o seu link de afiliado. Confira os
 - As classes das páginas das lojas mudam com o tempo: se um campo parar de vir, ajuste o seletor
   em `extract.js`. O formulário sempre deixa corrigir antes de cadastrar.
 
-## Posts nos grupos do Facebook (semiautomático)
+## Posts nos grupos do Facebook
 
-A extensão também ajuda a publicar as ofertas agendadas no OfZap em grupos do Facebook de que você
-participa e que aceitam divulgação. **Ela não publica sozinha: você revisa e clica em Publicar.**
-Ela não lê cookies, não captura tokens e não usa nada interno do Facebook — só a tela normal.
+A extensão ajuda a publicar convites nos grupos do Facebook de que você participa e que aceitam
+divulgação. Ofertas e cupons não são agendados para esses grupos. Para o convite pontual criado na
+extensão, ela tenta publicar pela tela normal do Facebook. Ela não lê cookies,
+não captura tokens nem usa endpoints internos do Facebook.
 
 ### Preparar
 
@@ -84,6 +85,29 @@ o OfZap diz se o grupo **aceita divulgação**, aceita com aprovação/condiçã
 Grupos que não aceitam (ou ainda não analisados) **não recebem post**. É só um palpite — você pode
 corrigir no painel, e a sua correção manual não é desfeita por uma análise depois.
 
+### Descobrir grupos do nicho
+
+Clique na lupa da extensão, informe o nicho e, se quiser, uma cidade ou região. Abra uma das buscas
+geradas no Facebook. Role a página para carregar os resultados e, com essa aba ativa, clique na
+extensão → lupa → **Ler resultados visíveis**. A lista mostra grupos para você abrir, conferir as regras
+e decidir se participa. No grupo aberto, use **Analisar este grupo** antes de agendar divulgação.
+Selecione até 10 candidatos e clique em **Participar dos selecionados**. A extensão tenta entrar
+em um grupo a cada 5 minutos; se houver perguntas ou aceite de regras, deixe a aba aberta e
+responda no Facebook. Use **Ver andamento das entradas** para conferir o resultado. Grupos em que
+a entrada foi confirmada são cadastrados no OfZap. Analise a política antes de divulgar.
+
+### Convite pontual com imagem
+
+Clique no envelope da extensão. Informe o link do seu grupo de WhatsApp, um ou mais textos
+(separe versões com uma linha `---`), uma ou mais imagens e selecione os grupos do Facebook aptos.
+Clique em **Agendar convite**. O OfZap alterna textos e imagens entre os grupos, com 10 minutos
+entre os agendamentos. Para esses convites, a extensão abre o grupo, tenta anexar a imagem e
+publicar pela interface visível. Se não conseguir confirmar a prévia ou a publicação, o painel
+na página mostra o problema para você revisar. Ofertas não são enviadas a grupos do Facebook.
+
+O token precisa do preset **Extensão do Chrome** atualizado (escopos `facebook:execute`,
+`posts:write` e `creatives:write`). Se você criou um token antes desta versão, gere outro no painel.
+
 ### Desenvolvimento (Facebook)
 
 - `fb-core.js`: regras puras (casar grupo da aba com o trabalho, escolher variação de texto,
@@ -91,4 +115,5 @@ corrigir no painel, e a sua correção manual não é desfeita por uma análise 
 - `fb-bridge.js`: service worker (MV3). Fala só com a API do OfZap: heartbeat, pega trabalho, baixa
   a imagem, registra o resultado. Não fala com o Facebook.
 - `fb-group.js`: content script na página do grupo. Monta o painel, preenche/copia e confirma pelo
-  link do post. Toda ação de publicar é um clique da pessoa.
+  link do post. Para convites pontuais com `auto_publish`, a extensão também tenta anexar a imagem
+  e clicar em Publicar pela interface visível.

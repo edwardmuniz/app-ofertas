@@ -178,7 +178,16 @@ export const SchedulePostsInput = z.object({
     .enum(CREATIVE_TEMPLATES)
     .optional()
     .describe("Gera o card na hora do envio (preço sempre atualizado). Sem isto: foto do produto."),
-  creative_id: z.uuid().optional().describe("Usa um criativo pronto (só com uma oferta)."),
+  creative_id: z
+    .uuid()
+    .optional()
+    .describe("Usa um criativo pronto: da oferta ou uma imagem enviada para texto livre."),
+  auto_publish: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Para convites em grupos do Facebook: a extensão tenta publicar após preparar; use só com texto livre e imagem.",
+    ),
 });
 export type SchedulePostsInput = z.input<typeof SchedulePostsInput>;
 

@@ -7,11 +7,14 @@ import {
   AnalyzeFacebookGroupInput,
   BrowserJobResultInput,
   ClaimBrowserJobInput,
+  DiscoverFacebookGroupsInput,
   type FacebookAccount,
   FacebookHeartbeatInput,
+  PrepareFacebookJoinInput,
   SetGroupPostingPolicyInput,
 } from "@ofertas/contracts";
 import {
+  auditLogs,
   browserJobs,
   channelStatsDaily,
   channels,
@@ -19,7 +22,7 @@ import {
   facebookAccounts,
   posts,
 } from "@ofertas/db";
-import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { recordAudit } from "./audit";
 import { requireHuman, requireScope } from "./authz";
 import {
@@ -129,6 +132,67 @@ export async function listFacebookAccounts(ctx: Ctx): Promise<FacebookAccount[]>
     .where(eq(facebookAccounts.workspaceId, ctx.actor.workspaceId))
     .orderBy(asc(facebookAccounts.createdAt));
   return toAccounts(ctx.db, rows, now(ctx), await workspaceTz(ctx.db, ctx.actor.workspaceId));
+}
+
+/** Monta buscas para a pessoa examinar na interface do Facebook. Não lê dados da conta. */
+export function discoverFacebookGroups(ctx: Ctx, raw: DiscoverFacebookGroupsInput) {
+  requireScope(ctx.actor, "channels:read");
+  const input = DiscoverFacebookGroupsInput.parse(raw);
+  const base = [input.niche, input.location].filter(Boolean).join(" ");
+  const queries = [...new Set([base, `${base} ofertas`, `${base} promoções`])];
+  return {
+    searches: queries.map((query) => ({
+      query,
+      url: `https://www.facebook.com/search/groups/?q=${encodeURIComponent(query)}`,
+    })),
+  };
+}
+
+/** Autoriza uma tentativa de entrada antes de a extensão clicar em Participar. */
+export async function prepareFacebookJoin(
+  ctx: Ctx,
+  raw: PrepareFacebookJoinInput,
+  opts: MutationOptions = {},
+) {
+  const input = PrepareFacebookJoinInput.parse(raw);
+  const wsId = ctx.actor.workspaceId;
+  return runMutation(ctx, {
+    action: "facebook.prepare_join",
+    scope: "facebook:execute",
+    input,
+    opts,
+    target: (i) => ({ type: "facebook_group", id: i.group_id }),
+    preview: async (c, i) => {
+      const account = await accountByFbId(c.db, wsId, i.fb_user_id);
+      if (account.pausedUntil && account.pausedUntil > now(c)) {
+        throw new AppError("CONFLICT", "Perfil pausado após bloqueio do Facebook.");
+      }
+      const since = new Date(now(c).getTime() - 24 * HOUR);
+      const [count] = await c.db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(auditLogs)
+        .where(
+          and(
+            eq(auditLogs.workspaceId, wsId),
+            eq(auditLogs.action, "facebook.prepare_join"),
+            eq(auditLogs.result, "ok"),
+            gte(auditLogs.createdAt, since),
+            sql`${auditLogs.params}->>'fb_user_id' = ${i.fb_user_id}`,
+          ),
+        );
+      if ((count?.n ?? 0) >= 10) {
+        throw new AppError(
+          "LIMIT_EXCEEDED",
+          "Limite de 10 tentativas de entrada por perfil em 24 horas.",
+        );
+      }
+      return { group_id: i.group_id, name: i.name, attempts_remaining: 10 - (count?.n ?? 0) };
+    },
+    execute: async (_tx, i) => ({
+      group_id: i.group_id,
+      url: `https://www.facebook.com/groups/${encodeURIComponent(i.group_id)}/`,
+    }),
+  });
 }
 
 /** Tira a pausa do perfil (depois de um bloqueio). Só pessoas: a pausa protege a conta. */
@@ -425,13 +489,18 @@ export async function claimBrowserJob(ctx: Ctx, raw: ClaimBrowserJobInput) {
   if (!id) return null;
   const [job] = await ctx.db.select().from(browserJobs).where(eq(browserJobs.id, id));
   if (!job) return null;
+  const jobLease = job.payload.auto_publish ? new Date(at.getTime() + 20 * MINUTE) : lease;
+  if (job.payload.auto_publish) {
+    await ctx.db.update(browserJobs).set({ leaseUntil: jobLease }).where(eq(browserJobs.id, id));
+  }
   return {
     id: job.id,
     type: job.type,
     group_id: job.payload.group_id,
     text: job.payload.text,
     has_image: Boolean(job.payload.image_source_url),
-    lease_until: lease.toISOString(),
+    auto_publish: Boolean(job.payload.auto_publish),
+    lease_until: jobLease.toISOString(),
   };
 }
 
@@ -639,6 +708,9 @@ export async function facebookGate(
   channel: ChannelRow,
 ): Promise<FacebookGate> {
   const at = now(deps);
+  if (post.offerId || post.couponId) {
+    return { kind: "fail", reason: "Grupos do Facebook recebem apenas convites em texto livre." };
+  }
   if (!channel.facebookAccountId || !channel.externalId) {
     return { kind: "fail", reason: "Grupo sem perfil do Facebook ligado." };
   }
@@ -738,6 +810,7 @@ export async function queueFacebookPost(
         group_id: channel.externalId ?? "",
         text: content.body,
         image_source_url: content.imageUrl,
+        auto_publish: post.autoPublish,
       },
     });
     await tx

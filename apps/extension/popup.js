@@ -3,7 +3,8 @@ const { ofzMoney, ofzAffiliateLink } = globalThis;
 
 const el = (id) => document.getElementById(id);
 const show = (id) => {
-  for (const s of ["settings", "offer", "unsupported"]) el(s).hidden = s !== id;
+  for (const s of ["settings", "offer", "unsupported", "discover", "invite"])
+    el(s).hidden = s !== id;
 };
 const STORE_NAMES = {
   mercadolivre: "Mercado Livre",
@@ -131,6 +132,257 @@ async function saveSettings() {
     setTimeout(start, 900);
   } catch (err) {
     message("settings-msg", `Não funcionou: ${err.message}`, false);
+  }
+}
+
+// ── Descoberta de grupos (busca e resultados visíveis, sem entrada automática) ──
+function addDiscoveryItem(container, label, action, buttonText) {
+  const row = document.createElement("div");
+  row.className = "discovery-item";
+  const name = document.createElement("span");
+  name.textContent = label;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "btn-ghost";
+  button.textContent = buttonText;
+  button.addEventListener("click", action);
+  row.append(name, button);
+  container.append(row);
+}
+
+async function discoverSearch() {
+  const niche = el("discover-niche").value.trim();
+  const location = el("discover-location").value.trim();
+  if (niche.length < 2)
+    return message("discover-msg", "Informe um nicho com pelo menos 2 caracteres.", false);
+  try {
+    const params = new URLSearchParams({ niche });
+    if (location) params.set("location", location);
+    const result = await call(`/v1/facebook/discover?${params}`);
+    const list = el("discover-searches");
+    list.replaceChildren();
+    for (const search of result.searches || []) {
+      addDiscoveryItem(
+        list,
+        search.query,
+        () => chrome.tabs.create({ url: search.url }),
+        "Abrir busca",
+      );
+    }
+    message("discover-msg", "Abra uma busca, role os resultados e leia a aba.", true);
+  } catch (err) {
+    message("discover-msg", err.message, false);
+  }
+}
+
+async function discoverRead() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (
+    !tab?.id ||
+    !/^https:\/\/(?:www\.|m\.|web\.)?facebook\.com\/search\/groups\/?/i.test(tab.url || "")
+  ) {
+    return message("discover-msg", "Abra uma busca de grupos do Facebook nesta aba.", false);
+  }
+  try {
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["fb-core.js"] });
+    const [result] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ["fb-discover.js"],
+    });
+    const groups = result?.result?.groups || [];
+    const list = el("discover-groups");
+    list.replaceChildren();
+    for (const group of groups) {
+      const row = document.createElement("div");
+      row.className = "discovery-item";
+      const check = document.createElement("input");
+      check.type = "checkbox";
+      check.dataset.id = group.id;
+      check.dataset.name = group.name;
+      const name = document.createElement("span");
+      name.textContent = group.name;
+      const open = document.createElement("button");
+      open.type = "button";
+      open.className = "btn-ghost";
+      open.textContent = "Avaliar";
+      open.addEventListener("click", () => chrome.tabs.create({ url: group.url }));
+      row.append(check, name, open);
+      list.append(row);
+    }
+    message(
+      "discover-msg",
+      groups.length
+        ? `${groups.length} grupo(s) visível(is). Abra um para conferir regras e participação.`
+        : "Nenhum grupo visível. Role a busca para carregar resultados e tente de novo.",
+      Boolean(groups.length),
+    );
+  } catch (err) {
+    message("discover-msg", `Não consegui ler a aba: ${err.message}`, false);
+  }
+}
+
+async function joinSelected() {
+  const groups = [...el("discover-groups").querySelectorAll("input:checked")].map((input) => ({
+    id: input.dataset.id,
+    name: input.dataset.name,
+  }));
+  if (!groups.length)
+    return message("discover-msg", "Selecione pelo menos um grupo para participar.", false);
+  if (groups.length > 10) return message("discover-msg", "Selecione até 10 grupos por vez.", false);
+  const result = await chrome.runtime.sendMessage({ type: "ofz-fb-join-batch", groups });
+  message(
+    "discover-msg",
+    result.ok
+      ? `${groups.length} grupo(s) na fila. O OfZap tentará entrar um por vez, com intervalo. Confira perguntas e regras no Facebook.`
+      : `Não consegui iniciar: ${result.reason || "erro"}`,
+    Boolean(result.ok),
+  );
+  await showJoinStatus();
+}
+
+async function showJoinStatus() {
+  const state = await chrome.storage.local.get(["fbJoinQueue", "fbJoinResults"]);
+  const queue = state.fbJoinQueue || [];
+  const results = (state.fbJoinResults || []).slice(-5);
+  const labels = {
+    joined: "entrou",
+    already: "já participa",
+    pending: "aguarda aprovação",
+    needs_questions: "responda perguntas na aba",
+    failed: "falhou",
+  };
+  el("discover-join-status").textContent = [
+    `${queue.length} grupo(s) aguardando entrada.`,
+    ...results.map(
+      (r) => `${r.name}: ${labels[r.status] || r.status}${r.reason ? ` (${r.reason})` : ""}`,
+    ),
+  ].join("\n");
+}
+
+// ── Publicação pontual de convite ──
+async function loadInviteGroups() {
+  const list = el("invite-groups");
+  list.replaceChildren();
+  try {
+    const { fbUserId } = await chrome.storage.local.get("fbUserId");
+    if (!fbUserId) {
+      message("invite-msg", "Configure o id do seu perfil do Facebook antes de agendar.", false);
+      return;
+    }
+    const accounts = await call("/v1/facebook/accounts");
+    const account = accounts.find((a) => a.fb_user_id === fbUserId);
+    const channels = await call("/v1/channels");
+    const groups = channels.filter(
+      (c) =>
+        c.type === "fb_group" &&
+        c.facebook_account_id === account?.id &&
+        c.status === "active" &&
+        ["allowed", "approval", "restricted"].includes(c.posting_policy),
+    );
+    for (const group of groups) {
+      const label = document.createElement("label");
+      label.className = "discovery-item";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.value = group.id;
+      const name = document.createElement("span");
+      name.textContent = group.name;
+      label.append(input, name);
+      list.append(label);
+    }
+    if (!groups.length)
+      message("invite-msg", "Analise e cadastre um grupo do Facebook antes de agendar.", false);
+  } catch (err) {
+    message("invite-msg", `Não consegui carregar os grupos: ${err.message}`, false);
+  }
+}
+
+function inviteVersions() {
+  return el("invite-texts")
+    .value.split(/\r?\n-{3,}\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+async function uploadInviteImage(file) {
+  const ticket = (
+    await call("/v1/creatives/uploads", {
+      method: "POST",
+      body: JSON.stringify({ filename: file.name, mime: file.type, size_bytes: file.size }),
+    })
+  ).result;
+  const put = await fetch(ticket.put_url, {
+    method: "PUT",
+    headers: { "content-type": file.type },
+    body: file,
+  });
+  if (!put.ok) throw new Error(`Falha ao enviar ${file.name} (${put.status}).`);
+  return (
+    await call(`/v1/creatives/uploads/${ticket.upload_id}/complete`, {
+      method: "POST",
+      body: JSON.stringify({ title: file.name }),
+    })
+  ).result.id;
+}
+
+async function scheduleInvite() {
+  const link = el("invite-link").value.trim();
+  const texts = inviteVersions();
+  const files = [...el("invite-images").files];
+  const groupIds = [...el("invite-groups").querySelectorAll("input:checked")].map((x) => x.value);
+  try {
+    const parsed = new URL(link);
+    if (parsed.protocol !== "https:" || !parsed.hostname) throw new Error();
+  } catch {
+    return message("invite-msg", "Informe um link HTTPS válido para o grupo de WhatsApp.", false);
+  }
+  if (!texts.length) return message("invite-msg", "Escreva pelo menos um texto.", false);
+  if (!files.length) return message("invite-msg", "Escolha pelo menos uma imagem.", false);
+  if (!groupIds.length)
+    return message("invite-msg", "Selecione pelo menos um grupo do Facebook.", false);
+  if (
+    files.some(
+      (f) => !["image/png", "image/jpeg", "image/webp"].includes(f.type) || f.size > 10_000_000,
+    )
+  ) {
+    return message("invite-msg", "Use imagens PNG, JPEG ou WebP de até 10 MB.", false);
+  }
+  const button = el("invite-send");
+  button.disabled = true;
+  let scheduled = 0;
+  try {
+    message("invite-msg", "Enviando imagens…", true);
+    const creatives = [];
+    for (const file of files) creatives.push(await uploadInviteImage(file));
+    const start = Date.now();
+    for (const [index, channelId] of groupIds.entries()) {
+      const text = texts[index % texts.length];
+      const body = text.includes(link) ? text : `${text}\n\n${link}`;
+      const result = (
+        await call("/v1/posts", {
+          method: "POST",
+          headers: { "idempotency-key": crypto.randomUUID() },
+          body: JSON.stringify({
+            text: body,
+            channel_ids: [channelId],
+            creative_id: creatives[index % creatives.length],
+            auto_publish: true,
+            at: new Date(start + index * 10 * 60_000).toISOString(),
+          }),
+        })
+      ).result;
+      scheduled += result.scheduled.length;
+      message("invite-msg", `Agendados ${scheduled} de ${groupIds.length} grupos…`, true);
+    }
+    message(
+      "invite-msg",
+      `${scheduled} convite(s) agendado(s). Abra os grupos quando o OfZap avisar.`,
+      true,
+    );
+  } catch (err) {
+    message("invite-msg", `${scheduled} convite(s) agendado(s). Erro: ${err.message}`, false);
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -297,6 +549,20 @@ async function start() {
 }
 
 el("open-settings").addEventListener("click", openSettings);
+el("open-discover").addEventListener("click", () => {
+  show("discover");
+  showJoinStatus();
+});
+el("open-invite").addEventListener("click", () => {
+  show("invite");
+  loadInviteGroups();
+});
+el("invite-refresh").addEventListener("click", loadInviteGroups);
+el("invite-send").addEventListener("click", scheduleInvite);
+el("discover-search").addEventListener("click", discoverSearch);
+el("discover-read").addEventListener("click", discoverRead);
+el("discover-join").addEventListener("click", joinSelected);
+el("discover-join-refresh").addEventListener("click", showJoinStatus);
 el("save-settings").addEventListener("click", saveSettings);
 el("reread").addEventListener("click", readPage);
 el("paste-link").addEventListener("click", pasteLink);

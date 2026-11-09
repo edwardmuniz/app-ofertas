@@ -9,6 +9,7 @@ import {
   CreateInviteLinkInput,
   CreateOfferLinkInput,
   CreateTrackedLinkInput,
+  DiscoverFacebookGroupsInput,
   FindSimilarInput,
   GenerateCreativeInput,
   ImportMediaInput,
@@ -28,6 +29,7 @@ import {
   MutationOptions,
   OfferFromLinkInput,
   Preferences,
+  PrepareFacebookJoinInput,
   PreviewPostInput,
   PublishImageInput,
   RequestUploadInput,
@@ -72,6 +74,7 @@ import {
   deleteSegment,
   deleteSentPost,
   deleteStoreCoupon,
+  discoverFacebookGroups,
   findSimilarOffers,
   generateCreative,
   getAudienceStats,
@@ -114,6 +117,7 @@ import {
   listTeamContacts,
   listTrackedLinks,
   markContentPosted,
+  prepareFacebookJoin,
   previewOfferFromLink,
   previewPost,
   publishImage,
@@ -289,6 +293,30 @@ export function createMcpServer(ctx: Ctx): McpServer {
       annotations: READ,
     },
     safe(async () => listFacebookAccounts(ctx)),
+  );
+
+  server.registerTool(
+    "discover_facebook_groups",
+    {
+      title: "Buscar grupos do Facebook por nicho",
+      description:
+        "Monta buscas de grupos por nicho e localidade para a pessoa abrir no Facebook. A extensão mostra os resultados visíveis; a pessoa avalia cada grupo antes de entrar ou analisar a política. Não entra em grupos automaticamente.",
+      inputSchema: DiscoverFacebookGroupsInput.shape,
+      annotations: READ,
+    },
+    safe(async (args) => discoverFacebookGroups(ctx, args)),
+  );
+
+  server.registerTool(
+    "prepare_facebook_join",
+    {
+      title: "Autorizar entrada em grupo do Facebook",
+      description:
+        "Registra e limita uma tentativa de entrada em grupo pelo perfil indicado. A entrada acontece na extensão, pela página do Facebook; perguntas e regras exigem resposta da pessoa.",
+      inputSchema: { ...PrepareFacebookJoinInput.shape, ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async (args) => prepareFacebookJoin(ctx, ...splitOpts(args))),
   );
 
   server.registerTool(

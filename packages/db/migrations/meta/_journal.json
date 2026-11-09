@@ -169,6 +169,13 @@
       "when": 1794181306730,
       "tag": "0023_politica_grupo_fb",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794184381926,
+      "tag": "0024_flawless_zodiak",
+      "breakpoints": true
     }
   ]
 }

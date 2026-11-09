@@ -7,6 +7,18 @@
 (() => {
   const ui = {};
   let job = null;
+  let autoRunning = false;
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  async function waitFor(find, ms = 10000) {
+    const until = Date.now() + ms;
+    while (Date.now() < until) {
+      const value = find();
+      if (value) return value;
+      await sleep(300);
+    }
+    return null;
+  }
 
   const send = (msg) =>
     new Promise((resolve) => chrome.runtime.sendMessage(msg, (r) => resolve(r || {})));
@@ -206,6 +218,182 @@
     if (hasImg) $("img").src = job.image;
     $("post-url").value = "";
     ui.$("msg").className = "msg";
+    if (job.auto_publish && !autoRunning && new Date(job.lease_until).getTime() > Date.now()) {
+      void autoPublish(job);
+    }
+  }
+
+  /** Convite pontual: usa somente os controles visíveis do Facebook e confirma pelo resultado na tela. */
+  async function autoPublish(current) {
+    autoRunning = true;
+    const active = () =>
+      job?.id === current.id && new Date(current.lease_until).getTime() > Date.now();
+    try {
+      message("warn", "Preparando o convite no Facebook…");
+      if (!active()) return;
+      if (current.has_image && !current.image) {
+        throw new Error("A imagem do convite não foi baixada. Confira a conexão e publique à mão.");
+      }
+      const opener = [...document.querySelectorAll('[role="button"]')].find((el) =>
+        /^(escreva algo|write something|no que você está pensando|what's on your mind)/i.test(
+          (el.innerText || el.getAttribute("aria-label") || "").trim(),
+        ),
+      );
+      if (!opener && !document.querySelector('[role="dialog"]')) {
+        throw new Error("Não encontrei o editor do grupo. Confira esta página antes de publicar.");
+      }
+      opener?.click();
+      const box = await waitFor(() =>
+        [
+          ...document.querySelectorAll('[role="dialog"] [role="textbox"][contenteditable="true"]'),
+        ].find((el) => el.offsetParent !== null),
+      );
+      if (!box || !active())
+        throw new Error(
+          "Não encontrei o campo de publicação. Abra o editor do grupo e confira o convite.",
+        );
+      box.focus();
+      document.execCommand("selectAll", false, null);
+      document.execCommand("insertText", false, fbzComposerText(current));
+      const normalized = (value) =>
+        String(value || "")
+          .replace(/\s+/g, " ")
+          .trim();
+      if (!normalized(box.innerText).includes(normalized(fbzComposerText(current)))) {
+        throw new Error("O texto não apareceu no editor. Confira e publique à mão.");
+      }
+      const dialog = box.closest('[role="dialog"]') || document;
+      if (current.image) {
+        const before = dialog.querySelectorAll("img").length;
+        const photoButton = [...dialog.querySelectorAll('[role="button"], button')].find((el) =>
+          /^(foto\/vídeo|photo\/video|adicionar foto|add photo)$/i.test(
+            (el.innerText || el.getAttribute("aria-label") || "").trim(),
+          ),
+        );
+        photoButton?.click();
+        const fileInput = await waitFor(() =>
+          [...document.querySelectorAll('input[type="file"]')].find((el) =>
+            /image|photo|video/i.test(el.accept || ""),
+          ),
+        );
+        if (!fileInput)
+          throw new Error(
+            "Não encontrei o anexo de imagem. Use o botão Copiar imagem e publique à mão.",
+          );
+        const blob = await (await fetch(current.image)).blob();
+        const file = new File([blob], `ofzap-${current.id}.png`, {
+          type: blob.type || "image/png",
+        });
+        const transfer = new DataTransfer();
+        transfer.items.add(file);
+        fileInput.files = transfer.files;
+        fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+        const preview = await waitFor(() => dialog.querySelectorAll("img").length > before, 12000);
+        if (!preview) throw new Error("A imagem não apareceu na prévia. Confira e publique à mão.");
+      }
+      if (!active()) throw new Error("O prazo deste trabalho terminou. Confira antes de publicar.");
+      const publish = await waitFor(() =>
+        [...dialog.querySelectorAll('[role="button"], button')].find(
+          (el) =>
+            /^(publicar|post)$/i.test(
+              (el.innerText || el.getAttribute("aria-label") || "").trim(),
+            ) &&
+            el.getAttribute("aria-disabled") !== "true" &&
+            !el.disabled,
+        ),
+      );
+      if (!publish)
+        throw new Error(
+          "Não encontrei o botão Publicar pronto para uso. Confira a imagem e publique à mão.",
+        );
+      const beforeLinks = new Set(
+        [...document.querySelectorAll('a[href*="/groups/"]')].map((a) => a.href),
+      );
+      publish.click();
+      const finished = await waitFor(() => dialog !== document && !dialog.isConnected, 20000);
+      if (!finished)
+        throw new Error(
+          "Não consegui confirmar a publicação. Confira o grupo antes de registrar o resultado.",
+        );
+      message("warn", "Publicação concluída na tela. Registrando no OfZap…");
+      const newLink = await waitFor(
+        () =>
+          [...document.querySelectorAll('a[href*="/groups/"]')]
+            .filter((a) => !beforeLinks.has(a.href))
+            .map((a) => fbzNormalizePostUrl(a.href, current.group_id))
+            .find((link) => link.ok)?.url,
+        5000,
+      );
+      const res = await send({
+        type: "ofz-fb-result",
+        jobId: current.id,
+        result: { ok: true, ...(newLink ? { post_url: newLink } : {}) },
+      });
+      if (!res.ok)
+        throw new Error(
+          `Publicou no Facebook, mas o OfZap não registrou: ${res.body?.error?.message || res.reason || res.status}`,
+        );
+      job = null;
+      message("ok", "Convite publicado e registrado no OfZap.");
+      setTimeout(refresh, 1200);
+    } catch (err) {
+      message("bad", err.message);
+    } finally {
+      autoRunning = false;
+    }
+  }
+
+  /** Entrada pela interface visível. Perguntas e aceite de regras ficam para a pessoa. */
+  async function joinGroup() {
+    const analyzeVisible = async () => {
+      const groupId = fbzGroupIdFromUrl(location.href);
+      const { name, collected } = collectGroup();
+      if (groupId && (collected.rules_text || collected.post_texts.length)) {
+        await send({ type: "ofz-fb-analyze", payload: { group_id: groupId, name, collected } });
+      }
+    };
+    const labels = () =>
+      [...document.querySelectorAll('[role="button"], button')].map((el) => ({
+        el,
+        text: (el.innerText || el.getAttribute("aria-label") || "").trim(),
+      }));
+    if (labels().some(({ text }) => /^(participando|joined|membro)$/i.test(text))) {
+      await analyzeVisible();
+      return { status: "already" };
+    }
+    const join = labels().find(({ text }) =>
+      /^(participar|participar do grupo|join group|join)$/i.test(text),
+    );
+    if (!join)
+      return { status: "failed", reason: "Não encontrei o botão Participar. Confira a página." };
+    join.el.click();
+    await sleep(1200);
+    for (let i = 0; i < 30; i++) {
+      const current = labels();
+      if (current.some(({ text }) => /^(participando|joined|membro)$/i.test(text))) {
+        await analyzeVisible();
+        return { status: "joined" };
+      }
+      if (
+        current.some(({ text }) =>
+          /^(solicitação enviada|pedido enviado|cancel request|cancelar solicitação)$/i.test(text),
+        )
+      ) {
+        return { status: "pending" };
+      }
+      if (
+        [...document.querySelectorAll('[role="dialog"]')].some((el) =>
+          /perguntas|questions|aceitar regras|agree to the rules/i.test(el.innerText || ""),
+        )
+      ) {
+        return { status: "needs_questions" };
+      }
+      await sleep(500);
+    }
+    return {
+      status: "failed",
+      reason: "Não consegui confirmar a entrada. Confira este grupo no Facebook.",
+    };
   }
 
   // ── Ações (sempre com um gesto da pessoa) ──
@@ -322,10 +510,16 @@
   }
 
   // O service worker avisa quando chega um novo trabalho.
-  chrome.runtime.onMessage.addListener((msg) => {
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type === "ofz-fb-job") {
       job = msg.job;
       render();
+    }
+    if (msg?.type === "ofz-fb-join") {
+      joinGroup()
+        .then(sendResponse)
+        .catch((err) => sendResponse({ status: "failed", reason: String(err) }));
+      return true;
     }
   });
 

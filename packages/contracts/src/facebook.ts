@@ -26,6 +26,28 @@ export const FacebookAccount = z.object({
 });
 export type FacebookAccount = z.infer<typeof FacebookAccount>;
 
+/** Termos para abrir a busca visível de grupos no Facebook. */
+export const DiscoverFacebookGroupsInput = z.object({
+  niche: z.string().trim().min(2).max(80),
+  location: z.string().trim().max(80).optional(),
+});
+export type DiscoverFacebookGroupsInput = z.infer<typeof DiscoverFacebookGroupsInput>;
+
+export const PrepareFacebookJoinInput = z.object({
+  fb_user_id: fbId,
+  group_id: fbGroupId,
+  name: z.string().trim().min(1).max(200),
+});
+export type PrepareFacebookJoinInput = z.infer<typeof PrepareFacebookJoinInput>;
+
+export const FacebookGroupSearch = z.object({
+  query: z.string(),
+  url: z.url(),
+});
+export const DiscoverFacebookGroupsResult = z.object({
+  searches: z.array(FacebookGroupSearch),
+});
+
 /** Enviado pela extensão a cada minuto. */
 export const FacebookHeartbeatInput = z.object({
   fb_user_id: fbId,
@@ -92,6 +114,7 @@ export const BrowserJob = z.object({
   text: z.string(),
   /** Baixar com GET /v1/facebook/jobs/:id/image (com o token) */
   has_image: z.boolean(),
+  auto_publish: z.boolean(),
   lease_until: z.string(),
 });
 export type BrowserJob = z.infer<typeof BrowserJob>;

@@ -776,6 +776,8 @@ export const posts = pgTable(
     customText: text(),
     templateId: uuid().references(() => messageTemplates.id, { onDelete: "set null" }),
     withImage: boolean().notNull().default(true),
+    /** Convite pontual: a extensão publica após preparar na interface visível. */
+    autoPublish: boolean().notNull().default(false),
     /** Criativo pronto a usar como imagem */
     creativeId: uuid().references(() => creatives.id, { onDelete: "set null" }),
     /** Template para gerar o criativo na hora do envio (preço sempre atualizado) */
@@ -996,6 +998,7 @@ export type BrowserJobPayload = {
   text: string;
   /** Imagem de origem (a extensão baixa pela API, nunca direto) */
   image_source_url?: string | null;
+  auto_publish?: boolean;
 };
 
 /** Trabalho que a extensão executa no navegador (publicar post no grupo). */

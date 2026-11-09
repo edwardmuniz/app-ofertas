@@ -20,6 +20,23 @@ function fbzIsGroupPage(url) {
   return fbzGroupIdFromUrl(url) !== null;
 }
 
+/** Só links para a página principal de um grupo são candidatos da busca. */
+function fbzGroupCandidateFromLink(url, name) {
+  const id = fbzGroupIdFromUrl(url);
+  const label = String(name || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!id || !label || label.length > 200) return null;
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (!/^\/(?:groups)\/[^/]+\/?$/i.test(parsed.pathname)) return null;
+  return { id, name: label, url: `https://www.facebook.com/groups/${encodeURIComponent(id)}/` };
+}
+
 /**
  * O trabalho é para o grupo que está aberto nesta aba? O grupo pode vir como id numérico ou
  * como nome (vanity), então aceitamos o casamento quando qualquer um dos lados bate.
@@ -103,6 +120,7 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     fbzGroupIdFromUrl,
     fbzIsGroupPage,
+    fbzGroupCandidateFromLink,
     fbzJobMatchesPage,
     fbzComposerText,
     fbzPickVariation,

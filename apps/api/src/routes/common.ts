@@ -8,6 +8,7 @@ export const errors = {
   403: ErrorResponse,
   404: ErrorResponse,
   409: ErrorResponse,
+  429: ErrorResponse,
 };
 
 /** Opções de mutação na REST: ?dry_run=true, header Idempotency-Key e X-Audit-Reason. */
