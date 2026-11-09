@@ -60,10 +60,12 @@ export function cleanCopy(raw: Partial<Record<keyof OfferCopyText, unknown>>): O
           .trim()
           .slice(0, max)
       : "";
-  const headline = tidy(raw.headline, LIMITS.headline);
-  const body = tidy(raw.body, LIMITS.body);
+  // Sem nenhuma palavra (ex.: o modelo devolveu só "}") conta como vazio.
+  const words = (s: string) => (/\p{L}{2}/u.test(s) ? s : "");
+  const headline = words(tidy(raw.headline, LIMITS.headline));
+  const body = words(tidy(raw.body, LIMITS.body));
   if (!headline || !body) throw new CopyWriterError("INVALID", "A IA devolveu um texto vazio.");
-  return { headline, body, extra: tidy(raw.extra, LIMITS.extra) || null };
+  return { headline, body, extra: words(tidy(raw.extra, LIMITS.extra)) || null };
 }
 
 export function copyPrompt(f: CopyFacts): string {

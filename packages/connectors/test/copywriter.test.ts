@@ -45,6 +45,15 @@ describe("texto por IA", () => {
     expect(() => cleanCopy({ headline: "", body: "x" })).toThrow(CopyWriterError);
   });
 
+  it("recusa texto sem palavras (o modelo às vezes devolve só '}')", () => {
+    expect(() => cleanCopy({ headline: "}", body: "}", extra: "}" })).toThrow(CopyWriterError);
+    expect(cleanCopy({ headline: "Controle 🎮", body: "Bom para jogar.", extra: "}" })).toEqual({
+      headline: "Controle 🎮",
+      body: "Bom para jogar.",
+      extra: null,
+    });
+  });
+
   it("Gemini: chama generateContent com a chave no cabeçalho e lê o JSON", async () => {
     const calls: { url: string; init: RequestInit }[] = [];
     const fetchMock = (async (url: string, init: RequestInit) => {
