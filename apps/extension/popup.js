@@ -104,6 +104,8 @@ async function openSettings() {
   const s = await settings();
   el("api-url").value = s.apiUrl;
   el("api-token").value = s.token;
+  const extra = await chrome.storage.local.get("fbUserId");
+  el("fb-user-id").value = extra.fbUserId || "";
   message("settings-msg", "", true);
   show("settings");
 }
@@ -111,14 +113,18 @@ async function openSettings() {
 async function saveSettings() {
   const apiUrl = el("api-url").value.trim().replace(/\/+$/, "");
   const token = el("api-token").value.trim();
+  const fbUserId = el("fb-user-id").value.trim();
   if (!/^https?:\/\//.test(apiUrl) || !token) {
     return message("settings-msg", "Preencha o endereço da API e o token.", false);
+  }
+  if (fbUserId && !/^\d{5,25}$/.test(fbUserId)) {
+    return message("settings-msg", "O id do perfil do Facebook deve ter só números.", false);
   }
   // Permissão para falar com o endereço da API (pedida só para ele).
   const origin = `${new URL(apiUrl).origin}/*`;
   const granted = await chrome.permissions.request({ origins: [origin] });
   if (!granted) return message("settings-msg", "Sem permissão para acessar a API.", false);
-  await chrome.storage.local.set({ apiUrl, token });
+  await chrome.storage.local.set({ apiUrl, token, fbUserId });
   try {
     const ov = await call("/v1/workspace/overview");
     message("settings-msg", `Ligado ao OfZap: ${ov.workspace.name}.`, true);

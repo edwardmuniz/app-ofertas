@@ -62,6 +62,7 @@ function snippets(token: string) {
 const PRESET_HINTS: Record<ScopePreset, string> = {
   read_only: "Só consulta: métricas, ofertas, grupos e a fila. Não muda nada.",
   operation: "Busca e aprova ofertas, agenda posts, cria links e cards.",
+  extension: "Para a extensão do Chrome: cadastrar ofertas e preparar posts do Facebook.",
   full_no_spend: "Tudo, menos anúncios pagos. Recomendado para agentes do dia a dia.",
   full: "Tudo, inclusive gastar com anúncios.",
 };

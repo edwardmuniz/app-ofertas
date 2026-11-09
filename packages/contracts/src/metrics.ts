@@ -185,6 +185,8 @@ export const ALERT_KINDS = [
   "posts_failing",
   "group_admin_lost",
   "group_unavailable",
+  "facebook_blocked",
+  "facebook_offline",
 ] as const;
 
 export const Alert = z.object({

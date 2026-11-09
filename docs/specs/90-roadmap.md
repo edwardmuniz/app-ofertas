@@ -134,6 +134,16 @@ Prioridade definida em 02/11/2026: crescer do zero sem anúncio, com conteúdo a
 **Entregue (02/11/2026):** vitrine `/@slug` com ofertas do dia e botões de grupo, medição por origem (`?src`), painel Audiência › Vitrine; estúdio de conteúdo (carrossel montado no worker, kit para o agente, carrossel diário opcional; vídeo feito pelo agente local com HyperFrames e enviado para aprovação no painel (`submit_video`, `review_content`), painel Audiência › Conteúdo). API e MCP para tudo.
 **Pendente:** status do WhatsApp (verificar suporte na Evolution Go); postagem automática nas redes; ver a vitrine e um vídeo no celular com dados reais.
 
+## Fase 7.6 — Grupos do Facebook 🟨  ([19](19-facebook-grupos.md))
+
+Publicar ofertas em grupos do Facebook de forma **semiautomática**: a extensão do Chrome prepara cada post na interface normal do Facebook (texto, imagem e link rastreado) e o usuário confirma e publica, usando a mesma fila, regras e limites do WhatsApp. Sem captura/repetição de tokens nem evasão de detecção. Etapas: publicar em 1 grupo → importar grupos e regras → política do grupo → descobrir grupos do nicho.
+
+O foco é **captação de membros**: postar nos grupos do Facebook um convite com o link do grupo de WhatsApp. Também serve para divulgar ofertas.
+
+**Entregue (08/11/2026), etapas 1–2:** perfis do Facebook (`facebook_accounts`, sem credenciais) e grupos como canais `fb_group`; fila `browser_jobs` (o worker cria o trabalho e o post fica `sending` até a extensão responder); escopo `facebook:execute` e preset "Extensão do Chrome"; API para a extensão (heartbeat, adicionar grupo, pegar trabalho, baixar imagem pela API, registrar resultado); limites do Facebook (intervalo 3–8 min, 15/h e 60/dia por perfil, 1 por grupo a cada 24 h); pausa de 24 h ao sinal de bloqueio (só humano religa); recuperação de trabalhos abandonados; alertas `facebook_blocked` e `facebook_offline`; `external_url` do post. **Política do grupo:** "Analisar este grupo" na extensão coleta o texto visível (regras, descrição, últimos posts) e o servidor classifica (`analyze_facebook_group`) em allowed/approval/restricted/forbidden/unknown; trava que impede postar em grupo que não aceita ou não analisado (no agendamento e no envio); correção por pessoa/agente (`set_group_posting_policy`), sem ser trocada pela detecção. MCP: `list_facebook_accounts`, `set_group_posting_policy`. Extensão (MV3): service worker (fila a cada minuto), content script com painel na página do grupo (preenche texto, copia imagem, confirma pelo link; botão Analisar), `fb-core.js` (regras puras). Testes: core (18) e extensão (15) passando.
+
+**Pendente:** testar o fluxo completo no Facebook real; etapa 3 (atalho de campanha de convite: `invite_url` do grupo de WhatsApp + arte, disparo nos grupos aptos, convite rastreado); etapa 4 (descobrir grupos do nicho); importar "Seus grupos" com escolha e regras automáticas em `fb_group`.
+
 ## Fase 8 — Criativos de vídeo ⬜  ([14](14-criativos.md))
 
 Remotion, templates de vídeo, render assíncrono, contact sheet, transcode de upload.

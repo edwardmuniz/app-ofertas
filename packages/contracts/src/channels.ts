@@ -4,10 +4,19 @@ export const CHANNEL_TYPES = [
   "wa_group",
   "wa_community",
   "wa_channel",
+  "fb_group",
   "ig_account",
   "telegram",
 ] as const;
 export const CHANNEL_STATUS = ["active", "paused", "archived"] as const;
+/** Política de divulgação de um grupo do Facebook (spec 19). */
+export const POSTING_POLICIES = [
+  "allowed",
+  "approval",
+  "restricted",
+  "forbidden",
+  "unknown",
+] as const;
 
 export const httpUrl = z.url({ protocol: /^https?$/, error: "Informe uma URL http(s) válida." });
 
@@ -20,8 +29,15 @@ export const Channel = z.object({
   member_limit: z.number(),
   status: z.enum(CHANNEL_STATUS),
   segment_ids: z.array(z.string()),
-  external_id: z.string().nullable().describe("JID do grupo no WhatsApp"),
+  external_id: z
+    .string()
+    .nullable()
+    .describe("JID do grupo no WhatsApp ou id do grupo no Facebook"),
   messaging_account_id: z.string().nullable(),
+  facebook_account_id: z
+    .string()
+    .nullable()
+    .describe("Perfil do Facebook que publica no grupo (canais fb_group)."),
   admin_only: z.boolean().nullable(),
   number_is_admin: z
     .boolean()
@@ -35,6 +51,14 @@ export const Channel = z.object({
     .enum(["ok", "deleted", "suspended"])
     .describe("Estado no WhatsApp: apagado ou suspenso pausa o canal."),
   community_jid: z.string().nullable(),
+  posting_policy: z
+    .enum(POSTING_POLICIES)
+    .nullable()
+    .describe("Grupos do Facebook: se aceitam divulgação. null nos canais de WhatsApp."),
+  policy_source: z.enum(["detected", "human", "agent"]).nullable(),
+  policy_notes: z.string().nullable(),
+  policy_evidence: z.array(z.string()).nullable(),
+  policy_checked_at: z.string().nullable(),
   last_synced_at: z.string().nullable(),
   created_at: z.string(),
 });

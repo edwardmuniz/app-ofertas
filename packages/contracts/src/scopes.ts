@@ -16,6 +16,7 @@ export const SCOPES = [
   "growth:write",
   "settings:read",
   "settings:write",
+  "facebook:execute",
   "approvals:decide",
 ] as const;
 
@@ -44,6 +45,10 @@ export const SCOPE_PRESETS = {
       "links:write",
       "creatives:write",
     ] as TokenScope[],
+  },
+  extension: {
+    label: "Extensão do Chrome (ofertas e Facebook)",
+    scopes: ["offers:read", "offers:write", "channels:read", "facebook:execute"] as TokenScope[],
   },
   full_no_spend: {
     label: "Completo sem gasto (sem anúncios)",

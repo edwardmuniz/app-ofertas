@@ -15,6 +15,8 @@ export * from "./crypto";
 export * from "./cursor";
 export * from "./errors";
 export * from "./events";
+export * from "./facebook";
+export * from "./facebook-policy";
 export * from "./feed";
 export * from "./groups";
 export * from "./invites";

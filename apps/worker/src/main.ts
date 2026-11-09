@@ -4,6 +4,7 @@ import {
   fillMissingCopies,
   purgeStaleUploads,
   recordWorkerHeartbeat,
+  recoverBrowserJobs,
   refreshMessagingStatuses,
   renderPendingContents,
   rollupClicks,
@@ -120,6 +121,8 @@ async function publishTick() {
   if (!lock) return;
   publishing = true;
   try {
+    const recovered = await recoverBrowserJobs(deps);
+    if (recovered.expired || recovered.abandoned) log("facebook: trabalhos abandonados", recovered);
     const results = await runPublisher(deps, { batch: 10, pauseMs: 2000 });
     if (results.length) log("publicação", results);
     await recordWorkerHeartbeat(deps);

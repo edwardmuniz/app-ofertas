@@ -36,6 +36,7 @@ import {
   SchedulePostsInput,
   SearchOffersInput,
   SeasonalCalendarQuery,
+  SetGroupPostingPolicyInput,
   SetOfferCopyInput,
   SetOfferCouponInput,
   SubmitVideoInput,
@@ -100,6 +101,7 @@ import {
   listContents,
   listCreatives,
   listCreativeTemplates,
+  listFacebookAccounts,
   listInviteLinks,
   listMessageTemplates,
   listMessagingAccounts,
@@ -122,6 +124,7 @@ import {
   schedulePosts,
   searchOffers,
   setChannelAdminOnly,
+  setGroupPostingPolicy,
   setOfferCopy,
   setOfferCoupon,
   setOfferStatus,
@@ -274,6 +277,37 @@ export function createMcpServer(ctx: Ctx): McpServer {
       annotations: READ,
     },
     safe(async (args) => listChannels(ctx, args)),
+  );
+
+  server.registerTool(
+    "list_facebook_accounts",
+    {
+      title: "Listar perfis do Facebook",
+      description:
+        "Perfis do Facebook operados pela extensão do Chrome (modo semiautomático: a extensão prepara o post e a pessoa confirma e publica). Mostra online (Chrome aberto com o Facebook), pausa por bloqueio, grupos, posts hoje e na fila. Os grupos do Facebook aparecem em list_channels com type fb_group e entram pela extensão.",
+      inputSchema: {},
+      annotations: READ,
+    },
+    safe(async () => listFacebookAccounts(ctx)),
+  );
+
+  server.registerTool(
+    "set_group_posting_policy",
+    {
+      title: "Definir se um grupo do Facebook aceita divulgação",
+      description:
+        "Corrige a política de um grupo do Facebook (canal fb_group): allowed (aceita divulgação), approval (aceita, admin aprova), restricted (aceita com condição, use notes), forbidden (não aceita), unknown. Só grupos allowed/approval/restricted recebem post. A extensão detecta sozinha ao analisar o grupo; use isto para corrigir. A sua correção não é trocada pela detecção.",
+      inputSchema: {
+        channel_id: z.uuid(),
+        ...SetGroupPostingPolicyInput.shape,
+        ...MutationOptions.shape,
+      },
+      annotations: WRITE,
+    },
+    safe(async (args) => {
+      const [{ channel_id, ...rest }, opts] = splitOpts(args);
+      return setGroupPostingPolicy(ctx, channel_id, rest, opts);
+    }),
   );
 
   server.registerTool(
@@ -859,7 +893,7 @@ export function createMcpServer(ctx: Ctx): McpServer {
     {
       title: "Agendar publicações",
       description:
-        "Agenda ofertas aprovadas (ou um texto) em grupos ou segmentos. A plataforma respeita janelas de envio, intervalo entre posts e não repete o mesmo produto no mesmo grupo por 7 dias. Na hora do envio a oferta é revalidada e o link rastreado é gerado. Rode antes com dry_run=true.",
+        "Agenda ofertas aprovadas (ou um texto) em grupos ou segmentos. A plataforma respeita janelas de envio, intervalo entre posts e não repete o mesmo produto no mesmo grupo por 7 dias. Na hora do envio a oferta é revalidada e o link rastreado é gerado. Grupos do Facebook (fb_group) também: a extensão do Chrome prepara o post e o usuário confirma e publica, com intervalo de 3 a 8 min entre posts, 1 por grupo por dia e até 15 por hora e 60 por dia por perfil. Rode antes com dry_run=true.",
       inputSchema: { ...SchedulePostsInput.shape, ...MutationOptions.shape },
       annotations: WRITE,
     },

@@ -6,7 +6,15 @@ import {
   type PublicStatus,
   type SystemStatus,
 } from "@ofertas/contracts";
-import { alerts, channels, messagingAccounts, posts, workspaces } from "@ofertas/db";
+import {
+  alerts,
+  browserJobs,
+  channels,
+  facebookAccounts,
+  messagingAccounts,
+  posts,
+  workspaces,
+} from "@ofertas/db";
 import { and, desc, eq, gte, inArray, isNotNull, lt, ne, or, sql } from "drizzle-orm";
 import { requireScope } from "./authz";
 import { type Ctx, type Deps, now } from "./context";
@@ -97,7 +105,12 @@ async function collectFindings(deps: Deps): Promise<Finding[]> {
     .where(
       or(
         and(eq(posts.status, "scheduled"), lt(posts.scheduledAt, overdueAt)),
-        and(eq(posts.status, "sending"), lt(posts.updatedAt, overdueAt)),
+        and(
+          eq(posts.status, "sending"),
+          lt(posts.updatedAt, overdueAt),
+          // Post do Facebook esperando a extensão tem alerta próprio (facebook_offline).
+          sql`not exists (select 1 from ${browserJobs} j where j.post_id = ${posts.id} and j.status in ('queued', 'claimed'))`,
+        ),
       ),
     )
     .groupBy(posts.workspaceId);
@@ -162,6 +175,44 @@ async function collectFindings(deps: Deps): Promise<Finding[]> {
           : `O grupo "${c.name}" foi suspenso pelo WhatsApp. As publicações nele estão pausadas.`,
       details: { channel_id: c.id, state: c.state },
     });
+  }
+
+  // Facebook: perfil pausado por bloqueio, ou extensão desligada com post esperando.
+  const fb = await deps.db
+    .select({
+      id: facebookAccounts.id,
+      workspaceId: facebookAccounts.workspaceId,
+      name: facebookAccounts.name,
+      pausedUntil: facebookAccounts.pausedUntil,
+      pauseReason: facebookAccounts.pauseReason,
+      lastSeenAt: facebookAccounts.lastSeenAt,
+      waiting: sql<number>`(select count(*)::int from ${browserJobs} j where j.facebook_account_id = ${facebookAccounts.id} and j.status = 'queued')`,
+    })
+    .from(facebookAccounts);
+  for (const a of fb) {
+    const label = a.name ?? "Perfil do Facebook";
+    if (a.pausedUntil && a.pausedUntil > t) {
+      findings.push({
+        workspaceId: a.workspaceId,
+        kind: "facebook_blocked",
+        subject: a.id,
+        severity: "critical",
+        message: `O Facebook bloqueou "${label}" (${a.pauseReason ?? "aviso de bloqueio"}). Os posts estão pausados até ${a.pausedUntil.toISOString()}.`,
+        details: { account_id: a.id, paused_until: a.pausedUntil.toISOString() },
+      });
+    } else if (
+      a.waiting > 0 &&
+      (!a.lastSeenAt || t.getTime() - a.lastSeenAt.getTime() > OVERDUE_MS)
+    ) {
+      findings.push({
+        workspaceId: a.workspaceId,
+        kind: "facebook_offline",
+        subject: a.id,
+        severity: "warning",
+        message: `A extensão de "${label}" está desligada e ${a.waiting} post(s) esperam. Abra o Chrome com uma aba do Facebook.`,
+        details: { account_id: a.id, waiting: a.waiting },
+      });
+    }
   }
 
   // Envios falhando: vários erros na última hora.

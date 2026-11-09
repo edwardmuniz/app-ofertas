@@ -155,6 +155,20 @@
       "when": 1793842069378,
       "tag": "0021_cupons_da_loja",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1794165413458,
+      "tag": "0022_facebook_grupos",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1794181306730,
+      "tag": "0023_politica_grupo_fb",
+      "breakpoints": true
     }
   ]
 }

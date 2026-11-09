@@ -210,6 +210,7 @@ export const Post = z.object({
   sent_at: z.string().nullable(),
   body: z.string().nullable(),
   short_url: z.string().nullable(),
+  external_url: z.string().nullable().describe("Link do post publicado (Facebook)."),
   error: z.string().nullable(),
   attempts: z.number(),
   rule_id: z.string().nullable(),

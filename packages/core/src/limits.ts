@@ -53,6 +53,14 @@ export const DEFAULT_LIMITS = {
   "auth.login_per_email": 10,
   /** Pessoas da equipe adicionadas a grupos por dia, por número (adicionar demais = banimento) */
   "groups.add_per_day": 20,
+  /** Facebook (spec 19): intervalo aleatório entre posts do perfil, em minutos */
+  "facebook.min_gap_minutes": 3,
+  "facebook.max_gap_minutes": 8,
+  /** Facebook: máximo de posts por perfil por hora e em 24 h */
+  "facebook.per_hour": 15,
+  "facebook.per_day": 60,
+  /** Facebook: horas entre posts no mesmo grupo */
+  "facebook.group_interval_hours": 24,
 } as const satisfies Record<string, number>;
 
 export type LimitKey = keyof typeof DEFAULT_LIMITS;

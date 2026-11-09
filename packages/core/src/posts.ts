@@ -27,6 +27,7 @@ import { creativeImageForPost } from "./creatives";
 import { olderThan, toPage } from "./cursor";
 import { AppError } from "./errors";
 import { emitEvent } from "./events";
+import { type FacebookGate, facebookGate, queueFacebookPost } from "./facebook";
 import { getLimit } from "./limits";
 import { freeSlug, insertTrackedLink, shortUrl } from "./links";
 import { getAccountRow, messagingError, providerOf, refOf } from "./messaging";
@@ -43,7 +44,7 @@ const MINUTE = 60_000;
 const DUPLICATE_WINDOW_MS = 7 * 86_400_000;
 /** O mesmo cupom não se repete no mesmo grupo dentro deste prazo. */
 const COUPON_REPEAT_MS = 12 * 3_600_000;
-const PUBLISHABLE_TYPES = ["wa_group", "wa_community", "wa_channel"] as const;
+const PUBLISHABLE_TYPES = ["wa_group", "wa_community", "wa_channel", "fb_group"] as const;
 const LIVE_STATUSES = ["scheduled", "sending", "sent"] as const;
 const MAX_ATTEMPTS = 3;
 const PLACEHOLDER_LINK = "xxxxxxx";
@@ -115,9 +116,30 @@ async function resolveTargets(
       skipped.push({
         channel_id: c.id,
         offer_id: null,
-        reason: `${c.name} não é um canal de WhatsApp.`,
+        reason: `${c.name} não é um grupo de WhatsApp nem do Facebook.`,
       });
-    else if (!c.messagingAccountId || !c.externalId)
+    else if (c.type === "fb_group" && (!c.facebookAccountId || !c.externalId))
+      skipped.push({
+        channel_id: c.id,
+        offer_id: null,
+        reason: `${c.name} não está ligado a um perfil do Facebook (adicione pela extensão).`,
+      });
+    else if (c.type === "fb_group" && c.postingPolicy === "forbidden")
+      skipped.push({
+        channel_id: c.id,
+        offer_id: null,
+        reason: `${c.name} não aceita divulgação.`,
+      });
+    else if (
+      c.type === "fb_group" &&
+      !["allowed", "approval", "restricted"].includes(c.postingPolicy ?? "")
+    )
+      skipped.push({
+        channel_id: c.id,
+        offer_id: null,
+        reason: `${c.name} ainda não foi analisado (política do grupo desconhecida).`,
+      });
+    else if (c.type !== "fb_group" && (!c.messagingAccountId || !c.externalId))
       skipped.push({
         channel_id: c.id,
         offer_id: null,
@@ -183,6 +205,7 @@ function toPost(
     sent_at: r.sentAt?.toISOString() ?? null,
     body: r.body,
     short_url: slug ? shortUrl(deps, slug) : null,
+    external_url: r.externalUrl,
     error: r.error,
     attempts: r.attempts,
     rule_id: r.ruleId,
@@ -522,6 +545,15 @@ export async function deleteSentPost(ctx: Ctx, postId: string, opts: MutationOpt
       if (post.status !== "sent" || !post.externalMessageId) {
         throw new AppError("CONFLICT", "Só dá para apagar publicações já enviadas.");
       }
+      if (channel.type === "fb_group") {
+        throw new AppError(
+          "CONFLICT",
+          "Apagar post do Facebook ainda não é feito pela plataforma.",
+          {
+            hint: "Abra o link do post e apague no Facebook.",
+          },
+        );
+      }
       return { channel: channel.name, sent_at: post.sentAt?.toISOString() ?? null };
     },
     execute: async (tx, i) => {
@@ -557,6 +589,8 @@ export async function claimDuePosts(deps: Deps, limit = 10) {
   const stuck = and(
     eq(posts.status, "sending"),
     lt(posts.updatedAt, new Date(at.getTime() - 5 * MINUTE)),
+    // Post do Facebook esperando a extensão: quem cuida é recoverBrowserJobs.
+    sql`not exists (select 1 from browser_jobs j where j.post_id = ${posts.id} and j.status in ('queued', 'claimed'))`,
   );
   // Processo caiu no meio. Se o envio já tinha começado, não reenvia (evita mensagem dobrada).
   const lost = await deps.db
@@ -619,6 +653,7 @@ async function postOfferLink(
   postId: string,
   offerId: string,
   channelId: string,
+  source: string,
 ): Promise<{ id: string; url: string }> {
   const [existing] = await deps.db
     .select({
@@ -637,7 +672,7 @@ async function postOfferLink(
   }
   const link = await createOfferLink(sysCtx, {
     offer_id: offerId,
-    source: "wa",
+    source,
     channel_id: channelId,
   });
   if (link.status !== "done") throw new Error("Link da oferta não gerado.");
@@ -654,6 +689,7 @@ async function postCouponLink(
   postId: string,
   c: { id: string; title: string; url: string; affiliateUrl: string | null; workspaceId: string },
   channelId: string,
+  source: string,
 ): Promise<{ id: string; url: string }> {
   const [existing] = await deps.db
     .select({
@@ -675,7 +711,7 @@ async function postCouponLink(
     slug: await freeSlug(deps.db),
     destinationUrl: c.affiliateUrl ?? c.url,
     title: `Cupom: ${c.title}`,
-    source: "wa",
+    source,
     campaign: "cupom",
     channelId,
     postId,
@@ -697,6 +733,156 @@ export async function publishPost(deps: Deps, postId: string): Promise<PublishOu
   const wsId = post.workspaceId;
   const at = now(deps);
 
+  const linkSource = channel.type === "fb_group" ? "fb" : "wa";
+  let fbAccount: Extract<FacebookGate, { kind: "ready" }>["account"] | null = null;
+  if (channel.type === "fb_group") {
+    const gate = await facebookGate(deps, post, channel);
+    if (gate.kind === "fail") return finish(deps, post, "failed", gate.reason);
+    if (gate.kind === "wait") {
+      await reschedule(deps.db, post.id, gate.at, gate.reason, gate.countAttempt);
+      return { status: "rescheduled", reason: gate.reason ?? "limites do Facebook" };
+    }
+    fbAccount = gate.account;
+  }
+  let acc: typeof messagingAccounts.$inferSelect | null = null;
+  if (!fbAccount) {
+    const r = await whatsappAccountFor(deps, post, channel);
+    if (!("id" in r)) return r;
+    acc = r;
+  }
+
+  let body = post.customText ?? post.body ?? "";
+  let imageUrl: string | null = null;
+  let trackedLinkId: string | null = null;
+  let sendStarted = false;
+  let sent: SentMessage;
+  const sysCtx: Ctx = { ...deps, actor: systemActor(wsId, "publisher") };
+
+  try {
+    if (post.couponId) {
+      const [c] = await loadCoupons(deps.db, wsId, [post.couponId]);
+      if (!c) return finish(deps, post, "skipped", "Cupom removido.");
+      if (!couponIsLive(c, at)) return finish(deps, post, "skipped", "Cupom vencido ou arquivado.");
+      const link = await postCouponLink(deps, post.id, c, channel.id, linkSource);
+      trackedLinkId = link.id;
+      body = couponMessage(c, link.url, (await workspaceSchedule(deps.db, wsId)).tz);
+      imageUrl = post.withImage ? c.imageUrl : null;
+    } else if (post.offerId) {
+      const [o] = await offersWithProducts(deps.db, wsId, [post.offerId]);
+      if (!o) return finish(deps, post, "skipped", "Oferta removida.");
+      if (o.offer.status !== "approved")
+        return finish(deps, post, "skipped", `Oferta ${o.offer.status}.`);
+      const check = await validateOfferAsSystem(deps, o.offer, o.product);
+      if (!check.ok)
+        return finish(deps, post, "skipped", `Oferta inválida no envio: ${check.reason}`);
+      const [fresh] = await offersWithProducts(deps.db, wsId, [post.offerId]);
+      const shortLink = await postOfferLink(
+        deps,
+        sysCtx,
+        post.id,
+        post.offerId,
+        channel.id,
+        linkSource,
+      );
+      trackedLinkId = shortLink.id;
+      body = renderTemplate(
+        messageBodyFor(
+          await resolveTemplateBody(deps.db, wsId, post.templateId),
+          post.templateId,
+          (fresh ?? o).offer,
+        ),
+        offerVars((fresh ?? o).offer, (fresh ?? o).product, shortLink.url),
+      );
+      // Cards desligados nas Preferências: vai só a foto do produto.
+      const cards = post.withImage && (await creativeCardsEnabled(deps.db, wsId));
+      if (post.withImage && !cards) {
+        imageUrl = o.product.imageUrls[0] ?? null;
+      } else if (post.withImage) {
+        const creative = await creativeImageForPost(deps, {
+          offer: (fresh ?? o).offer,
+          product: (fresh ?? o).product,
+          creativeId: post.creativeId,
+          creativeTemplate: post.creativeTemplate,
+          createdBy: sysCtx.actor.label,
+        });
+        if (creative && creative.creativeId !== post.creativeId) {
+          await deps.db
+            .update(posts)
+            .set({ creativeId: creative.creativeId })
+            .where(eq(posts.id, post.id));
+        }
+        imageUrl = creative?.url ?? o.product.imageUrls[0] ?? null;
+      }
+    }
+
+    if (fbAccount) {
+      return await queueFacebookPost(deps, post, channel, fbAccount, {
+        body,
+        imageUrl,
+        trackedLinkId,
+      });
+    }
+    if (!acc || !channel.externalId) return finish(deps, post, "failed", "Canal sem número.");
+    const provider = providerOf(deps, acc);
+    const ref = refOf(deps, acc);
+    await deps.db
+      .update(posts)
+      .set({ sendStartedAt: now(deps) })
+      .where(eq(posts.id, post.id));
+    sendStarted = true;
+    sent = imageUrl
+      ? await provider.sendImage(ref, channel.externalId, imageUrl, body)
+      : await provider.sendText(ref, channel.externalId, body);
+  } catch (err) {
+    const e = err instanceof AppError ? err : messagingError(err);
+    // Timeout depois de chamar o envio: o WhatsApp pode ter recebido. Não arrisca mandar dobrado.
+    if (sendStarted && e.details?.provider_code === "TIMEOUT") {
+      return finish(deps, post, "failed", MAYBE_SENT);
+    }
+    if (post.attempts >= MAX_ATTEMPTS) return finish(deps, post, "failed", e.message);
+    const delay = 2 ** post.attempts * MINUTE;
+    await reschedule(deps.db, post.id, new Date(at.getTime() + delay), e.message, true);
+    return { status: "rescheduled", reason: e.message };
+  }
+
+  // Daqui em diante a mensagem já saiu: falhas aqui nunca reagendam o post. Se o processo cair
+  // antes de gravar, a recuperação vê send_started_at e marca como falha sem reenviar.
+  await deps.db
+    .update(posts)
+    .set({
+      status: "sent",
+      sentAt: now(deps),
+      body,
+      externalMessageId: sent.messageId,
+      trackedLinkId,
+      error: null,
+    })
+    .where(eq(posts.id, post.id));
+  const tz = (await workspaceSchedule(deps.db, wsId)).tz;
+  await deps.db
+    .insert(channelStatsDaily)
+    .values({ channelId: channel.id, date: localDate(at, tz), messagesSent: 1 })
+    .onConflictDoUpdate({
+      target: [channelStatsDaily.channelId, channelStatsDaily.date],
+      set: { messagesSent: sql`${channelStatsDaily.messagesSent} + 1` },
+    });
+  await recordAudit(deps.db, sysCtx.actor, {
+    action: "posts.send",
+    target: { type: "post", id: post.id },
+    params: { channel: channel.name, message_id: sent.messageId },
+    result: "ok",
+  });
+  return { status: "sent" };
+}
+
+/** Número do grupo de WhatsApp pronto para enviar, ou o desfecho (reagendado/falhou). */
+async function whatsappAccountFor(
+  deps: Deps,
+  post: PostRow,
+  channel: ChannelRow,
+): Promise<typeof messagingAccounts.$inferSelect | PublishOutcome> {
+  const at = now(deps);
+  const wsId = post.workspaceId;
   if (!channel.messagingAccountId || !channel.externalId) {
     return finish(deps, post, "failed", "Canal sem número de WhatsApp.");
   }
@@ -751,113 +937,7 @@ export async function publishPost(deps: Deps, postId: string): Promise<PublishOu
     return { status: "rescheduled", reason: "limite por hora do número" };
   }
 
-  let body = post.customText ?? post.body ?? "";
-  let imageUrl: string | null = null;
-  let trackedLinkId: string | null = null;
-  let sendStarted = false;
-  let sent: SentMessage;
-  const sysCtx: Ctx = { ...deps, actor: systemActor(wsId, "publisher") };
-
-  try {
-    if (post.couponId) {
-      const [c] = await loadCoupons(deps.db, wsId, [post.couponId]);
-      if (!c) return finish(deps, post, "skipped", "Cupom removido.");
-      if (!couponIsLive(c, at)) return finish(deps, post, "skipped", "Cupom vencido ou arquivado.");
-      const link = await postCouponLink(deps, post.id, c, channel.id);
-      trackedLinkId = link.id;
-      body = couponMessage(c, link.url, (await workspaceSchedule(deps.db, wsId)).tz);
-      imageUrl = post.withImage ? c.imageUrl : null;
-    } else if (post.offerId) {
-      const [o] = await offersWithProducts(deps.db, wsId, [post.offerId]);
-      if (!o) return finish(deps, post, "skipped", "Oferta removida.");
-      if (o.offer.status !== "approved")
-        return finish(deps, post, "skipped", `Oferta ${o.offer.status}.`);
-      const check = await validateOfferAsSystem(deps, o.offer, o.product);
-      if (!check.ok)
-        return finish(deps, post, "skipped", `Oferta inválida no envio: ${check.reason}`);
-      const [fresh] = await offersWithProducts(deps.db, wsId, [post.offerId]);
-      const shortLink = await postOfferLink(deps, sysCtx, post.id, post.offerId, channel.id);
-      trackedLinkId = shortLink.id;
-      body = renderTemplate(
-        messageBodyFor(
-          await resolveTemplateBody(deps.db, wsId, post.templateId),
-          post.templateId,
-          (fresh ?? o).offer,
-        ),
-        offerVars((fresh ?? o).offer, (fresh ?? o).product, shortLink.url),
-      );
-      // Cards desligados nas Preferências: vai só a foto do produto.
-      const cards = post.withImage && (await creativeCardsEnabled(deps.db, wsId));
-      if (post.withImage && !cards) {
-        imageUrl = o.product.imageUrls[0] ?? null;
-      } else if (post.withImage) {
-        const creative = await creativeImageForPost(deps, {
-          offer: (fresh ?? o).offer,
-          product: (fresh ?? o).product,
-          creativeId: post.creativeId,
-          creativeTemplate: post.creativeTemplate,
-          createdBy: sysCtx.actor.label,
-        });
-        if (creative && creative.creativeId !== post.creativeId) {
-          await deps.db
-            .update(posts)
-            .set({ creativeId: creative.creativeId })
-            .where(eq(posts.id, post.id));
-        }
-        imageUrl = creative?.url ?? o.product.imageUrls[0] ?? null;
-      }
-    }
-
-    const provider = providerOf(deps, acc);
-    const ref = refOf(deps, acc);
-    await deps.db
-      .update(posts)
-      .set({ sendStartedAt: now(deps) })
-      .where(eq(posts.id, post.id));
-    sendStarted = true;
-    sent = imageUrl
-      ? await provider.sendImage(ref, channel.externalId, imageUrl, body)
-      : await provider.sendText(ref, channel.externalId, body);
-  } catch (err) {
-    const e = err instanceof AppError ? err : messagingError(err);
-    // Timeout depois de chamar o envio: o WhatsApp pode ter recebido. Não arrisca mandar dobrado.
-    if (sendStarted && e.details?.provider_code === "TIMEOUT") {
-      return finish(deps, post, "failed", MAYBE_SENT);
-    }
-    if (post.attempts >= MAX_ATTEMPTS) return finish(deps, post, "failed", e.message);
-    const delay = 2 ** post.attempts * MINUTE;
-    await reschedule(deps.db, post.id, new Date(at.getTime() + delay), e.message, true);
-    return { status: "rescheduled", reason: e.message };
-  }
-
-  // Daqui em diante a mensagem já saiu: falhas aqui nunca reagendam o post. Se o processo cair
-  // antes de gravar, a recuperação vê send_started_at e marca como falha sem reenviar.
-  await deps.db
-    .update(posts)
-    .set({
-      status: "sent",
-      sentAt: now(deps),
-      body,
-      externalMessageId: sent.messageId,
-      trackedLinkId,
-      error: null,
-    })
-    .where(eq(posts.id, post.id));
-  const tz = (await workspaceSchedule(deps.db, wsId)).tz;
-  await deps.db
-    .insert(channelStatsDaily)
-    .values({ channelId: channel.id, date: localDate(at, tz), messagesSent: 1 })
-    .onConflictDoUpdate({
-      target: [channelStatsDaily.channelId, channelStatsDaily.date],
-      set: { messagesSent: sql`${channelStatsDaily.messagesSent} + 1` },
-    });
-  await recordAudit(deps.db, sysCtx.actor, {
-    action: "posts.send",
-    target: { type: "post", id: post.id },
-    params: { channel: channel.name, message_id: sent.messageId },
-    result: "ok",
-  });
-  return { status: "sent" };
+  return acc;
 }
 
 /** Uma rodada do publicador: reivindica e envia os posts vencidos, com pausa entre envios. */

@@ -13,6 +13,7 @@ import { enforceRateLimit, resolveActor } from "./auth";
 import { mcpRoutes } from "./mcp/route";
 import { audienceRoutes } from "./routes/audience";
 import { creativeRoutes, mediaRoutes } from "./routes/creatives";
+import { facebookRoutes } from "./routes/facebook";
 import { groupRoutes } from "./routes/groups";
 import { linkRoutes } from "./routes/links";
 import { metricsRoutes } from "./routes/metrics";
@@ -106,6 +107,7 @@ export async function buildApp(opts: AppOptions) {
   });
   await app.register(linkRoutes, { prefix: "/v1", deps: opts.deps });
   await app.register(groupRoutes, { prefix: "/v1", deps: opts.deps });
+  await app.register(facebookRoutes, { prefix: "/v1", deps: opts.deps });
   await app.register(offerRoutes, { prefix: "/v1", deps: opts.deps });
   await app.register(publishingRoutes, { prefix: "/v1", deps: opts.deps });
   await app.register(webhookRoutes, { deps: opts.deps });

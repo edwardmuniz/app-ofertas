@@ -195,7 +195,9 @@ export const channels = pgTable(
   {
     id: id(),
     workspaceId: workspaceId(),
-    type: text({ enum: ["wa_group", "wa_community", "wa_channel", "ig_account", "telegram"] })
+    type: text({
+      enum: ["wa_group", "wa_community", "wa_channel", "fb_group", "ig_account", "telegram"],
+    })
       .notNull()
       .default("wa_group"),
     name: text().notNull(),
@@ -208,6 +210,8 @@ export const channels = pgTable(
       .default("active"),
     /** Número de WhatsApp que publica neste canal */
     messagingAccountId: uuid().references(() => messagingAccounts.id, { onDelete: "set null" }),
+    /** Perfil do Facebook que publica neste grupo (canais fb_group) */
+    facebookAccountId: uuid().references(() => facebookAccounts.id, { onDelete: "set null" }),
     /** Só administradores enviam mensagens (recomendado para grupos de ofertas) */
     adminOnly: boolean(),
     /** O número ligado é admin do grupo (sem isso não publica em grupo "só admins") */
@@ -225,6 +229,21 @@ export const channels = pgTable(
       .default("ok"),
     /** Comunidade a que o grupo está ligado (JID) */
     communityJid: text(),
+    /**
+     * Política de divulgação do grupo (só grupos fb_group, spec 19). Define se o grupo pode
+     * receber posts de divulgação. `null` = não se aplica (WhatsApp); `unknown` = ainda não
+     * analisado (não recebe post até analisar).
+     */
+    postingPolicy: text({
+      enum: ["allowed", "approval", "restricted", "forbidden", "unknown"],
+    }),
+    /** Origem da política: detectada pela extensão, ou definida por pessoa/agente */
+    policySource: text({ enum: ["detected", "human", "agent"] }),
+    /** Condições quando `restricted` (ex.: "só às sextas", "1 post por dia") */
+    policyNotes: text(),
+    /** Trechos que justificam a política (regras do grupo, contagem de posts com link) */
+    policyEvidence: jsonb().$type<string[]>(),
+    policyCheckedAt: timestamp({ withTimezone: true }),
     lastSyncedAt: timestamp({ withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -778,6 +797,8 @@ export const posts = pgTable(
     body: text(),
     trackedLinkId: uuid().references(() => trackedLinks.id, { onDelete: "set null" }),
     externalMessageId: text(),
+    /** Link do post publicado (Facebook) */
+    externalUrl: text(),
     attempts: integer().notNull().default(0),
     error: text(),
     createdBy: text().notNull(),
@@ -922,6 +943,8 @@ export const alerts = pgTable(
         "posts_failing",
         "group_admin_lost",
         "group_unavailable",
+        "facebook_blocked",
+        "facebook_offline",
       ],
     }).notNull(),
     /** Objeto afetado (ex.: id do número); vazio quando é do workspace todo */
@@ -941,4 +964,62 @@ export const alerts = pgTable(
     index().on(t.workspaceId, t.status),
     uniqueIndex().on(t.workspaceId, t.kind, t.subject).where(sql`status = 'open'`),
   ],
+);
+
+// ── Facebook pela extensão do Chrome (spec 19) ──────────────────────
+
+/**
+ * Perfil do Facebook operado pela extensão (modo semiautomático). Sem credenciais: a sessão fica
+ * no Chrome. A extensão só prepara o post na interface do Facebook; quem publica é a pessoa.
+ */
+export const facebookAccounts = pgTable(
+  "facebook_accounts",
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    /** id numérico do perfil no Facebook */
+    fbUserId: text().notNull(),
+    name: text(),
+    /** Último contato da extensão */
+    lastSeenAt: timestamp({ withTimezone: true }),
+    /** Pausa por sinal de bloqueio (ou manual) */
+    pausedUntil: timestamp({ withTimezone: true }),
+    pauseReason: text(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex().on(t.workspaceId, t.fbUserId)],
+);
+
+export type BrowserJobPayload = {
+  group_id: string;
+  text: string;
+  /** Imagem de origem (a extensão baixa pela API, nunca direto) */
+  image_source_url?: string | null;
+};
+
+/** Trabalho que a extensão executa no navegador (publicar post no grupo). */
+export const browserJobs = pgTable(
+  "browser_jobs",
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    facebookAccountId: uuid()
+      .notNull()
+      .references(() => facebookAccounts.id, { onDelete: "cascade" }),
+    type: text({ enum: ["post"] }).notNull(),
+    payload: jsonb().$type<BrowserJobPayload>().notNull(),
+    postId: uuid().references(() => posts.id, { onDelete: "set null" }),
+    status: text({ enum: ["queued", "claimed", "done", "failed", "canceled"] })
+      .notNull()
+      .default("queued"),
+    leaseUntil: timestamp({ withTimezone: true }),
+    claimedAt: timestamp({ withTimezone: true }),
+    finishedAt: timestamp({ withTimezone: true }),
+    result: jsonb().$type<Record<string, unknown>>(),
+    error: text(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index().on(t.facebookAccountId, t.status), index().on(t.postId)],
 );

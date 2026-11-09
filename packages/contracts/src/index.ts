@@ -7,6 +7,7 @@ export * from "./content";
 export * from "./coupons";
 export * from "./creatives";
 export * from "./errors";
+export * from "./facebook";
 export * from "./groups";
 export * from "./invites";
 export * from "./links";

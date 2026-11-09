@@ -18,6 +18,7 @@ Plataforma para operar um negócio de ofertas de afiliados (grupos de WhatsApp +
 | 15  | [Anúncios](15-anuncios.md)                                 | Meta Ads, landing de entrada, CAPI                                        |
 | 16  | [Métricas e financeiro](16-metricas-e-financeiro.md)       | Funil, comissões, ROI                                                     |
 | 17  | [Growth](17-growth.md)                                     | Recomendações, experimentos, indicação, calendário                        |
+| 19  | [Grupos do Facebook](19-facebook-grupos.md)                | Publicação pela extensão, política do grupo, busca de grupos              |
 | 90  | [Roadmap](90-roadmap.md)                                   | Fases, entregáveis e critérios de aceite                                  |
 | 91  | [Riscos e decisões em aberto](91-riscos-e-decisoes.md)     | O que precisa ser validado/decidido                                       |
 
