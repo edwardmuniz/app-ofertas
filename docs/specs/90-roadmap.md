@@ -136,7 +136,7 @@ Prioridade definida em 02/11/2026: crescer do zero sem anúncio, com conteúdo a
 
 ## Fase 7.6 — Grupos do Facebook 🟨  ([19](19-facebook-grupos.md))
 
-Publicar **convites pontuais** em grupos do Facebook: a extensão do Chrome usa a interface visível para anexar a imagem e o texto fornecidos pela pessoa e tentar publicar, usando a fila e os limites existentes. Ofertas e cupons não são enviados para grupos do Facebook. Sem captura/repetição de tokens. Etapas: publicar em 1 grupo → importar grupos e regras → política do grupo → descobrir grupos do nicho.
+Publicar **convites pontuais** em grupos do Facebook: a extensão do Chrome calibra uma publicação manual e usa o formato observado para enviar imagem e texto escolhidos pela pessoa, com a fila e os limites existentes. Ofertas e cupons não são enviados para grupos do Facebook. Tokens de sessão não são persistidos. Etapas: publicar em 1 grupo → importar grupos e regras → política do grupo → descobrir grupos do nicho.
 
 O foco é **captação de membros**: postar nos grupos do Facebook um convite com o link do grupo de WhatsApp.
 
@@ -145,6 +145,7 @@ O foco é **captação de membros**: postar nos grupos do Facebook um convite co
 **Entregue (08/11/2026), descoberta inicial da etapa 4:** buscas por nicho/localidade pela API e MCP; extensão lê, sob comando da pessoa, os resultados visíveis da busca do Facebook e mostra grupos para abrir e avaliar, sem entrar ou importar automaticamente.
 **Entregue (08/11/2026), convite pontual e entrada assistida pela extensão:** formulário na extensão para link do grupo de WhatsApp, textos e imagens; agendamento nos grupos aptos, upload de criativos e fila de entrada nos grupos selecionados, uma tentativa a cada 5 min, com autorização e auditoria no `core`, e cadastro dos grupos confirmados. Perguntas e regras ficam para a pessoa. Ofertas e cupons são recusados no agendamento e no envio para o Facebook. Token do preset da extensão inclui `posts:write` e `creatives:write`.
 **Implementado (13/11/2026), mecanismo de publicação da extensão:** calibração por publicação manual de imagem e texto, armazenamento local do modelo por perfil e repetição do upload e do post na sessão ativa para convites pontuais. A resposta precisa conter um identificador de post; falhas ambíguas ficam para revisão. Testes unitários cobrem captura e substituição. **Pendente:** validar entrada, calibração, upload e publicação no Facebook real; guardar link verificável do post automático; convite rastreado; importar "Seus grupos" com escolha e regras automáticas em `fb_group`. A campanha usa o link colado na extensão, sem buscar `invite_url` automaticamente.
+**Ajuste de experiência (13/11/2026):** popup com navegação nomeada, descoberta em passos, resultados e seleções preservados ao abrir outras abas, buscas locais quando a API está desligada, rascunho e prévia do convite e indicador de calibração. A imagem é selecionada novamente após fechar o popup.
 
 ## Fase 8 — Criativos de vídeo ⬜  ([14](14-criativos.md))
 

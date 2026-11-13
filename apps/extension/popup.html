@@ -8,13 +8,16 @@
   <body>
     <header class="top">
       <span class="brand"><span class="brand-dot"></span>OfZap</span>
-      <span id="store" class="store" hidden></span>
-      <button type="button" id="open-discover" class="icon-btn" title="Descobrir grupos" aria-label="Descobrir grupos">🔎</button>
-      <button type="button" id="open-invite" class="icon-btn" title="Publicar convite" aria-label="Publicar convite">✉</button>
       <button type="button" id="open-settings" class="icon-btn" title="Configurar" aria-label="Configurar">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
       </button>
     </header>
+    <nav class="nav" aria-label="Áreas da extensão">
+      <button type="button" id="open-offer" class="nav-item" data-pane="offer">Oferta</button>
+      <button type="button" id="open-discover" class="nav-item" data-pane="discover">Descobrir grupos</button>
+      <button type="button" id="open-invite" class="nav-item" data-pane="invite">Convite</button>
+    </nav>
+    <div id="connection-status" class="connection" role="status" hidden></div>
 
     <!-- Configuração: endereço da API e token -->
     <section id="settings" class="pane" hidden>
@@ -44,9 +47,9 @@
     </section>
 
     <section id="discover" class="pane" hidden>
-      <div class="card">
-        <h1>Descobrir grupos do nicho</h1>
-        <p class="muted">Pesquise no Facebook e avalie os grupos antes de participar. O OfZap lê somente os resultados que você já abriu na aba.</p>
+      <div class="pane-title"><span class="eyebrow">GRUPOS DO FACEBOOK</span><h1>Encontre grupos do seu nicho</h1><p>Busque, confira os resultados e escolha onde participar.</p></div>
+      <div class="card step">
+        <div class="step-head"><span class="step-number">1</span><h2>Monte sua busca</h2></div>
         <div class="field">
           <label for="discover-niche">Nicho</label>
           <input id="discover-niche" placeholder="ex.: achadinhos para casa" />
@@ -59,36 +62,52 @@
         <p id="discover-msg" class="msg" hidden></p>
         <div id="discover-searches" class="discovery-list"></div>
       </div>
-      <div class="card">
-        <h2>Resultados da aba atual</h2>
-        <p class="hint">Abra uma das buscas acima, role para carregar mais resultados e clique abaixo.</p>
-        <button type="button" id="discover-read" class="btn">Ler resultados visíveis</button>
+      <div class="card step">
+        <div class="step-head"><span class="step-number">2</span><h2>Leia a aba de busca</h2></div>
+        <p id="discover-context" class="muted small">Abra uma busca do Facebook para continuar.</p>
+        <button type="button" id="discover-read" class="btn btn-secondary">Ler grupos desta aba</button>
         <div id="discover-groups" class="discovery-list"></div>
-        <button type="button" id="discover-join" class="btn btn-accent">Participar dos selecionados</button>
-        <p id="discover-join-status" class="hint"></p>
-        <button type="button" id="discover-join-refresh" class="btn-ghost">Ver andamento das entradas</button>
+        <div id="discover-selection" class="selection-bar" hidden>
+          <span id="discover-selected-count">0 selecionados</span>
+          <button type="button" id="discover-join" class="btn btn-secondary" disabled>Participar dos selecionados</button>
+        </div>
+      </div>
+      <div id="discover-progress" class="card" hidden>
+        <h2>Entradas em andamento</h2>
+        <p id="discover-join-status" class="progress-text"></p>
+        <button type="button" id="discover-join-refresh" class="btn-ghost">Atualizar andamento</button>
       </div>
     </section>
 
     <section id="invite" class="pane" hidden>
-      <div class="card">
-        <h1>Convite para o grupo</h1>
-        <p class="muted">Crie uma publicação pontual para os grupos do Facebook selecionados. O texto inclui o link do seu grupo de WhatsApp.</p>
+      <div class="pane-title"><span class="eyebrow">PUBLICAÇÃO PONTUAL</span><h1>Convide pessoas para seu grupo</h1><p>Escolha o texto, a imagem e os grupos do Facebook.</p></div>
+      <div class="card step">
+        <div class="step-head"><span class="step-number">1</span><h2>Prepare a publicação</h2></div>
         <div class="field">
           <label for="invite-link">Link do grupo de WhatsApp</label>
           <input id="invite-link" type="url" placeholder="https://chat.whatsapp.com/..." />
         </div>
         <div class="field">
-          <label for="invite-texts">Textos (separe versões com uma linha ---)</label>
-          <textarea id="invite-texts" rows="6" placeholder="Entre no nosso grupo de ofertas!\n---\nReceba achadinhos no WhatsApp."></textarea>
+          <label for="invite-texts">Texto do convite</label>
+          <textarea id="invite-texts" rows="4" placeholder="Entre no nosso grupo de achadinhos!"></textarea>
+          <p class="field-help">O link será incluído automaticamente. Para variar o texto, separe versões com uma linha ---.</p>
         </div>
         <div class="field">
-          <label for="invite-images">Imagens (uma ou mais; alternadas entre grupos)</label>
+          <label for="invite-images">Imagem do post</label>
           <input id="invite-images" type="file" accept="image/png,image/jpeg,image/webp" multiple />
+          <p class="field-help">Você pode escolher mais de uma. O OfZap alterna as imagens entre os grupos.</p>
         </div>
-        <h2>Grupos do Facebook</h2>
+      </div>
+      <div class="card step">
+        <div class="step-head"><span class="step-number">2</span><h2>Escolha os grupos</h2></div>
         <div id="invite-groups" class="discovery-list"></div>
         <button type="button" id="invite-refresh" class="btn-ghost">Atualizar grupos</button>
+      </div>
+      <div class="card step">
+        <div class="step-head"><span class="step-number">3</span><h2>Revise e agende</h2></div>
+        <div id="invite-preview" class="preview-box">Preencha o convite para ver o resumo aqui.</div>
+        <p id="invite-calibration-status" class="field-help"></p>
+        <details class="help-details"><summary>Como preparar a publicação automática?</summary><p>Abra no Facebook um grupo onde você pode postar, clique em <b>Calibrar publicação</b> no painel do OfZap e publique manualmente um post de teste com texto e imagem. Depois volte para agendar o convite.</p></details>
         <p id="invite-msg" class="msg" hidden></p>
         <button type="button" id="invite-send" class="btn btn-accent">Agendar convite</button>
       </div>
@@ -96,6 +115,7 @@
 
     <!-- Oferta lida da página -->
     <section id="offer" class="pane" hidden>
+      <div class="pane-title"><span class="eyebrow">OFERTA</span><h1>Revise antes de cadastrar</h1><p id="store" class="store" hidden></p></div>
       <div class="card product">
         <img id="image" alt="" />
         <textarea id="title" rows="3" aria-label="Título do produto"></textarea>
@@ -172,10 +192,10 @@
 
     <section id="unsupported" class="pane" hidden>
       <div class="card empty">
-        <p><b>Nenhum produto nesta página.</b></p>
-        <p class="muted">
-          Abra a página de um produto do Mercado Livre, da Amazon ou da Shopee e clique de novo.
-        </p>
+        <h1>O que você quer fazer?</h1>
+        <p class="muted">Abra um produto para cadastrar uma oferta, ou use as áreas acima para encontrar grupos e criar um convite.</p>
+        <button type="button" id="home-discover" class="btn btn-secondary">Descobrir grupos</button>
+        <button type="button" id="home-invite" class="btn btn-secondary">Criar convite</button>
       </div>
     </section>
 

@@ -22,9 +22,10 @@ título, foto, preço, Pix, parcelas, cupom e o seu link de afiliado. Confira os
    da VPS) e o token, e toque em **Salvar e testar**. O Chrome pede permissão para acessar esse
    endereço: aceite.
 
-Se **Montar buscas** mostrar erro de conexão, confira o endereço em **Configurar** e se a API está
-rodando. Na instalação local, inicie `pnpm infra:up`, `pnpm db:migrate` e `pnpm dev`; depois use
-**Salvar e testar** na extensão. A busca depende da API do OfZap, mesmo quando o Facebook está aberto.
+Se **Participar dos selecionados** ou **Agendar convite** mostrar erro de conexão, confira o
+endereço em **Configurar** e se a API está rodando. Na instalação local, inicie `pnpm infra:up`,
+`pnpm db:migrate` e `pnpm dev`; depois use **Salvar e testar** na extensão. A montagem das buscas
+continua funcionando sem API, mas participar e agendar exigem a conexão.
 
 ## Link de afiliado
 
@@ -96,10 +97,12 @@ corrigir no painel, e a sua correção manual não é desfeita por uma análise 
 
 ### Descobrir grupos do nicho
 
-Clique na lupa da extensão, informe o nicho e, se quiser, uma cidade ou região. Abra uma das buscas
+Clique em **Descobrir grupos** na extensão, informe o nicho e, se quiser, uma cidade ou região. Abra uma das buscas
 geradas no Facebook. Role a página para carregar os resultados e, com essa aba ativa, clique na
-extensão → lupa → **Ler resultados visíveis**. A lista mostra grupos para você abrir, conferir as regras
+extensão → **Descobrir grupos** → **Ler grupos desta aba**. A lista mostra grupos para você abrir, conferir as regras
 e decidir se participa. No grupo aberto, use **Analisar este grupo** antes de agendar divulgação.
+O popup guarda os resultados e os grupos marcados quando você abre outra aba para avaliar. Se a
+API estiver desligada, ainda é possível montar e abrir buscas; ligue a API para participar dos grupos.
 Selecione até 10 candidatos e clique em **Participar dos selecionados**. A extensão tenta entrar
 em um grupo a cada 5 minutos; se houver perguntas ou aceite de regras, deixe a aba aberta e
 responda no Facebook. Use **Ver andamento das entradas** para conferir o resultado. Grupos em que
@@ -107,13 +110,15 @@ a entrada foi confirmada são cadastrados no OfZap. Analise a política antes de
 
 ### Convite pontual com imagem
 
-Clique no envelope da extensão. Informe o link do seu grupo de WhatsApp, um ou mais textos
+Clique em **Convite** na extensão. Informe o link do seu grupo de WhatsApp, um ou mais textos
 (separe versões com uma linha `---`), uma ou mais imagens e selecione os grupos do Facebook aptos.
 Clique em **Agendar convite**. O OfZap alterna textos e imagens entre os grupos, com 10 minutos
 entre os agendamentos. Para esses convites, a extensão abre o grupo, envia a imagem e o texto
 com o modelo calibrado e só registra a conclusão quando o Facebook devolve um identificador de
 post. Se houver erro ou resposta ambígua, confira o grupo antes de agir manualmente; o OfZap não
 repete o trabalho automaticamente. Ofertas não são enviadas a grupos do Facebook.
+O popup guarda link, textos e grupos selecionados como rascunho e mostra uma prévia antes de
+agendar. As imagens precisam ser escolhidas novamente após fechar o popup.
 
 O token precisa do preset **Extensão do Chrome** atualizado (escopos `facebook:execute`,
 `posts:write` e `creatives:write`). Se você criou um token antes desta versão, gere outro no painel.

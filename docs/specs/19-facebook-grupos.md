@@ -80,6 +80,10 @@ A análise do grupo (`analyze_facebook_group`) é feita pela extensão na págin
 
 O post de divulgação é um post comum com **texto livre + imagem**, agendado nos grupos `fb_group` aptos. A pessoa cola o link do grupo de WhatsApp na extensão e escolhe as imagens e textos. A extensão distribui variações pelos grupos escolhidos e agenda um convite por grupo. A fila e os limites são os existentes. Buscar o `invite_url` cadastrado e criar um link rastreado automaticamente ficam para outra entrega.
 
+### Experiência da extensão
+
+O popup tem navegação com nomes (**Oferta**, **Descobrir grupos**, **Convite**) e abre a descoberta quando a aba atual é uma busca ou grupo do Facebook. A descoberta mostra a busca, a leitura da aba e a seleção como passos; guarda os resultados e os grupos selecionados localmente para a pessoa avaliar grupos em abas diferentes sem perder a lista. A montagem das buscas funciona localmente se a API estiver indisponível, mas a entrada e o cadastro continuam exigindo a API. O convite guarda link, textos e grupos selecionados como rascunho, mostra a prévia com contagem de imagens, versões e grupos, e informa se o perfil já foi calibrado. A imagem precisa ser escolhida novamente após fechar o popup.
+
 ## Etapas
 
 1. **Publicar em 1 grupo (semiautomático) ✅** — extensão (service worker + painel no grupo), `browser_jobs`, heartbeat, fila, limites, bloqueio, confirmação pelo link do post. Aceite: post com texto e imagem preparado num grupo, publicado pelo usuário, com o link voltando para a Fila.
