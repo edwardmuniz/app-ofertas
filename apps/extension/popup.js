@@ -83,14 +83,21 @@ async function settings() {
 /** Chama a API do OfZap com o token. Erro vira a mensagem da plataforma. */
 async function call(path, init = {}) {
   const { apiUrl, token } = await settings();
-  const res = await fetch(`${apiUrl}${path}`, {
-    ...init,
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${token}`,
-      ...(init.headers || {}),
-    },
-  });
+  let res;
+  try {
+    res = await fetch(`${apiUrl}${path}`, {
+      ...init,
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`,
+        ...(init.headers || {}),
+      },
+    });
+  } catch {
+    throw new Error(
+      `Não consegui conectar à API em ${apiUrl}. Confira o endereço em Configurar e se a API está ligada.`,
+    );
+  }
   const body = await res.json().catch(() => null);
   if (!res.ok) {
     const e = body?.error;

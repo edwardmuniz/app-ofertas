@@ -22,6 +22,10 @@ título, foto, preço, Pix, parcelas, cupom e o seu link de afiliado. Confira os
    da VPS) e o token, e toque em **Salvar e testar**. O Chrome pede permissão para acessar esse
    endereço: aceite.
 
+Se **Montar buscas** mostrar erro de conexão, confira o endereço em **Configurar** e se a API está
+rodando. Na instalação local, inicie `pnpm infra:up`, `pnpm db:migrate` e `pnpm dev`; depois use
+**Salvar e testar** na extensão. A busca depende da API do OfZap, mesmo quando o Facebook está aberto.
+
 ## Link de afiliado
 
 - **Mercado Livre:** logado na conta de afiliado, clique em **Compartilhar** na barra de Afiliados
