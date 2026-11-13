@@ -1,7 +1,4 @@
-// Service worker (MV3) do modo Facebook. Conversa só com a API do OfZap: avisa que a extensão
-// está online, pega o próximo trabalho da fila, baixa a imagem (pela API, com o token) e registra
-// o resultado. Ele NÃO fala com o Facebook nem publica: quem prepara e confirma o post é o content
-// script na aba do grupo, com a pessoa clicando em Publicar. Um trabalho de cada vez.
+// Service worker (MV3): coordena a fila e guarda a calibração local por perfil.
 
 const TICK_ALARM = "ofz-fb-tick";
 const JOIN_ALARM = "ofz-fb-join";
@@ -222,6 +219,25 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     try {
       if (msg?.type === "ofz-fb-get-job") return sendResponse({ job: await getActiveJob() });
+      if (msg?.type === "ofz-fb-save-calibration") {
+        const { fbUserId } = await cfg();
+        const calibration = msg.calibration;
+        if (
+          !fbUserId ||
+          !calibration?.composer?.docId ||
+          !calibration?.upload?.fileField ||
+          JSON.stringify(calibration).length > 150000
+        ) {
+          return sendResponse({ ok: false, reason: "Calibração inválida." });
+        }
+        await chrome.storage.local.set({ [`fbCalibration:${fbUserId}`]: calibration });
+        return sendResponse({ ok: true });
+      }
+      if (msg?.type === "ofz-fb-get-calibration") {
+        const { fbUserId } = await cfg();
+        const state = await chrome.storage.local.get(`fbCalibration:${fbUserId}`);
+        return sendResponse({ fbUserId, calibration: state[`fbCalibration:${fbUserId}`] || null });
+      }
       if (msg?.type === "ofz-fb-analyze") {
         const { fbUserId } = await cfg();
         if (!fbUserId) return sendResponse({ ok: false, reason: "no_profile" });

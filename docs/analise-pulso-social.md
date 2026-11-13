@@ -5,10 +5,10 @@ da leitura do código instalado (Chrome Web Store, id `kpfpoabonomkcpjpepljhllcp
 **5.241.5**). É análise estática (leitura do código, que é minificado): o comportamento geral é
 claro, mas alguns detalhes finos são **inferência** e estão marcados como tal.
 
-> Serve de referência para o OfZap. **Importante:** boa parte do que ela faz é automação que passa
-> por cima das proteções do Facebook (ver [Riscos](#riscos-e-por-que-o-ofzap-não-copia-tudo)). O
-> O OfZap usa a interface visível do Facebook: ofertas ficam no modo assistido; convites pontuais
-> criados na extensão podem ser publicados automaticamente. Não reproduz chamadas internas.
+> Serve de referência para o OfZap. Parte das funções depende de chamadas internas do Facebook
+> (ver [Riscos](#riscos-e-por-que-o-ofzap-não-copia-tudo)). O OfZap adotou a calibração local do
+> formato de publicação apenas para convites pontuais com imagem e texto escolhidos na extensão.
+> Ofertas não são enviadas a grupos do Facebook.
 
 ---
 

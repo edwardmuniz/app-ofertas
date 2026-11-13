@@ -51,8 +51,8 @@ título, foto, preço, Pix, parcelas, cupom e o seu link de afiliado. Confira os
 
 A extensão ajuda a publicar convites nos grupos do Facebook de que você participa e que aceitam
 divulgação. Ofertas e cupons não são agendados para esses grupos. Para o convite pontual criado na
-extensão, ela tenta publicar pela tela normal do Facebook. Ela não lê cookies,
-não captura tokens nem usa endpoints internos do Facebook.
+extensão, ela usa uma calibração feita com uma publicação manual no próprio perfil do Facebook.
+O modelo fica no armazenamento local da extensão; tokens de sessão não são guardados.
 
 ### Preparar
 
@@ -63,6 +63,11 @@ não captura tokens nem usa endpoints internos do Facebook.
    online e busca o próximo post agendado para um dos seus grupos, uma vez por minuto.
 
 ### Publicar
+
+Para ativar a publicação automática de convites, abra um grupo onde você pode fazer um teste,
+clique em **Calibrar publicação** no painel do OfZap e publique manualmente um post com texto e
+imagem. A extensão confirma quando capturar o formato. Faça isso uma vez por perfil e repita se o
+Facebook mudar o fluxo. Use uma publicação de teste real e confira o resultado no grupo.
 
 Quando há um post para um grupo, abra esse grupo no Facebook. Um painel do OfZap aparece no canto:
 
@@ -101,9 +106,10 @@ a entrada foi confirmada são cadastrados no OfZap. Analise a política antes de
 Clique no envelope da extensão. Informe o link do seu grupo de WhatsApp, um ou mais textos
 (separe versões com uma linha `---`), uma ou mais imagens e selecione os grupos do Facebook aptos.
 Clique em **Agendar convite**. O OfZap alterna textos e imagens entre os grupos, com 10 minutos
-entre os agendamentos. Para esses convites, a extensão abre o grupo, tenta anexar a imagem e
-publicar pela interface visível. Se não conseguir confirmar a prévia ou a publicação, o painel
-na página mostra o problema para você revisar. Ofertas não são enviadas a grupos do Facebook.
+entre os agendamentos. Para esses convites, a extensão abre o grupo, envia a imagem e o texto
+com o modelo calibrado e só registra a conclusão quando o Facebook devolve um identificador de
+post. Se houver erro ou resposta ambígua, confira o grupo antes de agir manualmente; o OfZap não
+repete o trabalho automaticamente. Ofertas não são enviadas a grupos do Facebook.
 
 O token precisa do preset **Extensão do Chrome** atualizado (escopos `facebook:execute`,
 `posts:write` e `creatives:write`). Se você criou um token antes desta versão, gere outro no painel.
@@ -112,8 +118,8 @@ O token precisa do preset **Extensão do Chrome** atualizado (escopos `facebook:
 
 - `fb-core.js`: regras puras (casar grupo da aba com o trabalho, escolher variação de texto,
   validar/limpar o link do post). Testes em `test/fb-core.test.js`.
-- `fb-bridge.js`: service worker (MV3). Fala só com a API do OfZap: heartbeat, pega trabalho, baixa
-  a imagem, registra o resultado. Não fala com o Facebook.
-- `fb-group.js`: content script na página do grupo. Monta o painel, preenche/copia e confirma pelo
-  link do post. Para convites pontuais com `auto_publish`, a extensão também tenta anexar a imagem
-  e clicar em Publicar pela interface visível.
+- `fb-bridge.js`: service worker (MV3). Coordena a fila, baixa a imagem, guarda a calibração local
+  por perfil e registra o resultado pela API do OfZap.
+- `fb-group.js`: painel no grupo, calibração, fluxo assistido e acompanhamento do convite.
+- `fb-replay-core.js` e `fb-main.js`: captura do formato de um post manual e publicação do convite
+  na sessão ativa do mesmo perfil. Testes em `test/fb-replay.test.js`.

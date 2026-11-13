@@ -1,24 +1,10 @@
-// Content script na página de um grupo do Facebook (modo semiautomático, spec 19). Mostra um
-// painel com o texto e a imagem que o OfZap preparou, deixa preencher o campo de publicação e
-// copiar a imagem, e confirma a publicação a partir do link que a pessoa cola depois de publicar.
-// A extensão NÃO clica em Publicar nem lê nada interno do Facebook: a ação de postar é da pessoa.
-// Usa as funções puras de fb-core.js (injetado antes) e fala com o service worker (fb-bridge.js).
+// Painel do grupo: análise, calibração e acompanhamento do convite pontual.
 
 (() => {
   const ui = {};
   let job = null;
   let autoRunning = false;
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-  async function waitFor(find, ms = 10000) {
-    const until = Date.now() + ms;
-    while (Date.now() < until) {
-      const value = find();
-      if (value) return value;
-      await sleep(300);
-    }
-    return null;
-  }
 
   const send = (msg) =>
     new Promise((resolve) => chrome.runtime.sendMessage(msg, (r) => resolve(r || {})));
@@ -83,10 +69,14 @@
               <button class="btn" id="analyze-btn">Analisar este grupo</button>
             </div>
             <div class="msg" id="analyze-msg"></div>
+            <hr />
+            <p class="muted">Para publicar convites com imagem pela sessão do Facebook, calibre uma vez neste perfil.</p>
+            <div class="row"><button class="btn" id="calibrate-btn">Calibrar publicação</button></div>
+            <div class="msg" id="calibrate-msg"></div>
           </div>
           <div id="work" class="hidden">
             <p class="group" id="group-label"></p>
-            <p class="muted">1. Preencha o texto e cole a imagem · 2. Publique no Facebook · 3. Cole o link do post aqui.</p>
+            <p class="muted" id="work-help"></p>
             <textarea id="text" aria-label="Texto do post"></textarea>
             <div class="row">
               <button class="btn accent" id="fill">Preencher no Facebook</button>
@@ -129,6 +119,13 @@
       b.classList.toggle("hidden");
     });
     $("analyze-btn").addEventListener("click", analyzeGroup);
+    $("calibrate-btn").addEventListener("click", () => {
+      window.postMessage({ channel: "ofz-facebook-main", type: "arm" }, location.origin);
+      const msg = $("calibrate-msg");
+      msg.className = "msg show warn";
+      msg.textContent =
+        "Agora publique manualmente um post com texto e imagem em um grupo onde você possa testar. O OfZap vai reconhecer a calibração.";
+    });
     $("fill").addEventListener("click", fillComposer);
     $("copy-text").addEventListener("click", copyText);
     $("copy-img").addEventListener("click", copyImage);
@@ -212,6 +209,9 @@
     $("empty").classList.toggle("hidden", Boolean(matches));
     if (!matches) return;
     $("group-label").textContent = `Post para este grupo (${fbzGroupIdFromUrl(location.href)})`;
+    $("work-help").textContent = job.auto_publish
+      ? "Convite pontual: o OfZap tenta publicar com a calibração deste perfil. Se houver erro, confira o grupo antes de publicar manualmente."
+      : "1. Preencha o texto e cole a imagem · 2. Publique no Facebook · 3. Cole o link do post aqui.";
     $("text").value = fbzComposerText(job);
     const hasImg = Boolean(job.image);
     $("img-wrap").classList.toggle("hidden", !hasImg);
@@ -219,119 +219,76 @@
     $("post-url").value = "";
     ui.$("msg").className = "msg";
     if (job.auto_publish && !autoRunning && new Date(job.lease_until).getTime() > Date.now()) {
-      void autoPublish(job);
+      void publishWithCalibration(job);
     }
   }
 
-  /** Convite pontual: usa somente os controles visíveis do Facebook e confirma pelo resultado na tela. */
-  async function autoPublish(current) {
+  async function publishWithCalibration(current) {
     autoRunning = true;
-    const active = () =>
-      job?.id === current.id && new Date(current.lease_until).getTime() > Date.now();
     try {
-      message("warn", "Preparando o convite no Facebook…");
-      if (!active()) return;
-      if (current.has_image && !current.image) {
-        throw new Error("A imagem do convite não foi baixada. Confira a conexão e publique à mão.");
-      }
-      const opener = [...document.querySelectorAll('[role="button"]')].find((el) =>
-        /^(escreva algo|write something|no que você está pensando|what's on your mind)/i.test(
-          (el.innerText || el.getAttribute("aria-label") || "").trim(),
-        ),
-      );
-      if (!opener && !document.querySelector('[role="dialog"]')) {
-        throw new Error("Não encontrei o editor do grupo. Confira esta página antes de publicar.");
-      }
-      opener?.click();
-      const box = await waitFor(() =>
-        [
-          ...document.querySelectorAll('[role="dialog"] [role="textbox"][contenteditable="true"]'),
-        ].find((el) => el.offsetParent !== null),
-      );
-      if (!box || !active())
+      if (!current.image)
+        throw new Error("A imagem do convite não foi baixada. Confira a conexão.");
+      const saved = await send({ type: "ofz-fb-get-calibration" });
+      if (!saved.calibration)
+        throw new Error("Calibre a publicação com imagem neste perfil antes de enviar o convite.");
+      message("warn", "Publicando o convite com a calibração deste perfil…");
+      const requestId = crypto.randomUUID();
+      const result = await new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          window.removeEventListener("message", onMessage);
+          resolve({ ok: false, reason: "O Facebook não respondeu em 90 segundos." });
+        }, 90000);
+        function onMessage(event) {
+          if (
+            event.source !== window ||
+            event.origin !== location.origin ||
+            event.data?.channel !== "ofz-facebook-main" ||
+            event.data.type !== "publish_result" ||
+            event.data.data?.requestId !== requestId
+          )
+            return;
+          clearTimeout(timeout);
+          window.removeEventListener("message", onMessage);
+          resolve(event.data.data);
+        }
+        window.addEventListener("message", onMessage);
+        window.postMessage(
+          {
+            channel: "ofz-facebook-main",
+            type: "publish",
+            requestId,
+            data: {
+              calibration: saved.calibration,
+              groupId: current.group_id,
+              text: fbzComposerText(current),
+              image: current.image,
+              fbUserId: saved.fbUserId,
+            },
+          },
+          location.origin,
+        );
+      });
+      if (!result.ok) {
+        if (result.blocked) {
+          await send({
+            type: "ofz-fb-result",
+            jobId: current.id,
+            result: { ok: false, error_kind: "blocked", error: result.reason },
+          });
+        }
         throw new Error(
-          "Não encontrei o campo de publicação. Abra o editor do grupo e confira o convite.",
+          result.reason ||
+            "O Facebook recusou o convite. Confira a publicação antes de tentar de novo.",
         );
-      box.focus();
-      document.execCommand("selectAll", false, null);
-      document.execCommand("insertText", false, fbzComposerText(current));
-      const normalized = (value) =>
-        String(value || "")
-          .replace(/\s+/g, " ")
-          .trim();
-      if (!normalized(box.innerText).includes(normalized(fbzComposerText(current)))) {
-        throw new Error("O texto não apareceu no editor. Confira e publique à mão.");
       }
-      const dialog = box.closest('[role="dialog"]') || document;
-      if (current.image) {
-        const before = dialog.querySelectorAll("img").length;
-        const photoButton = [...dialog.querySelectorAll('[role="button"], button')].find((el) =>
-          /^(foto\/vídeo|photo\/video|adicionar foto|add photo)$/i.test(
-            (el.innerText || el.getAttribute("aria-label") || "").trim(),
-          ),
-        );
-        photoButton?.click();
-        const fileInput = await waitFor(() =>
-          [...document.querySelectorAll('input[type="file"]')].find((el) =>
-            /image|photo|video/i.test(el.accept || ""),
-          ),
-        );
-        if (!fileInput)
-          throw new Error(
-            "Não encontrei o anexo de imagem. Use o botão Copiar imagem e publique à mão.",
-          );
-        const blob = await (await fetch(current.image)).blob();
-        const file = new File([blob], `ofzap-${current.id}.png`, {
-          type: blob.type || "image/png",
-        });
-        const transfer = new DataTransfer();
-        transfer.items.add(file);
-        fileInput.files = transfer.files;
-        fileInput.dispatchEvent(new Event("change", { bubbles: true }));
-        const preview = await waitFor(() => dialog.querySelectorAll("img").length > before, 12000);
-        if (!preview) throw new Error("A imagem não apareceu na prévia. Confira e publique à mão.");
-      }
-      if (!active()) throw new Error("O prazo deste trabalho terminou. Confira antes de publicar.");
-      const publish = await waitFor(() =>
-        [...dialog.querySelectorAll('[role="button"], button')].find(
-          (el) =>
-            /^(publicar|post)$/i.test(
-              (el.innerText || el.getAttribute("aria-label") || "").trim(),
-            ) &&
-            el.getAttribute("aria-disabled") !== "true" &&
-            !el.disabled,
-        ),
-      );
-      if (!publish)
-        throw new Error(
-          "Não encontrei o botão Publicar pronto para uso. Confira a imagem e publique à mão.",
-        );
-      const beforeLinks = new Set(
-        [...document.querySelectorAll('a[href*="/groups/"]')].map((a) => a.href),
-      );
-      publish.click();
-      const finished = await waitFor(() => dialog !== document && !dialog.isConnected, 20000);
-      if (!finished)
-        throw new Error(
-          "Não consegui confirmar a publicação. Confira o grupo antes de registrar o resultado.",
-        );
-      message("warn", "Publicação concluída na tela. Registrando no OfZap…");
-      const newLink = await waitFor(
-        () =>
-          [...document.querySelectorAll('a[href*="/groups/"]')]
-            .filter((a) => !beforeLinks.has(a.href))
-            .map((a) => fbzNormalizePostUrl(a.href, current.group_id))
-            .find((link) => link.ok)?.url,
-        5000,
-      );
-      const res = await send({
+      const reported = await send({
         type: "ofz-fb-result",
         jobId: current.id,
-        result: { ok: true, ...(newLink ? { post_url: newLink } : {}) },
+        result: { ok: true, post_id: result.postId },
       });
-      if (!res.ok)
+      if (!reported.ok)
         throw new Error(
-          `Publicou no Facebook, mas o OfZap não registrou: ${res.body?.error?.message || res.reason || res.status}`,
+          "O Facebook confirmou a publicação, mas o OfZap não registrou o resultado. Confira a fila.",
         );
       job = null;
       message("ok", "Convite publicado e registrado no OfZap.");
@@ -510,6 +467,24 @@
   }
 
   // O service worker avisa quando chega um novo trabalho.
+  window.addEventListener("message", async (event) => {
+    if (
+      event.source !== window ||
+      event.origin !== location.origin ||
+      event.data?.channel !== "ofz-facebook-main"
+    )
+      return;
+    if (event.data.type !== "calibration") return;
+    const result = await send({ type: "ofz-fb-save-calibration", calibration: event.data.data });
+    const msg = ui.$?.("calibrate-msg");
+    if (msg) {
+      msg.className = `msg show ${result.ok ? "ok" : "bad"}`;
+      msg.textContent = result.ok
+        ? "Publicação com imagem calibrada neste perfil. Os próximos convites podem usar esse formato."
+        : "Não consegui salvar a calibração. Tente novamente.";
+    }
+    if (result.ok) refresh();
+  });
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type === "ofz-fb-job") {
       job = msg.job;

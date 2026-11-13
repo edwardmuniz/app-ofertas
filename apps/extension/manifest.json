@@ -13,6 +13,12 @@
   "content_scripts": [
     {
       "matches": ["https://*.facebook.com/groups/*"],
+      "js": ["fb-replay-core.js", "fb-main.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://*.facebook.com/groups/*"],
       "js": ["fb-core.js", "fb-group.js"],
       "run_at": "document_idle"
     }
