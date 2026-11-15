@@ -2,7 +2,9 @@ import {
   createMessagingProviderFactory,
   defaultAffiliateConnectorFactory,
   GeminiCopyWriter,
+  OPENROUTER_DEFAULT_MODEL,
   OpenRouterCopyWriter,
+  OpenRouterToolAgent,
 } from "@ofertas/connectors";
 import { createDb } from "@ofertas/db";
 import { Redis } from "ioredis";
@@ -34,7 +36,8 @@ export type RuntimeConfig = {
   publicApiUrl: string;
   dbPoolSize?: number;
   /** IA para escrever o texto das ofertas: OpenRouter (preferido) ou Gemini. */
-  openrouter?: { apiKey: string; model?: string } | null;
+  /** `agentModel`: modelo do curador automático (precisa aceitar ferramentas); padrão = `model`. */
+  openrouter?: { apiKey: string; model?: string; agentModel?: string } | null;
   gemini?: { apiKey: string; model?: string } | null;
 };
 
@@ -64,6 +67,11 @@ export function createRuntimeDeps(cfg: RuntimeConfig) {
       : cfg.gemini?.apiKey
         ? new GeminiCopyWriter(cfg.gemini.apiKey, { model: cfg.gemini.model })
         : null,
+    curatorAgent: cfg.openrouter?.apiKey
+      ? new OpenRouterToolAgent(cfg.openrouter.apiKey, {
+          model: cfg.openrouter.agentModel || cfg.openrouter.model || OPENROUTER_DEFAULT_MODEL,
+        })
+      : null,
   };
   // Imagens enviadas pelo painel (/media nosso) vêm direto do armazenamento.
   deps.fetchMedia = withOwnMedia(deps);

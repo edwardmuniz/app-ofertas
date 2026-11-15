@@ -3,6 +3,7 @@ export * from "./alerts";
 export * from "./audit";
 export * from "./auth";
 export * from "./authz";
+export * from "./auto-curator";
 export * from "./cache";
 export * from "./calendar";
 export * from "./channels";

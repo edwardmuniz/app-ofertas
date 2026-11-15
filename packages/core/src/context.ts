@@ -2,6 +2,7 @@ import type {
   AffiliateConnectorFactory,
   CopyWriter,
   MessagingProviderFactory,
+  ToolAgent,
 } from "@ofertas/connectors";
 import { type ActorType, type Origin, type Role, SCOPES, type Scope } from "@ofertas/contracts";
 import type { Db, DbOrTx } from "@ofertas/db";
@@ -52,6 +53,8 @@ export type Deps = {
   publicApiUrl: string;
   /** Escreve o texto das ofertas com IA (Gemini). Ausente = geração desligada. */
   copywriter?: CopyWriter | null;
+  /** Agente de IA com ferramentas do curador automático (OpenRouter). Ausente = curador desligado. */
+  curatorAgent?: ToolAgent | null;
   /** Envia alertas ao webhook do workspace (ausente = não notifica) */
   notify?: AlertNotifier;
   now?: () => Date;

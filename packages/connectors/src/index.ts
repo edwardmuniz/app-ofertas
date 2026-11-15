@@ -5,6 +5,7 @@ export * from "./affiliate/registry";
 export * from "./affiliate/shopee";
 export * from "./affiliate/shopee-feed";
 export * from "./affiliate/types";
+export * from "./ai/agent";
 export * from "./ai/copywriter";
 export * from "./messaging/evolution-go";
 export * from "./messaging/fake";

@@ -79,6 +79,7 @@ import {
   findSimilarOffers,
   generateCreative,
   getAudienceStats,
+  getAutoCuratorStatus,
   getBrandKit,
   getContent,
   getContentKit,
@@ -122,9 +123,11 @@ import {
   previewOfferFromLink,
   previewPost,
   publishImage,
+  requestAutoCuratorRun,
   requestFeedSync,
   requestUpload,
   reviewContent,
+  runAutoCurator,
   saveOffer,
   schedulePosts,
   searchOffers,
@@ -798,6 +801,41 @@ export function createMcpServer(ctx: Ctx): McpServer {
       const [rest, opts] = splitOpts(args);
       return deleteSavedSearch(ctx, rest.saved_search_id, opts);
     }),
+  );
+
+  server.registerTool(
+    "get_auto_curator",
+    {
+      title: "Curador automático",
+      description:
+        "Situação do curador automático (agente de IA no servidor que busca ofertas na Shopee e na Amazon e manda as melhores para a curadoria): ligado, intervalo, máximo por rodada, última e próxima rodada. Liga e ajusta por update_preferences (auto_curator, auto_curator_every_hours, auto_curator_max_offers); o que buscar vem de niches, forbidden e notes.",
+      annotations: READ,
+    },
+    safe(async () => getAutoCuratorStatus(ctx)),
+  );
+
+  server.registerTool(
+    "run_auto_curator",
+    {
+      title: "Rodar curador automático",
+      description:
+        "Roda o curador agora (leva até alguns minutos e gasta créditos de IA). Com dry_run mostra o que ele escolheria, sem gravar. Sem dry_run, as escolhas entram na curadoria (status new) com o motivo em notes.",
+      inputSchema: { ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async (args) => runAutoCurator(ctx, splitOpts(args)[1])),
+  );
+
+  server.registerTool(
+    "request_auto_curator_run",
+    {
+      title: "Pedir rodada do curador",
+      description:
+        "Pede uma rodada do curador em segundo plano: o worker roda em até 1 minuto, mesmo com o curador desligado ou fora do horário. Acompanhe por get_auto_curator (requested_at some quando termina).",
+      inputSchema: { ...MutationOptions.shape },
+      annotations: WRITE,
+    },
+    safe(async (args) => requestAutoCuratorRun(ctx, splitOpts(args)[1])),
   );
 
   // ── WhatsApp e publicação ──────────────────────────────────────

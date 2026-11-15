@@ -15,6 +15,7 @@ import {
   RefreshCw,
   RotateCcw,
   Send,
+  Sparkles,
   Ticket,
   Trash2,
   X,
@@ -35,6 +36,7 @@ import { TabBar, useRouteTab } from "@/lib/tabs";
 import { CopyEditor } from "./copy-editor";
 import { OfferCouponPanel } from "./coupon-panel";
 import { CouponsTab } from "./coupons-tab";
+import { CuratorCard } from "./curator-card";
 import { FromLinkPanel } from "./from-link";
 import { OfferLinkPanel } from "./link-panel";
 import { ProductCard } from "./parts";
@@ -116,7 +118,12 @@ export default function OfertasPage() {
         <OfferList key={`rej-${listKey}`} status="rejected" run={run} onChange={refreshCount} />
       )}
       {tab === "cupons" && <CouponsTab />}
-      {tab === "buscas-salvas" && <SavedSearchesTab run={run} />}
+      {tab === "buscas-salvas" && (
+        <div className="space-y-4">
+          <CuratorCard run={run} onRan={refreshCount} />
+          <SavedSearchesTab run={run} />
+        </div>
+      )}
     </div>
   );
 }
@@ -183,6 +190,14 @@ function MenuOption({
 
 /** Situação da oferta em uma frase, com cor: o que importa primeiro ao olhar o card. */
 function OfferStatus({ o, status }: { o: Offer; status: Offer["status"] }) {
+  if (status === "new" && o.notes?.startsWith("Curador: ")) {
+    return (
+      <span className="inline-flex items-start gap-1.5 text-neutral-500">
+        <Sparkles className="mt-0.5 h-4 w-4 shrink-0" />
+        {o.notes.slice("Curador: ".length)}
+      </span>
+    );
+  }
   if (status === "rejected") {
     return (
       <span className="text-neutral-500">

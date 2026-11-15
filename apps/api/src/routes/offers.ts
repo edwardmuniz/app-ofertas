@@ -5,6 +5,8 @@ import {
   BulkOfferStatusResult,
   ConnectAffiliateAccountInput,
   CreateOfferLinkInput,
+  CuratorRun,
+  CuratorStatus,
   FindSimilarInput,
   GenerateOfferCopyInput,
   ImportOfferFromLinkInput,
@@ -42,6 +44,7 @@ import {
   deleteStoreCoupon,
   findSimilarOffers,
   generateOfferCopy,
+  getAutoCuratorStatus,
   getOffer,
   importOfferFromLink,
   listAffiliateAccounts,
@@ -50,7 +53,9 @@ import {
   listSavedSearches,
   listStoreCoupons,
   previewOfferFromLink,
+  requestAutoCuratorRun,
   requestFeedSync,
+  runAutoCurator,
   saveOffer,
   searchOffers,
   setAffiliateAccountStatus,
@@ -434,6 +439,35 @@ export const offerRoutes: FastifyPluginAsyncZod<{ deps: Deps }> = async (app, { 
       },
     },
     async (req) => deleteSavedSearch(ctx(req), req.params.id, mutationOpts(req)),
+  );
+
+  // ── Curador automático ─────────────────────────────────────────
+  app.get(
+    "/auto-curator",
+    { schema: { tags: ["ofertas"], response: { 200: CuratorStatus, ...errors } } },
+    async (req) => getAutoCuratorStatus(ctx(req)),
+  );
+  app.post(
+    "/auto-curator/run",
+    {
+      schema: {
+        tags: ["ofertas"],
+        ...mutationSchema,
+        response: { 200: MutationResult(CuratorRun), ...errors },
+      },
+    },
+    async (req) => runAutoCurator(ctx(req), mutationOpts(req)),
+  );
+  app.post(
+    "/auto-curator/request",
+    {
+      schema: {
+        tags: ["ofertas"],
+        ...mutationSchema,
+        response: { 200: MutationResult(z.object({ requested_at: z.string() })), ...errors },
+      },
+    },
+    async (req) => requestAutoCuratorRun(ctx(req), mutationOpts(req)),
   );
   app.get(
     "/coupons",

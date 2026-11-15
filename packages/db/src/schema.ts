@@ -34,6 +34,16 @@ const workspaceId = () =>
 export type WorkspaceSettings = {
   preferences?: Record<string, unknown>;
   brand_kit?: Record<string, string>;
+  /** Última rodada do curador automático (não é preferência: o sistema que grava) */
+  auto_curator?: {
+    /** "Rodar agora" pedido no painel (o worker atende em até 1 min) */
+    requested_at?: string;
+    last_run_at?: string;
+    added?: number;
+    searches?: string[];
+    summary?: string;
+    error?: string | null;
+  };
 };
 
 // ── Identidade e acesso ─────────────────────────────────────────────

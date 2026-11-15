@@ -17,7 +17,11 @@ const { deps, close } = createRuntimeDeps({
   mediaDir: resolve(process.cwd(), process.env.MEDIA_DIR ?? "../../data/media"),
   s3: s3ConfigFromEnv(process.env),
   openrouter: process.env.OPENROUTER_API_KEY
-    ? { apiKey: process.env.OPENROUTER_API_KEY, model: process.env.OPENROUTER_MODEL }
+    ? {
+        apiKey: process.env.OPENROUTER_API_KEY,
+        model: process.env.OPENROUTER_MODEL,
+        agentModel: process.env.OPENROUTER_AGENT_MODEL,
+      }
     : null,
   gemini: process.env.GOOGLE_API_KEY
     ? { apiKey: process.env.GOOGLE_API_KEY, model: process.env.GEMINI_MODEL }

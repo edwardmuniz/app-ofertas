@@ -10,6 +10,7 @@ import {
   rollupClicks,
   runAutomationRules,
   runDailyStudio,
+  runDueAutoCurators,
   runDueSavedSearches,
   runFeedSync,
   runHealthChecks,
@@ -19,7 +20,7 @@ import {
 import { z } from "zod";
 
 /**
- * Processo de tarefas contínuas: buscas salvas e expiração de ofertas, regras automáticas,
+ * Processo de tarefas contínuas: buscas salvas, curador automático e expiração de ofertas, regras automáticas,
  * fila de publicação, consolidação de métricas e verificação de saúde (alertas).
  */
 const env = z
@@ -34,6 +35,7 @@ const env = z
     EVOLUTION_GO_API_KEY: z.string().optional(),
     OPENROUTER_API_KEY: z.string().optional(),
     OPENROUTER_MODEL: z.string().optional(),
+    OPENROUTER_AGENT_MODEL: z.string().optional(),
     GOOGLE_API_KEY: z.string().optional(),
     GEMINI_MODEL: z.string().optional(),
   })
@@ -53,7 +55,11 @@ const { deps, close } = createRuntimeDeps({
       : null,
   dbPoolSize: 4,
   openrouter: env.OPENROUTER_API_KEY
-    ? { apiKey: env.OPENROUTER_API_KEY, model: env.OPENROUTER_MODEL }
+    ? {
+        apiKey: env.OPENROUTER_API_KEY,
+        model: env.OPENROUTER_MODEL,
+        agentModel: env.OPENROUTER_AGENT_MODEL,
+      }
     : null,
   gemini: env.GOOGLE_API_KEY ? { apiKey: env.GOOGLE_API_KEY, model: env.GEMINI_MODEL } : null,
 });
@@ -203,7 +209,26 @@ async function copyTick() {
   }
 }
 
+let curating = false;
+/**
+ * Curador automático: o agente de IA busca e escolhe ofertas (leva alguns minutos por workspace).
+ * Roda à parte para não segurar as buscas salvas; cada workspace tem a própria trava.
+ */
+async function curatorTick() {
+  if (curating || stopping || !deps.curatorAgent) return;
+  curating = true;
+  try {
+    const r = await runDueAutoCurators(deps);
+    if (r.length) log("curador automático", r);
+  } catch (err) {
+    log("erro no curador automático", { error: String(err) });
+  } finally {
+    curating = false;
+  }
+}
+
 const timer = setInterval(() => void tick(), env.WORKER_TICK_SECONDS * 1000);
+const curatorTimer = setInterval(() => void curatorTick(), 60_000);
 const copyTimer = setInterval(() => void copyTick(), 30_000);
 const renderTimer = setInterval(() => void renderTick(), 10_000);
 const feedTimer = setInterval(() => void feedTick(), 60_000);
@@ -219,8 +244,10 @@ const shutdown = async () => {
   clearInterval(feedTimer);
   clearInterval(copyTimer);
   clearInterval(renderTimer);
+  clearInterval(curatorTimer);
   // Importação do feed em andamento é interrompida: solta a trava para recomeçar logo.
   if (feeding) await deps.cache.del("lock:worker:feed").catch(() => undefined);
+  // O curador não é esperado: só grava no fim da rodada, então parar no meio não deixa nada pela metade.
   while (running || publishing || copying || rendering)
     await new Promise((r) => setTimeout(r, 200));
   await close();

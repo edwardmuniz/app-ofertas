@@ -154,7 +154,13 @@ Cupons que não são de um produto (ex.: "R$ 20 OFF acima de R$ 99 na Shopee") v
   - aderência aos nichos dos segmentos,
   - penalidade se já publicada nos últimos N dias.
 - **Coleta contínua** (worker `offer-harvest`): buscas salvas rodam a cada X min, alimentam a fila de curadoria e o histórico de preço.
+  - Não repete produto já na curadoria (nova, aprovada ou recusada), nem o mesmo item em outra cor ou outro anúncio com o mesmo título (Amazon dá um ASIN por cor; Shopee tem vários vendedores). A chave ignora acentos, cores e o que está entre parênteses.
   - Pausar/retomar por `upsert_saved_search` (`active`); apagar por `delete_saved_search`/`DELETE /saved-searches/:id`. As ofertas que a busca já trouxe continuam na curadoria.
+- **Curador automático** (alternativa às buscas com filtros fixos): agente de IA no worker, pelo OpenRouter (`OPENROUTER_AGENT_MODEL`, padrão `OPENROUTER_MODEL`; precisa aceitar ferramentas; provedor mais barato). Um por workspace, guiado por `niches`, `forbidden` e `notes` das Preferências e pelas últimas 40 decisões da curadoria (aprovadas e recusadas, com o motivo).
+  - Ferramentas internas do agente: `search_offers` (até 10 buscas por rodada, 12 resultados cada, Shopee e Amazon) e `pick_offers` (escolhe com motivo). O sistema recusa escolha repetida, já na curadoria, da mesma família (cor/anúncio), com `fake_discount` ou indisponível, e acima do máximo.
+  - Escolhidas entram como `new` com `notes = "Curador: <motivo>"` (o painel mostra o motivo no card).
+  - Preferências: `auto_curator` (liga), `auto_curator_every_hours` (1–24, padrão 6; só roda das 7h às 23h no fuso do workspace), `auto_curator_max_offers` (1–30, padrão 8). Estado da última rodada em `workspaces.settings.auto_curator`. Falha da IA conta como rodada (espera o intervalo).
+  - API/MCP: `GET /auto-curator` / `get_auto_curator`; `POST /auto-curator/run` / `run_auto_curator` (síncrono, aceita `dry_run`: mostra as escolhas sem gravar); `POST /auto-curator/request` / `request_auto_curator_run` (o worker roda em até 1 min, mesmo desligado ou fora do horário; usado pelo painel, porque a rodada passa do tempo do proxy). Ação no log: `offers.auto_curate`.
 
 ## Qualidade e validação
 

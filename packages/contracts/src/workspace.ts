@@ -35,6 +35,26 @@ export const Preferences = z.object({
     .describe(
       "Gerar cards (criativos) nos envios. false = envia só a foto do produto, mesmo em regras e posts que pediram card. Padrão: true.",
     ),
+  auto_curator: z
+    .boolean()
+    .optional()
+    .describe(
+      "Curador automático: um agente de IA busca ofertas na Shopee e na Amazon seguindo nichos, proibidos e notas, e manda as melhores para a curadoria (status new). Padrão: false.",
+    ),
+  auto_curator_every_hours: z
+    .number()
+    .int()
+    .min(1)
+    .max(24)
+    .optional()
+    .describe("De quantas em quantas horas o curador roda (só entre 7h e 23h). Padrão: 6."),
+  auto_curator_max_offers: z
+    .number()
+    .int()
+    .min(1)
+    .max(30)
+    .optional()
+    .describe("Máximo de ofertas que o curador manda por rodada. Padrão: 8."),
   alert_webhook_url: z
     .url({ protocol: /^https?$/ })
     .max(500)

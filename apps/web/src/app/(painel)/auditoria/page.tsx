@@ -35,6 +35,8 @@ const ACTION_LABEL: Record<string, string> = {
   "saved_searches.create": "Salvou busca",
   "saved_searches.update": "Editou busca salva",
   "saved_searches.delete": "Apagou busca salva",
+  "offers.auto_curate": "Curador automático escolheu ofertas",
+  "offers.auto_curate_request": "Pediu rodada do curador",
   "posts.schedule": "Agendou publicações",
   "posts.send": "Publicou no grupo",
   "posts.cancel": "Cancelou publicação",

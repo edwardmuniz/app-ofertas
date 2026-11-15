@@ -6,6 +6,7 @@ export * from "./common";
 export * from "./content";
 export * from "./coupons";
 export * from "./creatives";
+export * from "./curator";
 export * from "./errors";
 export * from "./facebook";
 export * from "./groups";
