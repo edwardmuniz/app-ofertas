@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ImageField } from "@/components/image-field";
-import { CopyButton, ErrorText, Field, PageHeader, Segmented, Tag } from "@/components/ui";
+import { CopyButton, ErrorText, Field, PageHeader, Segmented, Switch, Tag } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 
 type TabKey = "dados" | "config" | "admins" | "convite" | "comunidade" | "sair";
@@ -356,16 +356,16 @@ export default function GroupPage() {
                   <div className="text-sm font-medium">{s.label}</div>
                   <div className="text-xs text-neutral-500">{s.help}</div>
                 </div>
-                <label className="flex shrink-0 items-center gap-2 text-sm">
+                <div className="flex shrink-0 items-center gap-2 text-sm text-neutral-500">
                   {busy === s.key && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                  <input
-                    type="checkbox"
+                  {value === null && "?"}
+                  <Switch
+                    label={s.label}
                     checked={value === true}
                     disabled={notAdmin || busy !== null}
-                    onChange={(e) => setSetting(s.key, e.target.checked)}
+                    onChange={(v) => setSetting(s.key, v)}
                   />
-                  {value === null ? "?" : value ? "Ligado" : "Desligado"}
-                </label>
+                </div>
               </div>
             );
           })}

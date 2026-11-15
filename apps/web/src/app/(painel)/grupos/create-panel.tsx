@@ -5,7 +5,7 @@ import { Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ImageField } from "@/components/image-field";
-import { ErrorText, Field } from "@/components/ui";
+import { ErrorText, Field, Switch } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 
 const fmtPhone = (p: string) =>
@@ -240,17 +240,13 @@ export function CreatePanel({
       )}
 
       {isGroup && (
-        <div className="flex flex-wrap gap-4 text-sm">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={adminOnly}
-              onChange={(e) => setAdminOnly(e.target.checked)}
-            />
+        <div className="flex flex-wrap gap-x-6 gap-y-3 text-sm">
+          <label className="flex items-center gap-2.5">
+            <Switch checked={adminOnly} onChange={setAdminOnly} />
             Só admins enviam mensagens
           </label>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" checked={locked} onChange={(e) => setLocked(e.target.checked)} />
+          <label className="flex items-center gap-2.5">
+            <Switch checked={locked} onChange={setLocked} />
             Só admins editam nome, descrição e foto
           </label>
         </div>

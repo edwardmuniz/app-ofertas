@@ -17,6 +17,7 @@ import {
   Panel,
   Segmented,
   StatCard,
+  Switch,
 } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 import { DesignPanel } from "./design-panel";
@@ -209,13 +210,9 @@ export default function VitrinePage() {
             </p>
           </div>
           {sf && (
-            <label className="flex items-center gap-2 text-sm md:col-span-2">
-              <input
-                type="checkbox"
-                checked={active}
-                onChange={(e) => setActive(e.target.checked)}
-              />
-              Vitrine no ar (desmarque para pausar)
+            <label className="flex items-center gap-2.5 text-sm md:col-span-2">
+              <Switch checked={active} onChange={setActive} />
+              Vitrine no ar (desligue para pausar)
             </label>
           )}
           <div className="flex items-center gap-3 md:col-span-2">

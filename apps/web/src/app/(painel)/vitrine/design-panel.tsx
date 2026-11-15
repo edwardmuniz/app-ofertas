@@ -4,7 +4,7 @@ import type { Offer, Storefront, StorefrontDesign } from "@ofertas/contracts";
 import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ImageField } from "@/components/image-field";
-import { ChoiceCards, Field, LoadingButton, Panel } from "@/components/ui";
+import { ChoiceCards, Field, LoadingButton, Panel, Switch } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 import { money } from "@/lib/format";
 
@@ -271,12 +271,8 @@ export function DesignPanel({ sf, onSaved }: { sf: Storefront; onSaved: (s: Stor
             />
           </Field>
         </div>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={d.group_by_category}
-            onChange={(e) => set("group_by_category", e.target.checked)}
-          />
+        <label className="flex items-center gap-2.5 text-sm">
+          <Switch checked={d.group_by_category} onChange={(v) => set("group_by_category", v)} />
           Separar as ofertas por categoria
         </label>
         <Field label="Aviso do rodapé" htmlFor="d_footer">

@@ -13,6 +13,7 @@ import {
   Field,
   Loading,
   LoadingButton,
+  Switch,
   Tag,
   type Tone,
 } from "@/components/ui";
@@ -917,11 +918,10 @@ export function Templates({ run }: { run: Runner }) {
               Linhas com variável vazia somem (ex.: sem cupom, a linha do cupom não aparece). Para
               variar o texto entre envios, separe versões com uma linha só com ---.
             </p>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
+            <label className="flex items-center gap-2.5 text-sm">
+              <Switch
                 checked={editing.is_default}
-                onChange={(e) => setEditing({ ...editing, is_default: e.target.checked })}
+                onChange={(v) => setEditing({ ...editing, is_default: v })}
               />
               Usar como padrão
             </label>

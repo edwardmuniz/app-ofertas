@@ -279,6 +279,61 @@ export function Field({
   );
 }
 
+/** Interruptor liga/desliga para configurações (listas de escolha seguem com checkbox). */
+export function Switch({
+  checked,
+  onChange,
+  disabled,
+  id,
+  label,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+  id?: string;
+  /** Nome para leitor de tela quando não há <label> ligado pelo id. */
+  label?: string;
+}) {
+  return (
+    <input
+      type="checkbox"
+      role="switch"
+      aria-checked={checked}
+      className="switch"
+      id={id}
+      aria-label={label}
+      checked={checked}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.checked)}
+    />
+  );
+}
+
+/** Linha de configuração: nome e ajuda à esquerda, controle à direita. */
+export function SettingRow({
+  label,
+  help,
+  htmlFor,
+  children,
+}: {
+  label: string;
+  help?: React.ReactNode;
+  htmlFor?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
+      <div className="min-w-0">
+        <label htmlFor={htmlFor} className="block text-sm font-medium">
+          {label}
+        </label>
+        {help && <div className="text-sm text-neutral-500">{help}</div>}
+      </div>
+      <div className="flex shrink-0 items-center gap-2">{children}</div>
+    </div>
+  );
+}
+
 export function ErrorText({ error }: { error: string | null }) {
   return error ? (
     <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-500/15 dark:text-red-300">
