@@ -91,6 +91,10 @@ type ShopeeNode = {
   productCatIds?: number[] | null;
 };
 
+/** Erro 10000 ("System Error") da Open API: falha transitória do lado da Shopee. */
+class ShopeeSystemError extends Error {}
+const SYSTEM_ERROR_ATTEMPTS = 6;
+
 export type ShopeeCredentials = { app_id: string; secret: string };
 
 /** Assinatura exigida pela API: SHA256(appId + timestamp + payload + secret). */
@@ -147,7 +151,12 @@ export class ShopeeConnector implements AffiliateConnector {
 
   constructor(
     private readonly creds: ShopeeCredentials,
-    private readonly opts: { fetch?: typeof fetch; endpoint?: string; now?: () => number } = {},
+    private readonly opts: {
+      fetch?: typeof fetch;
+      endpoint?: string;
+      now?: () => number;
+      sleep?: (ms: number) => Promise<void>;
+    } = {},
   ) {
     if (!creds.app_id || !creds.secret) {
       throw new ConnectorError(
@@ -158,7 +167,30 @@ export class ShopeeConnector implements AffiliateConnector {
     }
   }
 
+  /**
+   * A Shopee devolve "error [10000]: System Error" de forma intermitente para qualquer consulta
+   * (em 15/11/2026 falhava ~80% das chamadas idênticas). Tenta de novo com espera curta.
+   */
   private async gql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
+    const sleep = this.opts.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.gqlOnce<T>(query, variables);
+      } catch (err) {
+        if (!(err instanceof ShopeeSystemError)) throw err;
+        if (attempt >= SYSTEM_ERROR_ATTEMPTS) {
+          throw new ConnectorError(
+            "shopee",
+            "UNAVAILABLE",
+            "A Shopee está instável agora (erro 10000 da API). Tente de novo em alguns minutos.",
+          );
+        }
+        await sleep(250 * attempt);
+      }
+    }
+  }
+
+  private async gqlOnce<T>(query: string, variables: Record<string, unknown>): Promise<T> {
     const payload = JSON.stringify({ query, variables });
     const ts = Math.floor((this.opts.now?.() ?? Date.now()) / 1000);
     const signature = shopeeSignature(this.creds.app_id, ts, payload, this.creds.secret);
@@ -188,6 +220,7 @@ export class ShopeeConnector implements AffiliateConnector {
     const first = body?.errors?.[0];
     if (first) {
       const msg = first.message ?? "erro desconhecido";
+      if (String(first.extensions?.code) === "10000") throw new ShopeeSystemError();
       const code = /auth|signature|credential|permission|invalid app/i.test(msg)
         ? "AUTH"
         : // 10030: limite de requisições da Open API.

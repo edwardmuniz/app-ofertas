@@ -99,6 +99,32 @@ describe("Shopee (real, com fetch simulado)", () => {
     await expect(rl.c.ping()).rejects.toMatchObject({ code: "RATE_LIMIT" });
   });
 
+  it("tenta de novo no erro 10000 (instabilidade da Shopee) e desiste com UNAVAILABLE", async () => {
+    const systemError = () =>
+      Response.json({
+        errors: [{ message: "error [10000]: System Error", extensions: { code: 10000 } }],
+      });
+    const ok = () =>
+      Response.json({ data: { productOfferV2: { nodes: [], pageInfo: { hasNextPage: false } } } });
+    const fetchSeq = (responses: (() => Response)[]) => {
+      let i = 0;
+      return (async () => (responses[i++] ?? responses.at(-1) ?? ok)()) as unknown as typeof fetch;
+    };
+    const opts = { now: () => 1_700_000_000_000, sleep: async () => {} };
+    const creds = { app_id: "123", secret: "s3cr3t" };
+
+    const flaky = new ShopeeConnector(creds, {
+      ...opts,
+      fetch: fetchSeq([systemError, systemError, ok]),
+    });
+    await expect(flaky.search({ categoryId: "100644" })).resolves.toMatchObject({ items: [] });
+
+    const down = new ShopeeConnector(creds, { ...opts, fetch: fetchSeq([systemError]) });
+    await expect(down.search({ categoryId: "100644" })).rejects.toMatchObject({
+      code: "UNAVAILABLE",
+    });
+  });
+
   it("gera link curto com sub-ids limpos (máx. 5)", async () => {
     const { c, calls } = connector(() =>
       Response.json({ data: { generateShortLink: { shortLink: "https://s.shopee.com.br/xyz" } } }),
