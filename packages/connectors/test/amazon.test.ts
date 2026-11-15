@@ -91,6 +91,13 @@ describe("Amazon: cupom", () => {
     expect(parseAmazonPage(withCoupon).coupon).toMatchObject({ code: null });
   });
 
+  it("título vem do aria-label, não do h2 longo do selo ClimatePartner", () => {
+    const badge =
+      '<h2 class="a-size-medium-plus"><span>Certificação ClimatePartner verifica produtos e serviços de empresas que calcularam sua pegada de carbono e definiram metas de redução.</span></h2>';
+    const html = `<html><body>${card("B0BTYCRJSS", "Garrafa Térmica 1L", "R$ 89,90", badge)}</body></html>`;
+    expect(parseAmazonSearch(html).items[0]?.title).toBe("Garrafa Térmica 1L");
+  });
+
   it("lê o cupom no card da busca", () => {
     const html = `<html><body>${card(
       "B0BZJDLT6Z",

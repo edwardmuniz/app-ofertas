@@ -296,11 +296,16 @@ export function parseAmazonSearch(html: string): {
   for (const b of blocks) {
     const asin = b.match(/data-asin="([A-Z0-9]{10})"/)?.[1];
     if (!asin || seen.has(asin)) continue;
-    // O título é o maior h2 (alguns cards têm a marca num h2 separado).
+    // O título vem no aria-label do h2. Sem ele, o maior h2 (alguns cards têm a marca num h2
+    // separado). Selos como o ClimatePartner trazem um h2 com texto longo e sem aria-label.
+    const labeled = clean(b.match(/<h2[^>]*\baria-label="([^"]+)"/)?.[1]);
     const titles = [...b.matchAll(/<h2[^>]*>[\s\S]*?<span[^>]*>([^<]+)<\/span>/g)]
       .map((m) => clean(m[1]))
-      .filter((t): t is string => Boolean(t));
-    const title = titles.sort((x, y) => y.length - x.length)[0];
+      .filter(
+        (t): t is string =>
+          typeof t === "string" && !/ClimatePartner|Compromisso climático/i.test(t),
+      );
+    const title = labeled ?? titles.sort((x, y) => y.length - x.length)[0];
     // Preço de venda: `a-price` exato (o "De" e a parcela usam `a-price a-text-price`).
     const price = parsePrice(
       b.match(/class="a-price"[^>]*>\s*<span class="a-offscreen">([^<]+)/)?.[1] ?? null,

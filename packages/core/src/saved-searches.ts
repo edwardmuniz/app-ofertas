@@ -1,12 +1,13 @@
 import { type SavedSearch, SearchOffersInput, UpsertSavedSearchInput } from "@ofertas/contracts";
-import { offers, savedSearches } from "@ofertas/db";
+import { offers, products, savedSearches } from "@ofertas/db";
 import { and, asc, eq, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
 import { recordAudit } from "./audit";
 import { requireScope } from "./authz";
 import { type Ctx, type Deps, now, systemActor } from "./context";
 import { AppError } from "./errors";
 import { type MutationOptions, runMutation } from "./mutation";
-import { runSearch } from "./offers";
+import { type Candidate, runSearch } from "./offers";
+import { productFamilyKey } from "./product-family";
 
 type SavedSearchRow = typeof savedSearches.$inferSelect;
 
@@ -122,19 +123,44 @@ export async function deleteSavedSearch(ctx: Ctx, id: string, opts: MutationOpti
   });
 }
 
-/** Ofertas recusadas ou já na curadoria não voltam pela busca automática. */
-async function productsAlreadyCurated(deps: Deps, productIds: string[]) {
-  if (productIds.length === 0) return new Set<string>();
+/**
+ * Ofertas recusadas ou já na curadoria não voltam pela busca automática, nem em outra cor
+ * ou outro anúncio com o mesmo título (mesma família).
+ */
+export async function alreadyCurated(deps: Deps, workspaceId: string) {
   const rows = await deps.db
-    .select({ productId: offers.productId })
+    .select({ productId: offers.productId, platform: products.platform, title: products.title })
     .from(offers)
+    .innerJoin(products, eq(products.id, offers.productId))
     .where(
       and(
-        inArray(offers.productId, productIds),
+        eq(offers.workspaceId, workspaceId),
         inArray(offers.status, ["new", "approved", "rejected"]),
       ),
     );
-  return new Set(rows.map((r) => r.productId));
+  const productIds = new Set(rows.map((r) => r.productId));
+  const families = new Set(
+    rows.map((r) => productFamilyKey(r.platform, r.title)).filter((k): k is string => !!k),
+  );
+  return { productIds, families };
+}
+
+/** Uma oferta por produto e por família, ficando a de maior nota. */
+export function freshCandidates(
+  good: Candidate[],
+  curated: { productIds: Set<string>; families: Set<string> },
+) {
+  const productIds = new Set(curated.productIds);
+  const families = new Set(curated.families);
+  const fresh: Candidate[] = [];
+  for (const c of [...good].sort((a, b) => b.score - a.score)) {
+    const family = productFamilyKey(c.item.platform, c.item.title);
+    if (productIds.has(c.product.id) || (family && families.has(family))) continue;
+    productIds.add(c.product.id);
+    if (family) families.add(family);
+    fresh.push(c);
+  }
+  return fresh;
 }
 
 /** Roda uma busca salva: ofertas com nota suficiente entram na curadoria como "new". */
@@ -149,11 +175,7 @@ export async function runSavedSearch(deps: Deps, row: SavedSearchRow): Promise<H
       SearchOffersInput.parse(row.query),
     );
     const good = candidates.filter((c) => c.score >= row.minScore && c.item.available);
-    const curated = await productsAlreadyCurated(
-      deps,
-      good.map((c) => c.product.id),
-    );
-    const fresh = good.filter((c) => !curated.has(c.product.id));
+    const fresh = freshCandidates(good, await alreadyCurated(deps, row.workspaceId));
     if (fresh.length) {
       await deps.db.insert(offers).values(
         fresh.map((c) => ({
