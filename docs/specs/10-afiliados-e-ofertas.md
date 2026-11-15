@@ -154,6 +154,7 @@ Cupons que não são de um produto (ex.: "R$ 20 OFF acima de R$ 99 na Shopee") v
   - aderência aos nichos dos segmentos,
   - penalidade se já publicada nos últimos N dias.
 - **Coleta contínua** (worker `offer-harvest`): buscas salvas rodam a cada X min, alimentam a fila de curadoria e o histórico de preço.
+  - Pausar/retomar por `upsert_saved_search` (`active`); apagar por `delete_saved_search`/`DELETE /saved-searches/:id`. As ofertas que a busca já trouxe continuam na curadoria.
 
 ## Qualidade e validação
 

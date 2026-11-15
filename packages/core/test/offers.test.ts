@@ -16,9 +16,11 @@ import {
   createOfferLink,
   createToken,
   type Deps,
+  deleteSavedSearch,
   findSimilarOffers,
   getOffer,
   listOffers,
+  listSavedSearches,
   resolveSession,
   runDueSavedSearches,
   saveOffer,
@@ -398,5 +400,26 @@ describe("buscas salvas", () => {
       .where(eq(offers.id, target.id));
     expect((await runDueSavedSearches(deps)).expired).toBeGreaterThanOrEqual(1);
     expect((await getOffer(ctx, target.id)).status).toBe("expired");
+  });
+
+  it("apaga a busca salva (com dry_run) sem mexer nas ofertas que ela trouxe", async () => {
+    const ctx = await shopCtx();
+    const saved = done(
+      await upsertSavedSearch(ctx, { name: "Apagar", query: { keyword: "panelas" }, min_score: 0 }),
+    );
+    await runDueSavedSearches(deps);
+    const before = (await listOffers(ctx, { status: "new", limit: 100 })).items.length;
+
+    const preview = await deleteSavedSearch(ctx, saved.id, { dryRun: true });
+    expect(preview.status).toBe("dry_run");
+    expect((await listSavedSearches(ctx)).some((s) => s.id === saved.id)).toBe(true);
+
+    expect(done(await deleteSavedSearch(ctx, saved.id))).toMatchObject({
+      deleted: true,
+      name: "Apagar",
+    });
+    expect((await listSavedSearches(ctx)).some((s) => s.id === saved.id)).toBe(false);
+    expect((await listOffers(ctx, { status: "new", limit: 100 })).items.length).toBe(before);
+    await expect(deleteSavedSearch(ctx, saved.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 });

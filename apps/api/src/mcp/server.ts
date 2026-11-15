@@ -71,6 +71,7 @@ import {
   createTrackedLink,
   deleteContent,
   deleteCreative,
+  deleteSavedSearch,
   deleteSegment,
   deleteSentPost,
   deleteStoreCoupon,
@@ -782,6 +783,21 @@ export function createMcpServer(ctx: Ctx): McpServer {
       annotations: WRITE,
     },
     safe(async (args) => upsertSavedSearch(ctx, ...splitOpts(args))),
+  );
+
+  server.registerTool(
+    "delete_saved_search",
+    {
+      title: "Apagar busca salva",
+      description:
+        "Apaga a busca salva: ela para de rodar e some da lista. As ofertas que ela já trouxe continuam na curadoria. Para só interromper, use upsert_saved_search com active: false.",
+      inputSchema: { saved_search_id: z.uuid(), ...MutationOptions.shape },
+      annotations: { ...WRITE, destructiveHint: true },
+    },
+    safe(async (args) => {
+      const [rest, opts] = splitOpts(args);
+      return deleteSavedSearch(ctx, rest.saved_search_id, opts);
+    }),
   );
 
   // ── WhatsApp e publicação ──────────────────────────────────────

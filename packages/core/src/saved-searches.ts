@@ -96,6 +96,32 @@ export async function upsertSavedSearch(
   });
 }
 
+/** Remove a busca salva. As ofertas que ela já trouxe continuam na curadoria. */
+export async function deleteSavedSearch(ctx: Ctx, id: string, opts: MutationOptions = {}) {
+  const wsId = ctx.actor.workspaceId;
+  return runMutation(ctx, {
+    action: "saved_searches.delete",
+    scope: "offers:write",
+    input: { saved_search_id: id },
+    opts,
+    target: (i) => ({ type: "saved_search", id: i.saved_search_id }),
+    preview: async (c, i) => {
+      const [row] = await c.db
+        .select({ id: savedSearches.id, name: savedSearches.name })
+        .from(savedSearches)
+        .where(and(eq(savedSearches.id, i.saved_search_id), eq(savedSearches.workspaceId, wsId)));
+      if (!row) throw new AppError("NOT_FOUND", "Busca salva não encontrada.");
+      return row;
+    },
+    execute: async (tx, _i, p) => {
+      await tx.db
+        .delete(savedSearches)
+        .where(and(eq(savedSearches.id, p.id), eq(savedSearches.workspaceId, wsId)));
+      return { deleted: true as const, id: p.id, name: p.name };
+    },
+  });
+}
+
 /** Ofertas recusadas ou já na curadoria não voltam pela busca automática. */
 async function productsAlreadyCurated(deps: Deps, productIds: string[]) {
   if (productIds.length === 0) return new Set<string>();

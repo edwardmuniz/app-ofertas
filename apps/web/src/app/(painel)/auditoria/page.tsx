@@ -34,6 +34,7 @@ const ACTION_LABEL: Record<string, string> = {
   "offers.harvest": "Busca salva rodou",
   "saved_searches.create": "Salvou busca",
   "saved_searches.update": "Editou busca salva",
+  "saved_searches.delete": "Apagou busca salva",
   "posts.schedule": "Agendou publicações",
   "posts.send": "Publicou no grupo",
   "posts.cancel": "Cancelou publicação",

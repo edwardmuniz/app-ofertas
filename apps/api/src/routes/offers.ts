@@ -38,6 +38,7 @@ import {
   createOfferLink,
   type Deps,
   deleteAffiliateAccount,
+  deleteSavedSearch,
   deleteStoreCoupon,
   findSimilarOffers,
   generateOfferCopy,
@@ -416,6 +417,23 @@ export const offerRoutes: FastifyPluginAsyncZod<{ deps: Deps }> = async (app, { 
     },
     async (req) =>
       upsertSavedSearch(ctx(req), { ...req.body, id: req.params.id }, mutationOpts(req)),
+  );
+  app.delete(
+    "/saved-searches/:id",
+    {
+      schema: {
+        tags: ["ofertas"],
+        params: IdParams,
+        ...mutationSchema,
+        response: {
+          200: MutationResult(
+            z.object({ deleted: z.literal(true), id: z.string(), name: z.string() }),
+          ),
+          ...errors,
+        },
+      },
+    },
+    async (req) => deleteSavedSearch(ctx(req), req.params.id, mutationOpts(req)),
   );
   app.get(
     "/coupons",

@@ -703,6 +703,13 @@ function SavedSearchesTab({ run }: { run: Runner }) {
     if (res) await load();
   }
 
+  async function remove(s: SavedSearch) {
+    if (!confirm(`Apagar a busca salva "${s.name}"? As ofertas que ela já trouxe continuam.`))
+      return;
+    const res = await run(() => api(`/saved-searches/${s.id}`, { method: "DELETE" }));
+    if (res) await load();
+  }
+
   if (!items) return <Loading />;
   if (items.length === 0) {
     return (
@@ -734,9 +741,14 @@ function SavedSearchesTab({ run }: { run: Runner }) {
                     : ""}
               </div>
             </div>
-            <button type="button" className="btn-ghost" onClick={() => toggle(s)}>
-              {s.active ? "Pausar" : "Ativar"}
-            </button>
+            <div className="flex gap-2">
+              <button type="button" className="btn-ghost" onClick={() => toggle(s)}>
+                {s.active ? "Pausar" : "Ativar"}
+              </button>
+              <button type="button" className="btn-ghost" onClick={() => remove(s)}>
+                Apagar
+              </button>
+            </div>
           </div>
         );
       })}
