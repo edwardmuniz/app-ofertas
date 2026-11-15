@@ -5,6 +5,8 @@ export const CuratorPick = z.object({
   offer_id: z.string().nullable().describe("Preenchido depois de gravada na curadoria."),
   product_id: z.string(),
   platform: z.enum(PLATFORMS),
+  account_id: z.string().describe("Conta de afiliado da oferta."),
+  account_label: z.string(),
   title: z.string(),
   price: z.number(),
   discount_pct: z.number().nullable(),
@@ -25,7 +27,10 @@ export const CuratorStatus = z.object({
   enabled: z.boolean(),
   configured: z.boolean().describe("false = falta OPENROUTER_API_KEY no servidor."),
   every_hours: z.number(),
-  max_offers: z.number(),
+  max_offers: z.number().describe("Máximo por rodada em cada conta."),
+  accounts: z
+    .array(z.object({ id: z.string(), label: z.string(), platform: z.enum(PLATFORMS) }))
+    .describe("Contas de afiliado ativas em que o curador busca."),
   last_run_at: z.string().nullable(),
   next_run_at: z.string().nullable(),
   requested_at: z
@@ -38,6 +43,8 @@ export const CuratorStatus = z.object({
       searches: z.array(z.string()),
       summary: z.string(),
       error: z.string().nullable(),
+      by_account: z.record(z.string(), z.number()).describe("Ofertas trazidas por conta (rótulo)."),
+      cost_usd: z.number().nullable().describe("Gasto da rodada com a IA, em dólar."),
     })
     .nullable(),
 });

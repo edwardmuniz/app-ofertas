@@ -96,6 +96,12 @@ export const SearchOffersInput = z.object({
   price_max: z.coerce.number().min(0).optional(),
   min_rating: z.coerce.number().min(0).max(5).optional(),
   platforms: z.array(z.enum(PLATFORMS)).optional().describe("Padrão: todas as contas ativas."),
+  account_ids: z
+    .array(z.uuid())
+    .optional()
+    .describe(
+      "Só estas contas de afiliado (ids de list_affiliate_accounts). Padrão: todas as ativas.",
+    ),
   sort: z.enum(OFFER_SORTS).default("relevance"),
   limit: z.coerce.number().int().min(1).max(50).default(20),
   page: z.coerce.number().int().min(1).max(50).default(1).describe("Página (1 = primeira)."),
@@ -185,6 +191,10 @@ export const Offer = z.object({
     .describe("platform = veio da API da loja; link = criada a partir de um link colado."),
   product_id: z.string(),
   platform: z.enum(PLATFORMS),
+  affiliate_account_id: z
+    .string()
+    .nullable()
+    .describe("Conta de afiliado da oferta (vazio = criada por link sem conta)."),
   title: z.string(),
   image_url: z.string().nullable(),
   url: z.string(),
@@ -344,6 +354,7 @@ export type BulkOfferStatusResult = z.infer<typeof BulkOfferStatusResult>;
 export const ListOffersQuery = z.object({
   status: z.enum(OFFER_STATUS).optional(),
   platform: z.enum(PLATFORMS).optional(),
+  affiliate_account_id: z.uuid().optional().describe("Só ofertas desta conta de afiliado."),
   min_score: z.coerce.number().int().min(0).max(100).optional(),
   q: z.string().max(100).optional(),
   sent: z

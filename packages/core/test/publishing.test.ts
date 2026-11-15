@@ -34,6 +34,7 @@ import {
   deleteStoreCoupon,
   fillMissingCopies,
   generateOfferCopy,
+  getAiUsage,
   getConnectionState,
   getContent,
   getContentKit,
@@ -733,6 +734,14 @@ describe("texto próprio da oferta e cards", () => {
     expect(saved.status).toBe("done");
     const copy = saved.status === "done" ? saved.result?.copy : null;
     expect(copy).toMatchObject({ source: "ai" });
+    expect(copy).not.toHaveProperty("usage");
+    // As duas gerações (dry_run também gasta) entram no gasto com IA, como texto das ofertas.
+    const usage = await getAiUsage(ctx);
+    expect(usage.month.by_feature.find((f) => f.feature === "copy")).toMatchObject({
+      calls: 2,
+      requests: 2,
+    });
+    expect(usage.today.cost_usd).toBeCloseTo(0.0002);
 
     // Agente não usa a IA da plataforma: escreve o próprio texto.
     const t = await createToken(ctx, { name: "agente", preset: "full" });

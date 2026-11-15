@@ -6,8 +6,10 @@ import {
   Preferences,
   SearchOffersInput,
 } from "@ofertas/contracts";
-import { affiliateAccounts, type DbOrTx, offers, products, workspaces } from "@ofertas/db";
-import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { type DbOrTx, offers, products, workspaces } from "@ofertas/db";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { activeAccounts, connectorFor } from "./affiliates";
+import { recordAiUsage, usageOfError } from "./ai-usage";
 import { requireScope } from "./authz";
 import { type Ctx, type Deps, now, systemActor } from "./context";
 import { AppError, isAppError } from "./errors";
@@ -17,72 +19,75 @@ import { productFamilyKey } from "./product-family";
 import { alreadyCurated } from "./saved-searches";
 
 /**
- * Curador automático: um agente de IA (OpenRouter) faz várias buscas na Shopee e na Amazon,
+ * Curador automático: um agente de IA (OpenRouter) faz várias buscas em cada conta de afiliado ativa,
  * guiado pelos nichos, proibidos e notas das Preferências e pelo que foi aprovado ou recusado,
  * e manda as melhores ofertas para a curadoria (status new) com o motivo da escolha.
  */
 
 const DEFAULT_EVERY_HOURS = 6;
-const DEFAULT_MAX_OFFERS = 8;
-const MAX_SEARCHES = 10;
-const MAX_TURNS = 16;
+/** Por conta de afiliado ativa. */
+const DEFAULT_MAX_OFFERS = 5;
 const RESULTS_PER_SEARCH = 12;
+/** Buscas por rodada: cresce com o número de contas (4 + 4 por conta, até 20). */
+const maxSearchesFor = (accounts: number) => Math.min(4 + 4 * accounts, 20);
 /** Só roda de dia (horário do workspace): as ofertas chegam para quem revisa. */
 const DAY_START = 7;
 const DAY_END = 23;
 
 const CURATOR_SORTS = ["relevance", "sales", "discount", "price_asc"] as const;
 
-const TOOLS: AgentTool[] = [
-  {
-    name: "search_offers",
-    description:
-      "Busca produtos nas lojas conectadas. Devolve até 12 resultados com ref, preço, desconto, nota (0-100), avaliação, vendas e sinais de qualidade. Varie os termos: específicos funcionam melhor que genéricos.",
-    parameters: {
-      type: "object",
-      properties: {
-        keyword: {
-          type: "string",
-          description: "Termo de busca em português, ex.: 'air fryer 4l'.",
+function buildTools(accountRefs: string[]): AgentTool[] {
+  return [
+    {
+      name: "search_offers",
+      description:
+        "Busca produtos nas contas de afiliado. Devolve até 12 resultados com ref, conta, preço, desconto, nota (0-100), avaliação, vendas e sinais de qualidade. Varie os termos: específicos funcionam melhor que genéricos.",
+      parameters: {
+        type: "object",
+        properties: {
+          keyword: {
+            type: "string",
+            description: "Termo de busca em português, ex.: 'air fryer 4l'.",
+          },
+          account: {
+            type: "string",
+            enum: accountRefs,
+            description: "Só esta conta (ref da lista de contas). Omita para buscar em todas.",
+          },
+          min_discount: { type: "integer", description: "Desconto mínimo em %." },
+          price_max: { type: "number", description: "Preço máximo em reais." },
+          sort: { type: "string", enum: [...CURATOR_SORTS] },
         },
-        platform: {
-          type: "string",
-          enum: ["shopee", "amazon"],
-          description: "Só esta loja. Omita para buscar em todas.",
-        },
-        min_discount: { type: "integer", description: "Desconto mínimo em %." },
-        price_max: { type: "number", description: "Preço máximo em reais." },
-        sort: { type: "string", enum: [...CURATOR_SORTS] },
+        required: ["keyword"],
+        additionalProperties: false,
       },
-      required: ["keyword"],
-      additionalProperties: false,
     },
-  },
-  {
-    name: "pick_offers",
-    description:
-      "Manda ofertas para a curadoria humana. Use as refs devolvidas por search_offers e explique em uma frase curta por que cada uma vale a pena.",
-    parameters: {
-      type: "object",
-      properties: {
-        picks: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              ref: { type: "string" },
-              reason: { type: "string", description: "Motivo em até 140 caracteres." },
+    {
+      name: "pick_offers",
+      description:
+        "Manda ofertas para a curadoria humana. Use as refs devolvidas por search_offers e explique em uma frase curta por que cada uma vale a pena. Cada oferta conta no limite da conta em que foi achada.",
+      parameters: {
+        type: "object",
+        properties: {
+          picks: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                ref: { type: "string" },
+                reason: { type: "string", description: "Motivo em até 140 caracteres." },
+              },
+              required: ["ref", "reason"],
+              additionalProperties: false,
             },
-            required: ["ref", "reason"],
-            additionalProperties: false,
           },
         },
+        required: ["picks"],
+        additionalProperties: false,
       },
-      required: ["picks"],
-      additionalProperties: false,
     },
-  },
-];
+  ];
+}
 
 type Settings = { enabled: boolean; everyHours: number; maxOffers: number };
 
@@ -123,29 +128,35 @@ async function recentDecisions(deps: Deps, workspaceId: string) {
   };
 }
 
-async function searchablePlatforms(deps: Deps, workspaceId: string) {
-  const rows = await deps.db
-    .selectDistinct({ platform: affiliateAccounts.platform })
-    .from(affiliateAccounts)
-    .where(
-      and(eq(affiliateAccounts.workspaceId, workspaceId), ne(affiliateAccounts.status, "disabled")),
-    );
-  return rows.map((r) => r.platform);
+type CuratorAccount = Awaited<ReturnType<typeof activeAccounts>>[number] & { ref: string };
+
+/** Contas ativas (não desativadas) que permitem busca: o curador trabalha em cada uma. */
+async function curatorAccounts(deps: Deps, workspaceId: string): Promise<CuratorAccount[]> {
+  const rows = await activeAccounts(deps.db, workspaceId);
+  return rows
+    .filter((a) => {
+      try {
+        return connectorFor(deps, a).capabilities.search;
+      } catch {
+        return false;
+      }
+    })
+    .map((a, i) => ({ ...a, ref: `a${i + 1}` }));
 }
 
-function systemPrompt(maxOffers: number) {
+function systemPrompt(maxOffers: number, maxSearches: number) {
   return [
     "Você é o curador de ofertas de um canal de promoções no WhatsApp (Brasil).",
     "Seu trabalho: buscar produtos com search_offers e mandar para a curadoria humana, com pick_offers, só as ofertas que valem a pena divulgar.",
     "",
     "Como trabalhar:",
-    `- Faça buscas variadas (até ${MAX_SEARCHES}), cobrindo os nichos e as lojas disponíveis. Prefira termos específicos de produtos que vendem bem.`,
+    `- Faça buscas variadas (até ${maxSearches}), cobrindo os nichos e TODAS as contas da lista. Prefira termos específicos de produtos que vendem bem.`,
     "- Prefira desconto real (preço abaixo do histórico), boa avaliação (4+), muitas vendas e nota alta.",
     "- Nunca escolha itens com o sinal fake_discount, unavailable ou low_rating, nem o que estiver em 'Nunca publicar'.",
     "- lowest_30d / lowest_90d indicam o menor preço do período: é um bom sinal.",
     "- Itens com in_curation=true já estão na fila: não escolha de novo.",
     "- Não escolha o mesmo produto em cores ou anúncios diferentes.",
-    `- Escolha no máximo ${maxOffers} ofertas no total. Qualidade vale mais que quantidade: se nada for bom, não escolha nada.`,
+    `- Escolha no máximo ${maxOffers} ofertas POR CONTA (cada resultado diz a conta). Tente chegar perto do limite em cada conta, mas qualidade vale mais que quantidade: se nada for bom numa conta, não escolha nada dela.`,
     "- Aprenda com as decisões recentes: evite o que foi recusado e o motivo da recusa.",
     "- Ao terminar, responda com um resumo de uma ou duas frases em português.",
   ].join("\n");
@@ -153,7 +164,7 @@ function systemPrompt(maxOffers: number) {
 
 function userPrompt(input: {
   prefs: Preferences;
-  platforms: string[];
+  accounts: CuratorAccount[];
   decisions: { approved: string[]; rejected: string[] };
   maxOffers: number;
   today: string;
@@ -162,8 +173,12 @@ function userPrompt(input: {
   const list = (items: string[] | undefined, empty: string) =>
     items?.length ? items.map((i) => `- ${i}`).join("\n") : empty;
   return [
-    `Hoje: ${input.today}. Lojas disponíveis: ${input.platforms.join(", ") || "nenhuma"}.`,
-    `Escolha até ${input.maxOffers} ofertas.`,
+    `Hoje: ${input.today}.`,
+    "",
+    "Contas de afiliado (busque e escolha em cada uma):",
+    input.accounts.map((a) => `- ${a.ref}: ${a.label} (${a.platform})`).join("\n"),
+    "",
+    `Escolha até ${input.maxOffers} ofertas por conta.`,
     "",
     "Nichos foco:",
     list(prefs.niches, "- (não definidos: escolha categorias populares e variadas)"),
@@ -180,10 +195,16 @@ function userPrompt(input: {
   ].join("\n");
 }
 
-type Found = Candidate & { ref: string; family: string | null };
+type Found = Candidate & { ref: string; family: string | null; accountRef: string };
+
+type Plan = CuratorRun & {
+  found: Found[];
+  byAccount: Record<string, number>;
+  costUsd: number | null;
+};
 
 /** Roda o agente e devolve as escolhas (sem gravar nada). */
-async function planRun(deps: Deps, workspaceId: string): Promise<CuratorRun & { found: Found[] }> {
+async function planRun(deps: Deps, workspaceId: string): Promise<Plan> {
   const agent = deps.curatorAgent;
   if (!agent) {
     throw new AppError("NOT_CONFIGURED", "O curador automático precisa da IA do OpenRouter.", {
@@ -192,12 +213,15 @@ async function planRun(deps: Deps, workspaceId: string): Promise<CuratorRun & { 
   }
   const ws = await loadWorkspace(deps, workspaceId);
   const { maxOffers } = settingsOf(ws.prefs);
-  const platforms = await searchablePlatforms(deps, workspaceId);
-  if (platforms.length === 0) {
-    throw new AppError("NOT_CONFIGURED", "Nenhuma conta de afiliado conectada.", {
-      hint: "Conecte a Shopee ou a Amazon em Afiliados.",
+  const accounts = await curatorAccounts(deps, workspaceId);
+  if (accounts.length === 0) {
+    throw new AppError("NOT_CONFIGURED", "Nenhuma conta de afiliado ativa com busca.", {
+      hint: "Conecte (ou reative) a Shopee ou a Amazon em Afiliados.",
     });
   }
+  const accountById = new Map(accounts.map((a) => [a.id, a]));
+  const accountByRef = new Map(accounts.map((a) => [a.ref, a]));
+  const maxSearches = maxSearchesFor(accounts.length);
   const curated = await alreadyCurated(deps, workspaceId);
   const found = new Map<string, Found>();
   const searches: string[] = [];
@@ -209,21 +233,24 @@ async function planRun(deps: Deps, workspaceId: string): Promise<CuratorRun & { 
   const isCurated = (c: Found) =>
     curated.productIds.has(c.product.id) || (c.family !== null && curated.families.has(c.family));
 
+  const pickedIn = (accountId: string) =>
+    picks.filter((p) => p.candidate.account.id === accountId).length;
+
   async function search(args: Record<string, unknown>) {
-    if (searches.length >= MAX_SEARCHES) {
-      return { error: `Limite de ${MAX_SEARCHES} buscas atingido. Escolha agora com pick_offers.` };
+    if (searches.length >= maxSearches) {
+      return { error: `Limite de ${maxSearches} buscas atingido. Escolha agora com pick_offers.` };
     }
     const keyword = String(args.keyword ?? "")
       .trim()
       .slice(0, 100);
     if (!keyword) return { error: "Informe keyword." };
-    const platform =
-      args.platform === "shopee" || args.platform === "amazon" ? args.platform : null;
+    const only = typeof args.account === "string" ? accountByRef.get(args.account) : undefined;
+    if (args.account !== undefined && !only) return { error: "Conta desconhecida." };
     const sort = CURATOR_SORTS.find((s) => s === args.sort) ?? "relevance";
-    searches.push(platform ? `${keyword} (${platform})` : keyword);
+    searches.push(only ? `${keyword} (${only.label})` : keyword);
     const q = SearchOffersInput.parse({
       keyword,
-      platforms: platform ? [platform] : undefined,
+      account_ids: only ? [only.id] : accounts.map((a) => a.id),
       min_discount:
         typeof args.min_discount === "number" ? Math.round(args.min_discount) : undefined,
       price_max: typeof args.price_max === "number" ? args.price_max : undefined,
@@ -235,15 +262,19 @@ async function planRun(deps: Deps, workspaceId: string): Promise<CuratorRun & { 
       for (const e of res.errors) errors.push(`${e.platform}: ${e.message}`);
       return {
         results: res.candidates.map((c) => {
-          const known = [...found.values()].find((f) => f.product.id === c.product.id);
+          const known = [...found.values()].find(
+            (f) => f.product.id === c.product.id && f.account.id === c.account.id,
+          );
           const item: Found = known ?? {
             ...c,
             ref: `p${++seq}`,
             family: productFamilyKey(c.item.platform, c.item.title),
+            accountRef: accountById.get(c.account.id)?.ref ?? "?",
           };
           found.set(item.ref, item);
           return {
             ref: item.ref,
+            account: item.accountRef,
             platform: c.item.platform,
             title: c.item.title.slice(0, 140),
             price: c.item.price,
@@ -274,13 +305,14 @@ async function planRun(deps: Deps, workspaceId: string): Promise<CuratorRun & { 
       const c = found.get(ref);
       const why = !c
         ? "ref desconhecida"
-        : picks.length >= maxOffers
-          ? `limite de ${maxOffers} ofertas atingido`
+        : pickedIn(c.account.id) >= maxOffers
+          ? `limite de ${maxOffers} ofertas da conta ${c.accountRef} atingido`
           : picks.some((p) => p.candidate.ref === ref)
             ? "já escolhida"
             : isCurated(c)
               ? "já está na curadoria"
-              : c.family && pickedFamilies.has(c.family)
+              : picks.some((p) => p.product_id === c.product.id) ||
+                  (c.family && pickedFamilies.has(c.family))
                 ? "mesmo produto de outra escolha"
                 : c.flags.includes("fake_discount") || !c.item.available
                   ? "desconto falso ou indisponível"
@@ -295,6 +327,8 @@ async function planRun(deps: Deps, workspaceId: string): Promise<CuratorRun & { 
         offer_id: null,
         product_id: c.product.id,
         platform: c.item.platform,
+        account_id: c.account.id,
+        account_label: c.account.label,
         title: c.item.title,
         price: c.item.price,
         discount_pct: c.item.discountPct,
@@ -306,25 +340,32 @@ async function planRun(deps: Deps, workspaceId: string): Promise<CuratorRun & { 
       });
       accepted.push(ref);
     }
-    return { accepted, refused, remaining: maxOffers - picks.length };
+    return {
+      accepted,
+      refused,
+      remaining_by_account: Object.fromEntries(
+        accounts.map((a) => [a.ref, maxOffers - pickedIn(a.id)]),
+      ),
+    };
   }
 
   const decisions = await recentDecisions(deps, workspaceId);
   let summary: string;
+  let costUsd: number | null = null;
   try {
     const out = await agent.run({
-      system: systemPrompt(maxOffers),
+      system: systemPrompt(maxOffers, maxSearches),
       prompt: userPrompt({
         prefs: ws.prefs,
-        platforms,
+        accounts,
         decisions,
         maxOffers,
         today: new Intl.DateTimeFormat("pt-BR", { dateStyle: "full", timeZone: ws.tz }).format(
           now(deps),
         ),
       }),
-      tools: TOOLS,
-      maxTurns: MAX_TURNS,
+      tools: buildTools(accounts.map((a) => a.ref)),
+      maxTurns: maxSearches + 6,
       callTool: async ({ name, args }) =>
         name === "search_offers"
           ? search(args)
@@ -333,15 +374,22 @@ async function planRun(deps: Deps, workspaceId: string): Promise<CuratorRun & { 
             : { error: `Ferramenta desconhecida: ${name}` },
     });
     summary = out.text.trim().slice(0, 600);
+    costUsd = out.usage?.costUsd ?? null;
+    await recordAiUsage(deps.db, workspaceId, "curator", out.usage);
   } catch (err) {
+    await recordAiUsage(deps.db, workspaceId, "curator", usageOfError(err));
     throw curatorError(err);
   }
+  const byAccount: Record<string, number> = {};
+  for (const a of accounts) byAccount[a.label] = pickedIn(a.id);
   return {
     picks: picks.map(({ candidate: _c, ...p }) => p),
     searches,
     summary,
     errors: [...new Set(errors)],
     found: picks.map((p) => p.candidate),
+    byAccount,
+    costUsd,
   };
 }
 
@@ -387,12 +435,12 @@ export async function runAutoCurator(ctx: Ctx, opts: MutationOptions = {}) {
     opts,
     target: () => ({ type: "workspace", id: wsId }),
     preview: async (c) => {
-      const { found, ...run } = await planRun(c, wsId);
+      const { found, byAccount, costUsd, ...run } = await planRun(c, wsId);
       const candidates = run.picks.flatMap((p, i) => {
         const c = found[i];
         return c ? [{ ...toInsert(c), notes: `Curador: ${p.reason}` }] : [];
       });
-      return { ...run, candidates };
+      return { ...run, candidates, by_account: byAccount, cost_usd: costUsd };
     },
     execute: async (tx, _i, plan): Promise<CuratorRun> => {
       const rows = plan.candidates.length
@@ -411,6 +459,8 @@ export async function runAutoCurator(ctx: Ctx, opts: MutationOptions = {}) {
         searches: plan.searches,
         summary: plan.summary,
         error: null,
+        by_account: plan.by_account,
+        cost_usd: plan.cost_usd,
       });
       return { picks, searches: plan.searches, summary: plan.summary, errors: plan.errors };
     },
@@ -440,6 +490,7 @@ export async function getAutoCuratorStatus(ctx: Ctx): Promise<CuratorStatus> {
   requireScope(ctx.actor, "offers:read");
   const ws = await loadWorkspace(ctx, ctx.actor.workspaceId);
   const s = settingsOf(ws.prefs);
+  const accounts = await curatorAccounts(ctx, ctx.actor.workspaceId);
   const state = ws.settings.auto_curator;
   const requested = pendingRequest(state);
   const next = requested
@@ -454,6 +505,7 @@ export async function getAutoCuratorStatus(ctx: Ctx): Promise<CuratorStatus> {
     configured: Boolean(ctx.curatorAgent),
     every_hours: s.everyHours,
     max_offers: s.maxOffers,
+    accounts: accounts.map((a) => ({ id: a.id, label: a.label, platform: a.platform })),
     last_run_at: state?.last_run_at ?? null,
     next_run_at: next?.toISOString() ?? null,
     requested_at: requested,
@@ -463,6 +515,8 @@ export async function getAutoCuratorStatus(ctx: Ctx): Promise<CuratorStatus> {
           searches: state.searches ?? [],
           summary: state.summary ?? "",
           error: state.error ?? null,
+          by_account: state.by_account ?? {},
+          cost_usd: state.cost_usd ?? null,
         }
       : null,
   };
@@ -553,6 +607,8 @@ export async function runDueAutoCurators(deps: Deps) {
           searches: res.preview.searches,
           summary: "Escolhas aguardando aprovação no painel.",
           error: null,
+          by_account: res.preview.by_account,
+          cost_usd: res.preview.cost_usd,
         });
       }
       results.push({

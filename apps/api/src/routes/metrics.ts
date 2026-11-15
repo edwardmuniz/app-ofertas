@@ -1,4 +1,5 @@
 import {
+  AiUsageSummary,
   Alert,
   Funnel,
   ListAlertsQuery,
@@ -14,6 +15,7 @@ import {
 import {
   type Ctx,
   type Deps,
+  getAiUsage,
   getFunnel,
   getMetricsBreakdown,
   getPerformanceSummary,
@@ -34,6 +36,11 @@ export const metricsRoutes: FastifyPluginAsyncZod<{ deps: Deps }> = async (app, 
     actor: requireActor(req),
   });
 
+  app.get(
+    "/ai-usage",
+    { schema: { tags: ["métricas"], response: { 200: AiUsageSummary, ...errors } } },
+    async (req) => getAiUsage(ctx(req)),
+  );
   app.get(
     "/metrics/summary",
     {

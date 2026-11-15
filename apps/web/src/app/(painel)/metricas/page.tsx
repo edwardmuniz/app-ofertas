@@ -6,6 +6,7 @@ import { type PeriodKey, PeriodPicker, WEEKDAYS } from "@/components/metrics";
 import { PageHeader } from "@/components/ui";
 import { api } from "@/lib/api";
 import { money } from "@/lib/format";
+import { AiUsagePanel } from "./ai-usage";
 
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
 
@@ -166,6 +167,7 @@ export default function MetricasPage() {
           </tbody>
         </table>
       </section>
+      <AiUsagePanel />
     </div>
   );
 }

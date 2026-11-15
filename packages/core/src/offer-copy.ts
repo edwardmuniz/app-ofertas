@@ -2,6 +2,7 @@ import { type CopyFacts, CopyWriterError } from "@ofertas/connectors";
 import { GenerateOfferCopyInput, SetOfferCopyInput } from "@ofertas/contracts";
 import { type OfferCopy, offers, workspaces } from "@ofertas/db";
 import { and, desc, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
+import { recordAiUsage, usageOfError } from "./ai-usage";
 import { requireHuman } from "./authz";
 import { type Ctx, type Deps, now, systemActor } from "./context";
 import { AppError } from "./errors";
@@ -98,12 +99,15 @@ async function writeAiCopy(
         tone: typeof tone === "string" && tone.trim() ? tone : null,
         hint: i.hint ?? null,
       };
-      let text: Awaited<ReturnType<typeof writer.write>>;
+      let written: Awaited<ReturnType<typeof writer.write>>;
       try {
-        text = await writer.write(facts);
+        written = await writer.write(facts);
       } catch (err) {
+        await recordAiUsage(c.db, wsId, "copy", usageOfError(err));
         throw copyError(err, writer.provider);
       }
+      const { usage, ...text } = written;
+      await recordAiUsage(c.db, wsId, "copy", usage);
       const copy: OfferCopy = { ...text, source: "ai", updated_at: now(c).toISOString() };
       return { offer_id: offer.id, copy };
     },

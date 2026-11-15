@@ -199,7 +199,10 @@ export async function runSearch(
   errors: { platform: string; message: string }[];
   hasMore: boolean;
 }> {
-  const all = await activeAccounts(deps.db, workspaceId, q.platforms as Platform[] | undefined);
+  const onlyIds = q.account_ids?.length ? new Set(q.account_ids) : null;
+  const all = (
+    await activeAccounts(deps.db, workspaceId, q.platforms as Platform[] | undefined)
+  ).filter((a) => !onlyIds || onlyIds.has(a.id));
   if (all.length === 0) {
     throw new AppError("NOT_CONFIGURED", "Nenhuma conta de afiliado conectada.", {
       hint: "Conecte uma conta em Afiliados no painel (dá para usar o modo simulado para testar).",
@@ -377,6 +380,7 @@ function toOffer(o: OfferRow, p: ProductRow): Offer {
     origin: o.affiliateAccountId ? "platform" : "link",
     product_id: p.id,
     platform: p.platform,
+    affiliate_account_id: o.affiliateAccountId,
     title: p.title,
     image_url: p.imageUrls[0] ?? null,
     url: p.url,
@@ -812,6 +816,7 @@ export async function listOffers(ctx: Ctx, raw: ListOffersQuery = {}) {
   const conds = [eq(offers.workspaceId, ctx.actor.workspaceId)];
   if (q.status) conds.push(eq(offers.status, q.status));
   if (q.platform) conds.push(eq(products.platform, q.platform));
+  if (q.affiliate_account_id) conds.push(eq(offers.affiliateAccountId, q.affiliate_account_id));
   if (q.min_score !== undefined) conds.push(gte(offers.score, q.min_score));
   if (q.q) conds.push(ilike(products.title, `%${q.q.replace(/[%_\\]/g, "\\$&")}%`));
   if (q.sent) {

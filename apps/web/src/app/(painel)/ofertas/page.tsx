@@ -1,6 +1,6 @@
 "use client";
 
-import type { Offer, SavedSearch, ValidateOfferResult } from "@ofertas/contracts";
+import type { AffiliateAccount, Offer, SavedSearch, ValidateOfferResult } from "@ofertas/contracts";
 import {
   BadgeDollarSign,
   Check,
@@ -240,12 +240,25 @@ function OfferList({
   const [selecting, setSelecting] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [rejectMany, setRejectMany] = useState(false);
+  /** Contas de afiliado ativas: com mais de uma, a lista separa por conta. */
+  const [accounts, setAccounts] = useState<AffiliateAccount[]>([]);
+  const [accountFilter, setAccountFilter] = useState<string>("all");
+  useEffect(() => {
+    api<AffiliateAccount[]>("/affiliate-accounts")
+      .then((list) => setAccounts(list.filter((a) => a.status !== "disabled")))
+      .catch(() => setAccounts([]));
+  }, []);
+  const accountLabel = new Map(accounts.map((a) => [a.id, a.label]));
+  const byAccount = accounts.length > 1;
 
   const load = useCallback(async () => {
     const sent = status === "approved" && sentFilter !== "all" ? `&sent=${sentFilter}` : "";
-    const page = await api<{ items: Offer[] }>(`/offers?status=${status}&limit=100${sent}`);
+    const account = accountFilter !== "all" ? `&affiliate_account_id=${accountFilter}` : "";
+    const page = await api<{ items: Offer[] }>(
+      `/offers?status=${status}&limit=100${sent}${account}`,
+    );
     setItems(page.items);
-  }, [status, sentFilter]);
+  }, [status, sentFilter, accountFilter]);
   useEffect(() => {
     load();
   }, [load]);
@@ -336,9 +349,26 @@ function OfferList({
         ]}
       />
     ) : null;
+  const accountTabs = byAccount ? (
+    <Segmented
+      value={accountFilter}
+      onChange={(v) => {
+        setItems(null);
+        stopSelecting();
+        setAccountFilter(v);
+      }}
+      options={[
+        { value: "all", label: "Todas as contas" },
+        ...accounts.map((a) => ({ value: a.id, label: a.label })),
+      ]}
+    />
+  ) : null;
   const toolbar = (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      {sentTabs ?? <span />}
+      <div className="flex flex-wrap items-center gap-3">
+        {accountTabs}
+        {sentTabs}
+      </div>
       {items && items.length > 0 && (
         <button
           type="button"
@@ -361,6 +391,14 @@ function OfferList({
 
   if (!items) return <Loading />;
   if (items.length === 0) {
+    if (accountFilter !== "all") {
+      return (
+        <div className="space-y-4">
+          {toolbar}
+          <Empty>Nenhuma oferta desta conta aqui.</Empty>
+        </div>
+      );
+    }
     if (status === "approved" && sentFilter !== "all") {
       return (
         <div className="space-y-4">
@@ -403,6 +441,11 @@ function OfferList({
           <ProductCard
             key={o.id}
             p={o}
+            account={
+              byAccount && o.affiliate_account_id
+                ? (accountLabel.get(o.affiliate_account_id) ?? null)
+                : null
+            }
             selected={picked.has(o.id)}
             onSelect={selecting ? () => toggle(o.id) : undefined}
             showScore={status === "new"}

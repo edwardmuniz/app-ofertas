@@ -4,13 +4,14 @@ import type { CuratorStatus } from "@ofertas/contracts";
 import { Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { LoadingButton, Panel, Tag } from "@/components/ui";
+import { LoadingButton, Panel, SettingRow, Switch, Tag } from "@/components/ui";
 import { api, fmtDate } from "@/lib/api";
+import { usd } from "@/lib/format";
 
 type Runner = <T>(fn: () => Promise<T>) => Promise<T | null>;
 
 const HOURS = [2, 3, 4, 6, 8, 12, 24];
-const MAX_OFFERS = [3, 5, 8, 10, 15, 20];
+const MAX_OFFERS = [2, 3, 5, 8, 10, 15];
 
 /**
  * Curador automático: agente de IA que busca na Shopee e na Amazon seguindo as Preferências
@@ -70,8 +71,8 @@ export function CuratorCard({ run, onRan }: { run: Runner; onRan?: () => void })
       }
       subtitle={
         <>
-          Um agente de IA busca ofertas na Shopee e na Amazon seguindo os nichos, o que nunca
-          publicar e as notas das{" "}
+          Um agente de IA busca ofertas em cada conta de afiliado ativa seguindo os nichos, o que
+          nunca publicar e as notas das{" "}
           <Link href="/preferencias" className="underline">
             Preferências
           </Link>
@@ -90,23 +91,32 @@ export function CuratorCard({ run, onRan }: { run: Runner; onRan?: () => void })
       }
     >
       {!status.configured && (
-        <p className="mb-3 text-sm text-amber-600">
+        <p className="mb-4 text-sm text-amber-600">
           Falta a chave do OpenRouter no servidor (OPENROUTER_API_KEY no .env).
         </p>
       )}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-3 text-sm">
-        <label className="inline-flex items-center gap-2">
-          <input
-            type="checkbox"
+      <div className="divide-y divide-[var(--border-subtle)]">
+        <SettingRow
+          label="Rodar sozinho"
+          htmlFor="curator_enabled"
+          help={
+            waiting
+              ? "Rodada pedida: começa em até 1 minuto e leva alguns minutos."
+              : status.enabled && status.next_run_at
+                ? `Próxima rodada: ${fmtDate(status.next_run_at)}. Só roda entre 7h e 23h.`
+                : "Só roda entre 7h e 23h."
+          }
+        >
+          <Switch
+            id="curator_enabled"
             checked={status.enabled}
             disabled={saving || !status.configured}
-            onChange={(e) => save({ auto_curator: e.target.checked })}
+            onChange={(v) => save({ auto_curator: v })}
           />
-          Rodar sozinho
-        </label>
-        <label className="inline-flex items-center gap-2">
-          a cada
+        </SettingRow>
+        <SettingRow label="Frequência" htmlFor="curator_every">
           <select
+            id="curator_every"
             className="input !w-auto"
             value={status.every_hours}
             disabled={saving}
@@ -114,47 +124,73 @@ export function CuratorCard({ run, onRan }: { run: Runner; onRan?: () => void })
           >
             {HOURS.map((h) => (
               <option key={h} value={h}>
-                {h} h
+                a cada {h} h
               </option>
             ))}
           </select>
-        </label>
-        <label className="inline-flex items-center gap-2">
-          até
+        </SettingRow>
+        <SettingRow
+          label="Ofertas por conta"
+          help={
+            status.accounts.length
+              ? `Máximo por rodada em cada conta ativa: ${status.accounts.map((a) => a.label).join(", ")}.`
+              : "Nenhuma conta de afiliado ativa com busca. Conecte ou reative em Afiliados."
+          }
+          htmlFor="curator_max"
+        >
           <select
+            id="curator_max"
             className="input !w-auto"
             value={status.max_offers}
             disabled={saving}
             onChange={(e) => save({ auto_curator_max_offers: Number(e.target.value) })}
           >
-            {MAX_OFFERS.map((n) => (
-              <option key={n} value={n}>
-                {n} ofertas
-              </option>
-            ))}
+            {[...new Set([...MAX_OFFERS, status.max_offers])]
+              .sort((a, b) => a - b)
+              .map((n) => (
+                <option key={n} value={n}>
+                  até {n}
+                </option>
+              ))}
           </select>
-          por rodada
-        </label>
+        </SettingRow>
       </div>
-      <div className="mt-3 space-y-1 text-xs text-neutral-500">
-        {waiting ? (
-          <p>Rodada pedida: começa em até 1 minuto e leva alguns minutos.</p>
-        ) : status.enabled && status.next_run_at ? (
-          <p>Próxima rodada: {fmtDate(status.next_run_at)} (só entre 7h e 23h).</p>
-        ) : null}
-        {status.last_run_at && last && (
-          <p>
-            Última: {fmtDate(status.last_run_at)} ·{" "}
+      {status.last_run_at && last && (
+        <div className="mt-4 space-y-2 rounded-lg bg-[var(--surface-sunken)] p-4 text-sm">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="font-medium">Última rodada</span>
+            <span className="text-neutral-500">{fmtDate(status.last_run_at)}</span>
             {last.error ? (
-              <span className="text-red-600">erro: {last.error}</span>
+              <Tag tone="negative">erro</Tag>
             ) : (
-              `${last.added} ${last.added === 1 ? "oferta nova" : "ofertas novas"}`
+              <Tag tone="positive">
+                {last.added} {last.added === 1 ? "oferta nova" : "ofertas novas"}
+              </Tag>
             )}
-            {last.searches.length > 0 && ` · buscou: ${last.searches.join(", ")}`}
-          </p>
-        )}
-        {last?.summary && !last.error && <p className="italic">“{last.summary}”</p>}
-      </div>
+            {last.cost_usd !== null && (
+              <span className="text-neutral-500">· custou {usd(last.cost_usd)}</span>
+            )}
+          </div>
+          {!last.error && Object.keys(last.by_account).length > 0 && (
+            <p>
+              {Object.entries(last.by_account)
+                .map(([label, n]) => `${label}: ${n}`)
+                .join(" · ")}
+            </p>
+          )}
+          {last.error && <p className="text-red-600">{last.error}</p>}
+          {last.summary && !last.error && (
+            <p className="text-[var(--text-secondary)]">{last.summary}</p>
+          )}
+          {last.searches.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {last.searches.map((q) => (
+                <Tag key={q}>{q}</Tag>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </Panel>
   );
 }

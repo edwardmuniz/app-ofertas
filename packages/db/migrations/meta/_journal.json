@@ -176,6 +176,13 @@
       "when": 1794184381926,
       "tag": "0024_flawless_zodiak",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794770819540,
+      "tag": "0025_narrow_scarecrow",
+      "breakpoints": true
     }
   ]
 }

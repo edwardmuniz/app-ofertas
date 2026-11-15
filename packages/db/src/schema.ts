@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -43,6 +44,10 @@ export type WorkspaceSettings = {
     searches?: string[];
     summary?: string;
     error?: string | null;
+    /** Ofertas trazidas por conta de afiliado (rótulo da conta → quantidade) */
+    by_account?: Record<string, number>;
+    /** Gasto da rodada com a IA, em dólar */
+    cost_usd?: number | null;
   };
 };
 
@@ -1035,4 +1040,25 @@ export const browserJobs = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [index().on(t.facebookAccountId, t.status), index().on(t.postId)],
+);
+
+// ── Gasto com IA ─────────────────────────────────────────────────────
+
+/** Consumo de IA por chamada (texto das ofertas, curador): tokens e custo informado pelo provedor. */
+export const aiUsage = pgTable(
+  "ai_usage",
+  {
+    id: id(),
+    workspaceId: workspaceId(),
+    feature: text({ enum: ["copy", "curator"] }).notNull(),
+    provider: text().notNull(),
+    model: text().notNull(),
+    requests: integer().notNull().default(1),
+    inputTokens: integer().notNull().default(0),
+    outputTokens: integer().notNull().default(0),
+    /** Dólar; vazio quando o provedor não informa (Gemini) */
+    costUsd: doublePrecision(),
+    createdAt: createdAt(),
+  },
+  (t) => [index().on(t.workspaceId, t.createdAt)],
 );

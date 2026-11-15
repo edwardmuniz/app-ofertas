@@ -85,8 +85,11 @@ export function ProductCard({
   children,
   selected,
   onSelect,
+  account,
 }: {
   p: CardProduct;
+  /** Conta de afiliado da oferta (mostrada quando há mais de uma conta ativa). */
+  account?: string | null;
   /** Modo seleção: a foto vira uma caixa de marcar. */
   selected?: boolean;
   onSelect?: () => void;
@@ -155,7 +158,11 @@ export function ProductCard({
       <div className="flex flex-1 flex-col gap-2 p-4">
         <div className="flex items-center justify-between gap-2 text-sm text-neutral-500">
           <PlatformBadge platform={p.platform} />
-          {p.category && <span className="truncate">{p.category}</span>}
+          {account ? (
+            <span className="truncate font-medium text-[var(--text-secondary)]">{account}</span>
+          ) : (
+            p.category && <span className="truncate">{p.category}</span>
+          )}
         </div>
         {status && <div className="text-sm font-medium">{status}</div>}
         <a

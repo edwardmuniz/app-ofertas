@@ -3,6 +3,13 @@ const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" 
 export const money = (v: number | null | undefined) =>
   v === null || v === undefined ? "—" : brl.format(v);
 
+/** Dólar com casas suficientes para valores de centavos de IA (ex.: US$ 0,0084). */
+export const usd = (v: number) =>
+  `US$ ${v.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: v !== 0 && Math.abs(v) < 0.1 ? 4 : 2,
+  })}`;
+
 export const FLAG_LABELS: Record<string, { label: string; tone: "bad" | "good" | "info" }> = {
   fake_discount: { label: "Desconto suspeito", tone: "bad" },
   low_rating: { label: "Avaliação baixa", tone: "bad" },

@@ -1,6 +1,14 @@
 // Agente de IA com ferramentas (tool calling): o modelo decide o que chamar, o sistema executa.
 // Usado pelo curador automático de ofertas. As ferramentas ficam no core; aqui só o laço.
-import { CopyWriterError, type CopyWriterErrorCode, OPENROUTER_URL } from "./copywriter";
+import {
+  type AiUsage,
+  addUsage,
+  CopyWriterError,
+  type CopyWriterErrorCode,
+  OPENROUTER_URL,
+  type OpenRouterUsage,
+  openRouterUsage,
+} from "./copywriter";
 
 export type AgentTool = {
   name: string;
@@ -26,6 +34,8 @@ export type AgentRunResult = {
   text: string;
   turns: number;
   toolCalls: number;
+  /** Consumo somado de todas as idas ao modelo. */
+  usage: AiUsage | null;
 };
 
 export interface ToolAgent {
@@ -96,6 +106,7 @@ export class OpenRouterToolAgent implements ToolAgent {
           })),
           tool_choice: allowTools ? "auto" : "none",
           provider: { sort: "price", require_parameters: true },
+          usage: { include: true },
         }),
         signal: AbortSignal.timeout(90_000),
       });
@@ -103,6 +114,8 @@ export class OpenRouterToolAgent implements ToolAgent {
       throw new CopyWriterError("UNAVAILABLE", `OpenRouter indisponível: ${String(err)}`);
     }
     const data = (await res.json().catch(() => null)) as {
+      model?: string;
+      usage?: OpenRouterUsage;
       choices?: { message?: { content?: string | null; tool_calls?: ChatToolCall[] } }[];
       error?: { message?: string; code?: number };
     } | null;
@@ -112,9 +125,14 @@ export class OpenRouterToolAgent implements ToolAgent {
         data?.error?.message ?? `respondeu ${res.status}`,
       );
     }
+    const usage = openRouterUsage(data?.model ?? this.opts.model, data?.usage);
     const message = data?.choices?.[0]?.message;
-    if (!message) throw new CopyWriterError("INVALID", "OpenRouter: resposta sem mensagem.");
-    return message;
+    if (!message) {
+      const err = new CopyWriterError("INVALID", "OpenRouter: resposta sem mensagem.");
+      err.usage = usage;
+      throw err;
+    }
+    return { message, usage };
   }
 
   async run(input: AgentRunInput): Promise<AgentRunResult> {
@@ -124,13 +142,25 @@ export class OpenRouterToolAgent implements ToolAgent {
     ];
     let toolCalls = 0;
     let text = "";
+    let usage: AiUsage | null = null;
     for (let turn = 1; turn <= input.maxTurns; turn++) {
       // Na última ida o modelo só pode responder em texto (fecha a rodada).
-      const message = await this.chat(messages, input.tools, turn < input.maxTurns);
+      let reply: Awaited<ReturnType<OpenRouterToolAgent["chat"]>>;
+      try {
+        reply = await this.chat(messages, input.tools, turn < input.maxTurns);
+      } catch (err) {
+        // O que já foi gasto vai junto com o erro (a rodada que falhou também custa).
+        if (err instanceof CopyWriterError) {
+          err.usage = err.usage ? addUsage(usage, err.usage) : (usage ?? undefined);
+        }
+        throw err;
+      }
+      const { message } = reply;
+      usage = addUsage(usage, reply.usage);
       const calls = message.tool_calls ?? [];
       if (message.content) text = message.content;
       messages.push({ role: "assistant", content: message.content ?? null, tool_calls: calls });
-      if (calls.length === 0) return { text, turns: turn, toolCalls };
+      if (calls.length === 0) return { text, turns: turn, toolCalls, usage };
       for (const c of calls) {
         toolCalls++;
         let args: Record<string, unknown>;
@@ -143,7 +173,7 @@ export class OpenRouterToolAgent implements ToolAgent {
         messages.push({ role: "tool", tool_call_id: c.id, content: JSON.stringify(result) });
       }
     }
-    return { text, turns: input.maxTurns, toolCalls };
+    return { text, turns: input.maxTurns, toolCalls, usage };
   }
 }
 
@@ -169,6 +199,18 @@ export class FakeToolAgent implements ToolAgent {
       toolCalls++;
       return safeCall(input, { name, args });
     }, input);
-    return { text, turns: toolCalls + 1, toolCalls };
+    return {
+      text,
+      turns: toolCalls + 1,
+      toolCalls,
+      usage: {
+        provider: "fake",
+        model: "fake",
+        requests: toolCalls + 1,
+        inputTokens: 1000,
+        outputTokens: 200,
+        costUsd: 0.002,
+      },
+    };
   }
 }

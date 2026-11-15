@@ -6,12 +6,14 @@ import {
   type Ctx,
   connectAffiliateAccount,
   type Deps,
+  getAiUsage,
   getAutoCuratorStatus,
   listOffers,
   requestAutoCuratorRun,
   resolveSession,
   runAutoCurator,
   runDueAutoCurators,
+  setAffiliateAccountStatus,
   updatePreferences,
 } from "../src";
 import { createOwner, setupTestDeps } from "./helpers";
@@ -87,6 +89,77 @@ describe("curador automático", () => {
     const again = await runAutoCurator(ctx);
     if (again.status !== "done") throw new Error(again.status);
     expect(again.result.picks).toHaveLength(0);
+  });
+
+  it("trabalha por conta ativa: limite em cada conta, conta desativada fica de fora; mede o gasto", async () => {
+    type Result = SearchOut["results"][number] & { account: string; platform: string };
+    let onlyFirst: Result[] = [];
+    const agent = new FakeToolAgent(async (call) => {
+      // Busca só na primeira conta: só vêm resultados dela.
+      onlyFirst = (
+        (await call("search_offers", { keyword: "panelas", account: "a1" })) as {
+          results: Result[];
+        }
+      ).results;
+      const all = ((await call("search_offers", { keyword: "panelas" })) as { results: Result[] })
+        .results;
+      await call("pick_offers", {
+        picks: all
+          .filter((r) => !r.flags.includes("fake_discount"))
+          .map((r) => ({
+            ref: r.ref,
+            reason: `Boa (${r.account})`,
+          })),
+      });
+      return "Escolhi nas duas contas.";
+    });
+    const ctx = await shopCtx(agent);
+    await connectAffiliateAccount(ctx, { platform: "amazon", label: "Amazon", mode: "fake" });
+    const off = await connectAffiliateAccount(ctx, {
+      platform: "shopee",
+      label: "Shopee velha",
+      mode: "fake",
+    });
+    if (off.status !== "done") throw new Error(off.status);
+    await setAffiliateAccountStatus(ctx, off.result.id, "disabled");
+    await updatePreferences(ctx, { auto_curator_max_offers: 2 });
+
+    const status = await getAutoCuratorStatus(ctx);
+    expect(status.accounts.map((a) => a.label)).toEqual(["Shopee", "Amazon"]);
+
+    const res = await runAutoCurator(ctx);
+    if (res.status !== "done") throw new Error(res.status);
+    // Conta desativada não entra no pedido nem na busca.
+    expect(agent.runs[0]?.prompt).toContain("a1: Shopee (shopee)");
+    expect(agent.runs[0]?.prompt).toContain("a2: Amazon (amazon)");
+    expect(agent.runs[0]?.prompt).not.toContain("Shopee velha");
+    expect(onlyFirst.length).toBeGreaterThan(0);
+    expect(onlyFirst.every((r) => r.account === "a1" && r.platform === "shopee")).toBe(true);
+
+    // Até 2 por conta: 4 no total, cada uma gravada na conta em que foi achada.
+    const byLabel = (label: string) => res.result.picks.filter((p) => p.account_label === label);
+    expect(byLabel("Shopee")).toHaveLength(2);
+    expect(byLabel("Amazon")).toHaveLength(2);
+    const amazonId = status.accounts.find((a) => a.label === "Amazon")?.id;
+    const amazonOffers = await listOffers(ctx, { status: "new", affiliate_account_id: amazonId });
+    expect(amazonOffers.items).toHaveLength(2);
+    expect(amazonOffers.items.every((o) => o.affiliate_account_id === amazonId)).toBe(true);
+
+    const after = await getAutoCuratorStatus(ctx);
+    expect(after.last_result).toMatchObject({
+      added: 4,
+      by_account: { Shopee: 2, Amazon: 2 },
+      cost_usd: 0.002,
+    });
+
+    // Gasto do curador fica registrado (o simulado informa US$ 0,002 por rodada).
+    const usage = await getAiUsage(ctx);
+    expect(usage.today.by_feature.find((f) => f.feature === "curator")).toMatchObject({
+      calls: 1,
+      cost_usd: 0.002,
+    });
+    expect(usage.month.cost_usd).toBeCloseTo(0.002);
+    expect(usage.since).not.toBeNull();
   });
 
   it("respeita o máximo por rodada e recusa sem IA configurada", async () => {

@@ -39,7 +39,7 @@ export const Preferences = z.object({
     .boolean()
     .optional()
     .describe(
-      "Curador automático: um agente de IA busca ofertas na Shopee e na Amazon seguindo nichos, proibidos e notas, e manda as melhores para a curadoria (status new). Padrão: false.",
+      "Curador automático: um agente de IA busca ofertas em cada conta de afiliado ativa (Shopee, Amazon) seguindo nichos, proibidos e notas, e manda as melhores para a curadoria (status new). Padrão: false.",
     ),
   auto_curator_every_hours: z
     .number()
@@ -54,7 +54,9 @@ export const Preferences = z.object({
     .min(1)
     .max(30)
     .optional()
-    .describe("Máximo de ofertas que o curador manda por rodada. Padrão: 8."),
+    .describe(
+      "Máximo de ofertas que o curador manda por rodada, em cada conta de afiliado ativa. Padrão: 5.",
+    ),
   alert_webhook_url: z
     .url({ protocol: /^https?$/ })
     .max(500)

@@ -120,6 +120,7 @@ describe("texto por IA", () => {
             },
           },
         ],
+        usage: { prompt_tokens: 300, completion_tokens: 40, cost: 0.00009 },
       });
     }) as unknown as typeof fetch;
     const out = await new OpenRouterCopyWriter("chave", { fetch: fetchMock }).write(FACTS);
@@ -127,6 +128,14 @@ describe("texto por IA", () => {
       headline: "GTA VI chegando!",
       body: "Vice City te espera.",
       extra: null,
+      usage: {
+        provider: "openrouter",
+        model: OPENROUTER_DEFAULT_MODEL,
+        requests: 1,
+        inputTokens: 300,
+        outputTokens: 40,
+        costUsd: 0.00009,
+      },
     });
     expect(calls[0]?.url).toBe(OPENROUTER_URL);
     expect(new Headers(calls[0]?.init.headers).get("authorization")).toBe("Bearer chave");

@@ -78,6 +78,7 @@ import {
   discoverFacebookGroups,
   findSimilarOffers,
   generateCreative,
+  getAiUsage,
   getAudienceStats,
   getAutoCuratorStatus,
   getBrandKit,
@@ -804,11 +805,22 @@ export function createMcpServer(ctx: Ctx): McpServer {
   );
 
   server.registerTool(
+    "get_ai_usage",
+    {
+      title: "Gasto com IA",
+      description:
+        "Quanto a IA custou hoje e no mês (dólar, valor informado pelo OpenRouter), separado em copy (texto das ofertas) e curator (curador automático), com gerações, chamadas e tokens.",
+      annotations: READ,
+    },
+    safe(async () => getAiUsage(ctx)),
+  );
+
+  server.registerTool(
     "get_auto_curator",
     {
       title: "Curador automático",
       description:
-        "Situação do curador automático (agente de IA no servidor que busca ofertas na Shopee e na Amazon e manda as melhores para a curadoria): ligado, intervalo, máximo por rodada, última e próxima rodada. Liga e ajusta por update_preferences (auto_curator, auto_curator_every_hours, auto_curator_max_offers); o que buscar vem de niches, forbidden e notes.",
+        "Situação do curador automático (agente de IA no servidor que busca ofertas em cada conta de afiliado ativa e manda as melhores para a curadoria): ligado, intervalo, máximo por rodada em cada conta, contas, última rodada (por conta e custo) e próxima. Liga e ajusta por update_preferences (auto_curator, auto_curator_every_hours, auto_curator_max_offers); o que buscar vem de niches, forbidden e notes.",
       annotations: READ,
     },
     safe(async () => getAutoCuratorStatus(ctx)),

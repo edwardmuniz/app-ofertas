@@ -41,8 +41,14 @@ describe("OpenRouterToolAgent", () => {
             },
           },
         ],
+        model: "m-real",
+        usage: { prompt_tokens: 1000, completion_tokens: 100, cost: 0.0012 },
       }),
-      Response.json({ choices: [{ message: { content: "Escolhi 2 ofertas." } }] }),
+      Response.json({
+        choices: [{ message: { content: "Escolhi 2 ofertas." } }],
+        model: "m-real",
+        usage: { prompt_tokens: 1500, completion_tokens: 50, cost: 0.0008 },
+      }),
     ]);
     const calls: unknown[] = [];
     const agent = new OpenRouterToolAgent("chave", { model: "m", fetch: fn });
@@ -58,7 +64,16 @@ describe("OpenRouterToolAgent", () => {
       },
     });
 
-    expect(out).toEqual({ text: "Escolhi 2 ofertas.", turns: 2, toolCalls: 2 });
+    expect(out).toMatchObject({ text: "Escolhi 2 ofertas.", turns: 2, toolCalls: 2 });
+    // Consumo somado das duas idas, com o custo que o OpenRouter informou.
+    expect(out.usage).toMatchObject({
+      provider: "openrouter",
+      model: "m-real",
+      requests: 2,
+      inputTokens: 2500,
+      outputTokens: 150,
+    });
+    expect(out.usage?.costUsd).toBeCloseTo(0.002);
     expect(calls).toEqual([
       { name: "search_offers", args: { keyword: "panela" } },
       { name: "boom", args: {} },
@@ -68,6 +83,7 @@ describe("OpenRouterToolAgent", () => {
       model: "m",
       tool_choice: "auto",
       provider: { sort: "price", require_parameters: true },
+      usage: { include: true },
     });
     const second = bodies[1]?.messages as { role: string; content: string }[];
     expect(second.filter((m) => m.role === "tool").map((m) => JSON.parse(m.content))).toEqual([

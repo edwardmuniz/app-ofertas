@@ -28,10 +28,54 @@ export type OfferCopyText = {
   extra: string | null;
 };
 
+/** Consumo de uma ou mais chamadas à IA (para mostrar o gasto). */
+export type AiUsage = {
+  provider: string;
+  model: string;
+  requests: number;
+  inputTokens: number;
+  outputTokens: number;
+  /** Custo em dólar informado pelo provedor (OpenRouter); null quando ele não informa. */
+  costUsd: number | null;
+};
+
+/** Soma consumos (o custo fica null só se nenhuma parte informou). */
+export function addUsage(a: AiUsage | null | undefined, b: AiUsage): AiUsage {
+  if (!a) return { ...b };
+  return {
+    provider: b.provider,
+    model: b.model,
+    requests: a.requests + b.requests,
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    costUsd: a.costUsd === null && b.costUsd === null ? null : (a.costUsd ?? 0) + (b.costUsd ?? 0),
+  };
+}
+
+export type OpenRouterUsage = {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  cost?: number;
+};
+
+/** Lê o `usage` da resposta do OpenRouter (vem com o custo em dólar). */
+export function openRouterUsage(model: string, u: OpenRouterUsage | undefined): AiUsage {
+  return {
+    provider: "openrouter",
+    model,
+    requests: 1,
+    inputTokens: u?.prompt_tokens ?? 0,
+    outputTokens: u?.completion_tokens ?? 0,
+    costUsd: typeof u?.cost === "number" ? u.cost : null,
+  };
+}
+
 export type CopyWriterErrorCode = "AUTH" | "BILLING" | "RATE_LIMIT" | "UNAVAILABLE" | "INVALID";
 
 export class CopyWriterError extends Error {
   readonly code: CopyWriterErrorCode;
+  /** O que já foi gasto antes do erro (ex.: agente que falhou no meio da rodada). */
+  usage?: AiUsage;
   constructor(code: CopyWriterErrorCode, message: string) {
     super(message);
     this.name = "CopyWriterError";
@@ -39,9 +83,12 @@ export class CopyWriterError extends Error {
   }
 }
 
+/** Texto gerado e o consumo da chamada. */
+export type WrittenCopy = OfferCopyText & { usage?: AiUsage };
+
 export interface CopyWriter {
   readonly provider: string;
-  write(facts: CopyFacts): Promise<OfferCopyText>;
+  write(facts: CopyFacts): Promise<WrittenCopy>;
 }
 
 /** Apelido que sempre aponta para o Flash atual (modelos antigos saem do ar para contas novas). */
@@ -106,7 +153,7 @@ export class GeminiCopyWriter implements CopyWriter {
     if (!apiKey) throw new CopyWriterError("AUTH", "GOOGLE_API_KEY não configurada.");
   }
 
-  async write(facts: CopyFacts): Promise<OfferCopyText> {
+  async write(facts: CopyFacts): Promise<WrittenCopy> {
     const model = this.opts.model || GEMINI_DEFAULT_MODEL;
     let res: Response;
     try {
@@ -139,6 +186,7 @@ export class GeminiCopyWriter implements CopyWriter {
     }
     const data = (await res.json().catch(() => null)) as {
       candidates?: { content?: { parts?: { text?: string }[] } }[];
+      usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
       error?: { message?: string; status?: string };
     } | null;
     if (!res.ok) {
@@ -164,7 +212,17 @@ export class GeminiCopyWriter implements CopyWriter {
     } catch {
       throw new CopyWriterError("INVALID", "A IA devolveu um texto fora do formato.");
     }
-    return cleanCopy(parsed as Record<string, unknown>);
+    return {
+      ...cleanCopy(parsed as Record<string, unknown>),
+      usage: {
+        provider: "gemini",
+        model,
+        requests: 1,
+        inputTokens: data?.usageMetadata?.promptTokenCount ?? 0,
+        outputTokens: data?.usageMetadata?.candidatesTokenCount ?? 0,
+        costUsd: null,
+      },
+    };
   }
 }
 
@@ -194,7 +252,8 @@ export class OpenRouterCopyWriter implements CopyWriter {
     if (!apiKey) throw new CopyWriterError("AUTH", "OPENROUTER_API_KEY não configurada.");
   }
 
-  async write(facts: CopyFacts): Promise<OfferCopyText> {
+  async write(facts: CopyFacts): Promise<WrittenCopy> {
+    const model = this.opts.model || OPENROUTER_DEFAULT_MODEL;
     let res: Response;
     try {
       res = await (this.opts.fetch ?? fetch)(OPENROUTER_URL, {
@@ -205,7 +264,7 @@ export class OpenRouterCopyWriter implements CopyWriter {
           "x-title": "OfZap",
         },
         body: JSON.stringify({
-          model: this.opts.model || OPENROUTER_DEFAULT_MODEL,
+          model,
           temperature: 0.9,
           messages: [{ role: "user", content: copyPrompt(facts) }],
           response_format: {
@@ -214,6 +273,7 @@ export class OpenRouterCopyWriter implements CopyWriter {
           },
           // Provedor mais barato primeiro, entre os que aceitam saída em JSON por schema.
           provider: { sort: "price", require_parameters: true },
+          usage: { include: true },
         }),
         signal: AbortSignal.timeout(45_000),
       });
@@ -221,7 +281,9 @@ export class OpenRouterCopyWriter implements CopyWriter {
       throw new CopyWriterError("UNAVAILABLE", `OpenRouter indisponível: ${String(err)}`);
     }
     const data = (await res.json().catch(() => null)) as {
+      model?: string;
       choices?: { message?: { content?: string } }[];
+      usage?: OpenRouterUsage;
       error?: { message?: string; code?: number };
     } | null;
     if (!res.ok || data?.error) {
@@ -249,7 +311,10 @@ export class OpenRouterCopyWriter implements CopyWriter {
     } catch {
       throw new CopyWriterError("INVALID", "A IA devolveu um texto fora do formato.");
     }
-    return cleanCopy(parsed as Record<string, unknown>);
+    return {
+      ...cleanCopy(parsed as Record<string, unknown>),
+      usage: openRouterUsage(data?.model ?? model, data?.usage),
+    };
   }
 }
 
@@ -258,13 +323,23 @@ export class FakeCopyWriter implements CopyWriter {
   readonly provider = "fake";
   readonly calls: CopyFacts[] = [];
 
-  async write(facts: CopyFacts): Promise<OfferCopyText> {
+  async write(facts: CopyFacts): Promise<WrittenCopy> {
     this.calls.push(facts);
     const name = facts.title.split(/[,|-]/)[0]?.trim() ?? facts.title;
-    return cleanCopy({
-      headline: `Garanta já: ${name}!`,
-      body: `${name} com desconto na ${facts.platform}. Ótima escolha para o dia a dia.`,
-      extra: facts.hint ? `Dica: ${facts.hint}.` : "Corre que o estoque é limitado.",
-    });
+    return {
+      ...cleanCopy({
+        headline: `Garanta já: ${name}!`,
+        body: `${name} com desconto na ${facts.platform}. Ótima escolha para o dia a dia.`,
+        extra: facts.hint ? `Dica: ${facts.hint}.` : "Corre que o estoque é limitado.",
+      }),
+      usage: {
+        provider: "fake",
+        model: "fake",
+        requests: 1,
+        inputTokens: 100,
+        outputTokens: 50,
+        costUsd: 0.0001,
+      },
+    };
   }
 }
