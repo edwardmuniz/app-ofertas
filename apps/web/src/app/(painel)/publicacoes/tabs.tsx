@@ -1,7 +1,7 @@
 "use client";
 
 import type { AutomationRule, MessageTemplate, Post, Segment } from "@ofertas/contracts";
-import { AlertCircle, ChevronDown, ChevronRight, Clock, Package, Send } from "lucide-react";
+import { AlertCircle, ChevronDown, ChevronRight, Clock, Package, Send, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type DateRange, DateRangePicker, rangeToIso } from "@/components/date-range";
@@ -9,6 +9,7 @@ import {
   Badge,
   Chip,
   ChoiceCards,
+  ConfirmButton,
   Empty,
   Field,
   Loading,
@@ -525,6 +526,12 @@ export function Rules({ run }: { run: Runner }) {
     setBusy(null);
   }
 
+  async function remove(r: AutomationRule) {
+    setBusy(r.id);
+    if (await run(() => api(`/automation-rules/${r.id}`, { method: "DELETE" }))) await load();
+    setBusy(null);
+  }
+
   const segName = (id: string) => segments.find((s) => s.id === id)?.name ?? "?";
   if (!rules) return <Loading />;
 
@@ -619,6 +626,15 @@ export function Rules({ run }: { run: Runner }) {
               <LoadingButton variant="btn-ghost" busy={busy === r.id} onClick={() => toggle(r)}>
                 {r.active ? "Pausar" : "Ativar"}
               </LoadingButton>
+              <ConfirmButton
+                className="inline-flex items-center gap-1.5 hover:text-red-600"
+                busy={busy === r.id}
+                message="Apagar esta regra? O que ela agendou e ainda não saiu é cancelado. Para só parar, use Pausar."
+                confirmLabel="Apagar"
+                onConfirm={() => remove(r)}
+              >
+                <Trash2 className="h-4 w-4" /> Apagar
+              </ConfirmButton>
             </div>
           </div>
         ),
@@ -799,7 +815,7 @@ export function Templates({ run }: { run: Runner }) {
   );
   const [editing, setEditing] = useState<Draft | null>(null);
   const [sample, setSample] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"sample" | "save" | null>(null);
+  const [busy, setBusy] = useState<"sample" | "save" | "delete" | null>(null);
   const area = useRef<HTMLTextAreaElement>(null);
   const load = useCallback(async () => setData(await api("/message-templates")), []);
   useEffect(() => {
@@ -837,6 +853,18 @@ export function Templates({ run }: { run: Runner }) {
     if (!editing) return;
     setBusy("save");
     const res = await run(() => api("/message-templates", { method: "POST", body: editing }));
+    setBusy(null);
+    if (res) {
+      setEditing(null);
+      setSample(null);
+      load();
+    }
+  }
+
+  async function remove() {
+    if (!editing?.id) return;
+    setBusy("delete");
+    const res = await run(() => api(`/message-templates/${editing.id}`, { method: "DELETE" }));
     setBusy(null);
     if (res) {
       setEditing(null);
@@ -935,6 +963,17 @@ export function Templates({ run }: { run: Runner }) {
               <button type="button" className="btn-ghost" onClick={() => setEditing(null)}>
                 Cancelar
               </button>
+              {editing.id && (
+                <ConfirmButton
+                  className="ml-auto inline-flex items-center gap-1.5 hover:text-red-600"
+                  busy={busy === "delete"}
+                  message="Apagar este modelo? Regras e envios agendados que o usam passam a usar o modelo padrão."
+                  confirmLabel="Apagar"
+                  onConfirm={remove}
+                >
+                  <Trash2 className="h-4 w-4" /> Apagar
+                </ConfirmButton>
+              )}
             </div>
           </div>
           <div>

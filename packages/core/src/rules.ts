@@ -381,3 +381,40 @@ export async function runAutomationRules(deps: Deps) {
   }
   return { rules: rules.length, scheduled };
 }
+
+/** Apaga a regra e cancela o que ela já tinha agendado e ainda não saiu. */
+export async function deleteAutomationRule(ctx: Ctx, ruleId: string, opts: MutationOptions = {}) {
+  const wsId = ctx.actor.workspaceId;
+  return runMutation(ctx, {
+    action: "rules.delete",
+    scope: "posts:write",
+    input: { rule_id: ruleId },
+    opts,
+    target: (i) => ({ type: "automation_rule", id: i.rule_id }),
+    preview: async (c, i) => {
+      const [row] = await c.db
+        .select()
+        .from(automationRules)
+        .where(and(eq(automationRules.id, i.rule_id), eq(automationRules.workspaceId, wsId)));
+      if (!row) throw new AppError("NOT_FOUND", "Regra não encontrada.");
+      const [n] = await c.db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(posts)
+        .where(and(eq(posts.ruleId, row.id), eq(posts.status, "scheduled")));
+      return { id: row.id, name: row.name, scheduled_to_cancel: n?.n ?? 0 };
+    },
+    execute: async (tx, _i, p) => {
+      const canceled = await tx.db
+        .update(posts)
+        .set({ status: "canceled" })
+        .where(
+          and(eq(posts.workspaceId, wsId), eq(posts.ruleId, p.id), eq(posts.status, "scheduled")),
+        )
+        .returning({ id: posts.id });
+      await tx.db
+        .delete(automationRules)
+        .where(and(eq(automationRules.id, p.id), eq(automationRules.workspaceId, wsId)));
+      return { deleted: true as const, id: p.id, name: p.name, canceled_posts: canceled.length };
+    },
+  });
+}

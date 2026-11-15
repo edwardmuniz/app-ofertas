@@ -52,6 +52,8 @@ Decisão: **Evolution Go** atrás do adapter (`packages/connectors/messaging/evo
 Variáveis: `{{titulo}}`, `{{preco}}`, `{{preco_original}}`, `{{desconto}}`, `{{cupom}}`, `{{cupom_regra}}` (ex.: "R$ 20 OFF acima de R$ 99"), `{{cupom_ativar}}` (cupom de marcar na página, sem código), `{{link}}`, `{{plataforma}}`, `{{loja}}`, `{{selo}}` (ex.: "🔥 MENOR PREÇO 90 DIAS"), `{{preco_pix}}`, `{{parcelas}}` (ex.: "5x de R$ 30,78 sem juros"), `{{linha_preco}}` e, quando a oferta tem texto próprio, `{{chamada}}`, `{{descricao}}` e `{{extra}}`.
 Cada template tem variações para evitar mensagens idênticas em massa. Linha com variável vazia some da mensagem.
 
+Apagar um modelo (`delete_message_template` / `DELETE /v1/message-templates/:id`) não quebra nada: regras e envios agendados que o usavam passam a usar o modelo padrão. A prévia lista quem usa.
+
 ### Preço no Pix e parcelamento
 
 Lidos da página da Amazon (preço "no Pix" e "Nx de R$ Y sem juros") e guardados na oferta (`price_details`). São atualizados a cada conferência de preço. O Pix só aparece se for menor que o preço normal. As outras lojas ainda não informam.
@@ -109,7 +111,7 @@ criativo: { template: card_preco, formato: wa_image } # opcional
 aprovacao: auto | revisar_antes
 ```
 
-Regras podem ser criadas/editadas por agente (`upsert_automation_rule`) e respeitam limites.
+Regras podem ser criadas/editadas por agente (`upsert_automation_rule`) e respeitam limites. Apagar (`delete_automation_rule` / `DELETE /v1/automation-rules/:id`) cancela o que a regra agendou e ainda não saiu; para só parar, pausar.
 
 Cada regra tem um painel (`stats` em `list_automation_rules`/`GET /automation-rules`): **situação** (`running` publicando, `off_hours` fora do horário, `limit` todos os grupos no máximo do dia, `no_offers` nenhuma oferta aprovada nos filtros, `no_groups` nenhum grupo ativo ligado a um número, `paused`), **próximo envio** (`next_at`: o post já agendado ou a estimativa por intervalo, limite diário e janelas; o worker roda a cada minuto), **hoje** (enviadas + agendadas desde 0h no fuso do workspace, o que conta para `max_por_dia`), enviadas e falhas de hoje, agendadas, **disponíveis** (ofertas aprovadas nos filtros que ainda podem sair sem repetir em 7 dias), enviadas em 7 dias e total, e grupos no limite. O painel atualiza sozinho a cada minuto, com contagem regressiva até o próximo envio.
 

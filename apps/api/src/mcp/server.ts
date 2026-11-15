@@ -72,6 +72,9 @@ import {
   deleteContent,
   deleteCreative,
   deleteSavedSearch,
+  deleteAutomationRule,
+  deleteInviteLink,
+  deleteMessageTemplate,
   deleteSegment,
   deleteSentPost,
   deleteStoreCoupon,
@@ -466,6 +469,21 @@ export function createMcpServer(ctx: Ctx): McpServer {
       annotations: WRITE,
     },
     safe(async (args) => updateInviteLink(ctx, ...splitOpts(args))),
+  );
+
+  server.registerTool(
+    "delete_invite_link",
+    {
+      title: "Apagar convite rotativo",
+      description:
+        "Apaga o convite: o link para de funcionar, os cliques dele somem das métricas e ele sai da vitrine. Para só suspender, use update_invite_link com active: false. A prévia (dry_run) mostra quantos cliques serão perdidos.",
+      inputSchema: { invite_link_id: z.uuid(), ...MutationOptions.shape },
+      annotations: { ...WRITE, destructiveHint: true },
+    },
+    safe(async (args) => {
+      const [rest, opts] = splitOpts(args);
+      return deleteInviteLink(ctx, rest.invite_link_id, opts);
+    }),
   );
 
   server.registerTool(
@@ -972,6 +990,21 @@ export function createMcpServer(ctx: Ctx): McpServer {
   );
 
   server.registerTool(
+    "delete_message_template",
+    {
+      title: "Apagar modelo de mensagem",
+      description:
+        "Apaga o modelo. Regras e publicações agendadas que o usavam passam a usar o modelo padrão. A prévia (dry_run) lista quem usa.",
+      inputSchema: { template_id: z.uuid(), ...MutationOptions.shape },
+      annotations: { ...WRITE, destructiveHint: true },
+    },
+    safe(async (args) => {
+      const [rest, opts] = splitOpts(args);
+      return deleteMessageTemplate(ctx, rest.template_id, opts);
+    }),
+  );
+
+  server.registerTool(
     "preview_post",
     {
       title: "Prévia da mensagem",
@@ -1055,6 +1088,21 @@ export function createMcpServer(ctx: Ctx): McpServer {
       annotations: WRITE,
     },
     safe(async (args) => upsertAutomationRule(ctx, ...splitOpts(args))),
+  );
+
+  server.registerTool(
+    "delete_automation_rule",
+    {
+      title: "Apagar regra automática",
+      description:
+        "Apaga a regra e cancela as publicações que ela agendou e ainda não saíram. Para só pausar, use upsert_automation_rule com active: false.",
+      inputSchema: { rule_id: z.uuid(), ...MutationOptions.shape },
+      annotations: { ...WRITE, destructiveHint: true },
+    },
+    safe(async (args) => {
+      const [rest, opts] = splitOpts(args);
+      return deleteAutomationRule(ctx, rest.rule_id, opts);
+    }),
   );
 
   // ── Criativos ──────────────────────────────────────────────────

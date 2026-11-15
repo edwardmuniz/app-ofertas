@@ -20,6 +20,7 @@ import {
   createInviteLink,
   createTrackedLink,
   type Deps,
+  deleteInviteLink,
   deleteSegment,
   getLinkStats,
   listChannels,
@@ -215,5 +216,31 @@ export const linkRoutes: FastifyPluginAsyncZod<{ deps: Deps }> = async (app, { d
     },
     async (req) =>
       updateInviteLink(ctx(req), { ...req.body, id: req.params.id }, mutationOpts(req)),
+  );
+  app.delete(
+    "/invite-links/:id",
+    {
+      schema: {
+        tags: ["convites"],
+        description:
+          "Apaga o convite: o link para de funcionar, os cliques dele somem e ele sai da vitrine.",
+        params: IdParams,
+        ...mutationSchema,
+        response: {
+          200: MutationResult(
+            z.object({
+              deleted: z.literal(true),
+              id: z.string(),
+              name: z.string(),
+              url: z.string(),
+              clicks: z.number(),
+              in_storefront: z.boolean(),
+            }),
+          ),
+          ...errors,
+        },
+      },
+    },
+    async (req) => deleteInviteLink(ctx(req), req.params.id, mutationOpts(req)),
   );
 };

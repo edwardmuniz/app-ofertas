@@ -28,7 +28,9 @@ import {
   createMessagingAccount,
   createToken,
   type Deps,
+  deleteAutomationRule,
   deleteContent,
+  deleteMessageTemplate,
   deleteSegment,
   deleteSentPost,
   deleteStoreCoupon,
@@ -75,6 +77,7 @@ import {
   updateOfferPrices,
   updatePreferences,
   upsertAutomationRule,
+  upsertMessageTemplate,
   upsertSegment,
   upsertStoreCoupon,
   validateOffer,
@@ -307,6 +310,53 @@ describe("remover número", () => {
     done(await syncGroups(ctx, novo.id, {}));
     rows = await deps.db.select().from(channels).where(ws);
     expect(rows.every((r) => r.messagingAccountId === novo.id)).toBe(true);
+  });
+});
+
+describe("apagar regra e modelo", () => {
+  it("modelo apagado volta ao padrão; regra apagada cancela o que agendou", async () => {
+    const { ctx, channels: chs, seg } = await setup();
+    const ch = chs[0];
+    if (!ch) throw new Error("sem canal");
+    const tpl = done(
+      await upsertMessageTemplate(ctx, { name: "Curto", body: "{{titulo}} {{link}}" }),
+    );
+    const rule = done(
+      await upsertAutomationRule(ctx, {
+        name: "Regra Y",
+        segment_ids: [seg.id],
+        template_id: tpl.id,
+      }),
+    );
+    const [queued] = await deps.db
+      .insert(posts)
+      .values({
+        workspaceId: ctx.actor.workspaceId,
+        channelId: ch.id,
+        customText: "oi",
+        ruleId: rule.id,
+        templateId: tpl.id,
+        scheduledAt: new Date(Date.now() + 3_600_000),
+        createdBy: "test",
+      })
+      .returning();
+
+    const dry = await deleteMessageTemplate(ctx, tpl.id, { dryRun: true });
+    if (dry.status !== "dry_run") throw new Error(dry.status);
+    expect(dry.preview).toMatchObject({ rules_using: ["Regra Y"], scheduled_using: 1 });
+    done(await deleteMessageTemplate(ctx, tpl.id));
+    expect((await listAutomationRules(ctx)).find((r) => r.id === rule.id)?.template_id).toBeNull();
+
+    expect(done(await deleteAutomationRule(ctx, rule.id))).toMatchObject({
+      deleted: true,
+      canceled_posts: 1,
+    });
+    expect((await listAutomationRules(ctx)).some((r) => r.id === rule.id)).toBe(false);
+    const [after] = await deps.db
+      .select()
+      .from(posts)
+      .where(eq(posts.id, queued?.id ?? ""));
+    expect(after).toMatchObject({ status: "canceled", ruleId: null, templateId: null });
   });
 });
 

@@ -1,4 +1,4 @@
-import { events } from "@ofertas/db";
+import { events, storefronts } from "@ofertas/db";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -8,6 +8,7 @@ import {
   createTrackedLink,
   type Deps,
   decideLink,
+  deleteInviteLink,
   getLinkStats,
   isBotUserAgent,
   listChannels,
@@ -284,6 +285,39 @@ describe("editar convite", () => {
     await expect(
       updateInviteLink(ctx, { id: inv.id, segment_id: "00000000-0000-4000-8000-000000000000" }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+});
+
+describe("apagar convite", () => {
+  it("prévia não apaga; apagando, o link some e sai da vitrine", async () => {
+    const ctx = await ownerCtx();
+    const { seg } = await segmentWithGroups(ctx, [{ name: "g", members: 0 }]);
+    const inv = done(await createInviteLink(ctx, { segment_id: seg.id, name: "Bio" }));
+    const keep = done(await createInviteLink(ctx, { segment_id: seg.id, name: "Story" }));
+    await deps.db.insert(storefronts).values({
+      workspaceId: ctx.actor.workspaceId,
+      slug: `loja-${Date.now()}`,
+      title: "Loja",
+      inviteLinkIds: [inv.id, keep.id],
+    });
+
+    const dry = await deleteInviteLink(ctx, inv.id, { dryRun: true });
+    expect(dry.status).toBe("dry_run");
+    if (dry.status === "dry_run") {
+      expect(dry.preview).toMatchObject({ name: "Bio", clicks: 0, in_storefront: true });
+    }
+    expect((await listInviteLinks(ctx)).map((i) => i.id)).toContain(inv.id);
+
+    expect(done(await deleteInviteLink(ctx, inv.id))).toMatchObject({ deleted: true });
+    expect((await listInviteLinks(ctx)).map((i) => i.id)).toEqual([keep.id]);
+    expect((await resolveInvite(deps, inv.slug)).kind).toBe("not_found");
+    const [shop] = await deps.db
+      .select({ ids: storefronts.inviteLinkIds })
+      .from(storefronts)
+      .where(eq(storefronts.workspaceId, ctx.actor.workspaceId));
+    expect(shop?.ids).toEqual([keep.id]);
+
+    await expect(deleteInviteLink(ctx, inv.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 });
 

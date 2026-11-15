@@ -43,6 +43,7 @@ Amazon: usar **tracking IDs** distintos por origem (limitado) + nosso redirect p
 - Quando todos lotam: evento `segment.full` → recomendação "criar novo grupo" (ou criação automática se o provedor permitir).
 - Parâmetros `?src=ig_bio`, `?ref=<membro>` (indicação), `?ad=<id>` gravados no clique.
 - **Editar** (painel: Convites › Editar; API `PATCH /v1/invite-links/:id`; MCP `update_invite_link`): nome, segmento, distribuição, reserva de vagas, destino quando lotar e pausar. O link (slug) não muda, para não quebrar o que já foi divulgado.
+- **Apagar** (painel: Convites › Apagar; API `DELETE /v1/invite-links/:id`; MCP `delete_invite_link`, com `dry_run`): o link passa a dar "não encontrado", os cliques dele somem das métricas e ele sai dos botões da vitrine. Para só suspender, pausar.
 
 ## Critérios de aceite
 

@@ -1,6 +1,13 @@
 import { type MessageTemplate, UpsertMessageTemplateInput } from "@ofertas/contracts";
-import { type DbOrTx, messageTemplates, type offers, type products } from "@ofertas/db";
-import { and, asc, eq, ne } from "drizzle-orm";
+import {
+  automationRules,
+  type DbOrTx,
+  messageTemplates,
+  type offers,
+  posts,
+  type products,
+} from "@ofertas/db";
+import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { requireScope } from "./authz";
 import type { Ctx } from "./context";
 import { AppError } from "./errors";
@@ -284,6 +291,53 @@ export async function upsertMessageTemplate(
             .returning();
       if (!row) throw new AppError("NOT_FOUND", "Modelo não encontrado.");
       return toTemplate(row);
+    },
+  });
+}
+
+/**
+ * Apaga o modelo. Regras e publicações agendadas que o usavam passam a usar o modelo padrão do
+ * workspace (ou o embutido).
+ */
+export async function deleteMessageTemplate(
+  ctx: Ctx,
+  templateId: string,
+  opts: MutationOptions = {},
+) {
+  const wsId = ctx.actor.workspaceId;
+  return runMutation(ctx, {
+    action: "templates.delete",
+    scope: "posts:write",
+    input: { template_id: templateId },
+    opts,
+    target: (i) => ({ type: "message_template", id: i.template_id }),
+    preview: async (c, i) => {
+      const [row] = await c.db
+        .select()
+        .from(messageTemplates)
+        .where(and(eq(messageTemplates.id, i.template_id), eq(messageTemplates.workspaceId, wsId)));
+      if (!row) throw new AppError("NOT_FOUND", "Modelo não encontrado.");
+      const rules = await c.db
+        .select({ name: automationRules.name })
+        .from(automationRules)
+        .where(eq(automationRules.templateId, row.id));
+      const [n] = await c.db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(posts)
+        .where(and(eq(posts.templateId, row.id), eq(posts.status, "scheduled")));
+      return {
+        id: row.id,
+        name: row.name,
+        was_default: row.isDefault,
+        rules_using: rules.map((r) => r.name),
+        scheduled_using: n?.n ?? 0,
+      };
+    },
+    execute: async (tx, _i, p) => {
+      await tx.db
+        .delete(messageTemplates)
+        .where(and(eq(messageTemplates.id, p.id), eq(messageTemplates.workspaceId, wsId)));
+      return { deleted: true as const, ...p };
     },
   });
 }

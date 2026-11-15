@@ -1,13 +1,14 @@
 "use client";
 
 import type { InviteLink, LinkStats, Segment } from "@ofertas/contracts";
-import { Pencil } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
   Badge,
   Chip,
   ChoiceCards,
+  ConfirmButton,
   CopyButton,
   Empty,
   ErrorText,
@@ -86,6 +87,13 @@ export default function ConvitesPage() {
   async function toggle(i: InviteLink) {
     setBusy(i.id);
     await run(() => api(`/invite-links/${i.id}`, { method: "PATCH", body: { active: !i.active } }));
+    setBusy(null);
+  }
+
+  async function remove(i: InviteLink) {
+    setBusy(i.id);
+    await run(() => api(`/invite-links/${i.id}`, { method: "DELETE" }));
+    if (editing === i.id) setEditing(null);
     setBusy(null);
   }
 
@@ -233,6 +241,15 @@ export default function ConvitesPage() {
                   <LoadingButton variant="btn-ghost" busy={busy === i.id} onClick={() => toggle(i)}>
                     {i.active ? "Pausar" : "Ativar"}
                   </LoadingButton>
+                  <ConfirmButton
+                    className="inline-flex items-center gap-1.5 hover:text-red-600"
+                    busy={busy === i.id}
+                    message="Apagar este convite? O link para de funcionar, os cliques dele somem e ele sai da vitrine. Para só suspender, use Pausar."
+                    confirmLabel="Apagar"
+                    onConfirm={() => remove(i)}
+                  >
+                    <Trash2 className="h-4 w-4" /> Apagar
+                  </ConfirmButton>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-4">

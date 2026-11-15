@@ -23,6 +23,8 @@ import {
   cancelPost,
   createMessagingAccount,
   type Deps,
+  deleteAutomationRule,
+  deleteMessageTemplate,
   deleteSentPost,
   getConnectionState,
   handleMessagingWebhook,
@@ -176,6 +178,31 @@ export const publishingRoutes: FastifyPluginAsyncZod<{ deps: Deps }> = async (ap
     },
     async (req) => upsertMessageTemplate(ctx(req), req.body, mutationOpts(req)),
   );
+  app.delete(
+    "/message-templates/:id",
+    {
+      schema: {
+        tags: ["publicação"],
+        description: "Apaga o modelo; quem o usava passa a usar o modelo padrão.",
+        params: IdParams,
+        ...mutationSchema,
+        response: {
+          200: MutationResult(
+            z.object({
+              deleted: z.literal(true),
+              id: z.string(),
+              name: z.string(),
+              was_default: z.boolean(),
+              rules_using: z.array(z.string()),
+              scheduled_using: z.number(),
+            }),
+          ),
+          ...errors,
+        },
+      },
+    },
+    async (req) => deleteMessageTemplate(ctx(req), req.params.id, mutationOpts(req)),
+  );
 
   // ── Publicações ────────────────────────────────────────────────
   app.post(
@@ -271,6 +298,29 @@ export const publishingRoutes: FastifyPluginAsyncZod<{ deps: Deps }> = async (ap
     },
     async (req) =>
       upsertAutomationRule(ctx(req), { ...req.body, id: req.params.id }, mutationOpts(req)),
+  );
+  app.delete(
+    "/automation-rules/:id",
+    {
+      schema: {
+        tags: ["publicação"],
+        description: "Apaga a regra e cancela o que ela agendou e ainda não saiu.",
+        params: IdParams,
+        ...mutationSchema,
+        response: {
+          200: MutationResult(
+            z.object({
+              deleted: z.literal(true),
+              id: z.string(),
+              name: z.string(),
+              canceled_posts: z.number(),
+            }),
+          ),
+          ...errors,
+        },
+      },
+    },
+    async (req) => deleteAutomationRule(ctx(req), req.params.id, mutationOpts(req)),
   );
 };
 

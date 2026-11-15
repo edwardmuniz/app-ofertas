@@ -1,5 +1,13 @@
 import { CreateInviteLinkInput, type InviteLink, UpdateInviteLinkInput } from "@ofertas/contracts";
-import { channelSegments, channels, type DbOrTx, inviteLinks, segments } from "@ofertas/db";
+import {
+  channelSegments,
+  channels,
+  clicks,
+  type DbOrTx,
+  inviteLinks,
+  segments,
+  storefronts,
+} from "@ofertas/db";
 import { and, asc, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { requireScope } from "./authz";
 import { type Ctx, type Deps, now } from "./context";
@@ -231,4 +239,55 @@ export async function resolveInvite(deps: Deps, slug: string): Promise<InviteRes
     channel = candidates[(count - 1) % candidates.length] as ChannelRow;
   }
   return { kind: "redirect", invite, channel };
+}
+
+/**
+ * Apaga o convite: o link para de funcionar (quem abrir vê "não encontrado"), os cliques dele
+ * somem das métricas e ele sai dos botões da vitrine. Para só suspender, use active: false.
+ */
+export async function deleteInviteLink(ctx: Ctx, inviteId: string, opts: MutationOptions = {}) {
+  const wsId = ctx.actor.workspaceId;
+  return runMutation(ctx, {
+    action: "invites.delete",
+    scope: "links:write",
+    input: { invite_link_id: inviteId },
+    opts,
+    target: (i) => ({ type: "invite_link", id: i.invite_link_id }),
+    preview: async (c, i) => {
+      const [row] = await c.db
+        .select()
+        .from(inviteLinks)
+        .where(and(eq(inviteLinks.id, i.invite_link_id), eq(inviteLinks.workspaceId, wsId)));
+      if (!row) throw new AppError("NOT_FOUND", "Convite não encontrado.");
+      const [n] = await c.db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(clicks)
+        .where(eq(clicks.inviteLinkId, row.id));
+      const [shop] = await c.db
+        .select({ id: storefronts.id })
+        .from(storefronts)
+        .where(
+          and(eq(storefronts.workspaceId, wsId), sql`${storefronts.inviteLinkIds} ? ${row.id}`),
+        );
+      return {
+        id: row.id,
+        name: row.name,
+        url: inviteUrl(c, row.slug),
+        clicks: n?.n ?? 0,
+        in_storefront: Boolean(shop),
+      };
+    },
+    execute: async (tx, _i, p) => {
+      if (p.in_storefront) {
+        await tx.db
+          .update(storefronts)
+          .set({ inviteLinkIds: sql`${storefronts.inviteLinkIds} - ${p.id}::text` })
+          .where(eq(storefronts.workspaceId, wsId));
+      }
+      await tx.db
+        .delete(inviteLinks)
+        .where(and(eq(inviteLinks.id, p.id), eq(inviteLinks.workspaceId, wsId)));
+      return { deleted: true as const, ...p };
+    },
+  });
 }
