@@ -69,7 +69,7 @@ export function shopeeSearchQuery(vars: SearchVars): [string, Record<string, unk
   return [query, Object.fromEntries(keys.map((k) => [k, vars[k]]))];
 }
 
-const SHORT_LINK_MUTATION = `mutation ShortLink($originUrl: String!, $subIds: [String]) {
+const SHORT_LINK_MUTATION = `mutation ShortLink($originUrl: String!, $subIds: [String!]) {
   generateShortLink(input: { originUrl: $originUrl, subIds: $subIds }) { shortLink }
 }`;
 
