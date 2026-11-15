@@ -212,6 +212,8 @@ export class OpenRouterCopyWriter implements CopyWriter {
             type: "json_schema",
             json_schema: { name: "oferta", strict: true, schema: COPY_SCHEMA },
           },
+          // Provedor mais barato primeiro, entre os que aceitam saída em JSON por schema.
+          provider: { sort: "price", require_parameters: true },
         }),
         signal: AbortSignal.timeout(45_000),
       });

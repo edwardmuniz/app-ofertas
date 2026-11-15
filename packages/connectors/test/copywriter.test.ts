@@ -133,6 +133,7 @@ describe("texto por IA", () => {
     const body = JSON.parse(String(calls[0]?.init.body));
     expect(body.model).toBe(OPENROUTER_DEFAULT_MODEL);
     expect(body.response_format.type).toBe("json_schema");
+    expect(body.provider).toEqual({ sort: "price", require_parameters: true });
   });
 
   it("OpenRouter: sem créditos vira BILLING; chave errada vira AUTH", async () => {
