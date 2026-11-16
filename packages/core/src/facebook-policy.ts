@@ -8,22 +8,26 @@ export type PostingPolicy = "allowed" | "approval" | "restricted" | "forbidden" 
 
 /** Link de loja ou afiliado num texto de post (sinal de que o grupo aceita divulgação na prática). */
 const STORE_LINK =
-  /amzn\.to|amazon\.com|mercadolivre|mercadolibre|meli\.la|magazineluiza|magalu|shopee|aliexpress|amzn\.com|\/sec\/|afiliad|cupom|🔥|desconto|r\$\s?\d/i;
+  /amzn\.to|amazon\.com|mercadolivre|mercadolibre|meli\.la|magazineluiza|magazinevoce|magalu|shopee|aliexpress|amzn\.com|kabum|casasbahia|americanas|shein|temu|\/sec\/|afiliad|cupom|🔥|desconto|r\$\s?\d/i;
 
 /** Expressões que indicam que divulgação é proibida. */
 const FORBIDDEN = [
   /proibid[oa]s?\s+(a\s+)?divulga/i,
-  /n[ãa]o\s+[ée]?\s*permitid[oa]s?\s+(a\s+)?divulga/i,
+  /n[ãa]o\s+(?:[ée]|s[ãa]o)?\s*permitid[oa]s?\s+(?:a\s+|as\s+)?divulga/i,
   /sem\s+divulga[çc]/i,
   /proibid[oa]s?\s+.{0,12}\blinks?\b/i,
   /sem\s+links?\b/i,
   /n[ãa]o\s+.{0,12}\blinks?\b/i,
   /proibid[oa]s?\s+vend/i,
   /sem\s+vendas?\b/i,
-  /n[ãa]o\s+.{0,10}spam/i,
-  /ser[áa]\s+(removido|banido|exclu[íi]do)/i,
   /somente\s+(assuntos|conte[úu]do)\s+do\s+grupo/i,
 ];
+
+/**
+ * Avisos genéricos que aparecem até em grupos de divulgação ("não faça spam", "será removido").
+ * Sozinhos não provam proibição: viram evidência e o grupo fica `unknown`.
+ */
+const WEAK_FORBIDDEN = [/n[ãa]o\s+.{0,10}spam/i, /ser[áa]\s+(removid|banid|exclu[íi]d)[oa]s?/i];
 
 /** Expressões que indicam divulgação liberada. */
 const ALLOWED = [
@@ -33,6 +37,8 @@ const ALLOWED = [
   /grupo\s+de\s+divulga/i,
   /divulgue\s+(seu|[àa]\s+vontade|aqui)/i,
   /libera[do]*\s+.{0,8}divulga/i,
+  /grupo\s+(de|para)\s+(an[úu]ncios?|vendas?|compra\s+e\s+venda)/i,
+  /anuncie\s+(seu|aqui|[àa]\s+vontade)/i,
 ];
 
 /** Expressões de divulgação com condição. */
@@ -60,9 +66,9 @@ export type PolicyVerdict = {
 };
 
 /**
- * Classifica a política a partir do coletado. Ordem: proibição explícita vence; depois a prática
- * (vários posts de membros com link = aceita); depois condição; depois liberação explícita; senão
- * `unknown` (não recebe post até alguém decidir).
+ * Classifica a política a partir do coletado. Ordem: proibição explícita vence; depois condição;
+ * depois liberação explícita; depois a prática (vários posts de membros com link = aceita); senão
+ * `unknown` (não recebe post até alguém decidir). Avisos genéricos ("não faça spam") não proíbem.
  */
 export function classifyGroupPolicy(collected: FacebookGroupCollected): PolicyVerdict {
   const rules = (collected.rules_text ?? "").slice(0, 8000);
@@ -99,6 +105,8 @@ export function classifyGroupPolicy(collected: FacebookGroupCollected): PolicyVe
   if (manyLinks) {
     return { policy: "allowed", notes: "Membros divulgam links no feed.", evidence };
   }
+  const weak = firstMatch(rules, WEAK_FORBIDDEN);
+  if (weak) evidence.push(`Regras têm aviso genérico: "${weak.trim()}"`);
   return {
     policy: "unknown",
     notes: null,

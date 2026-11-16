@@ -49,6 +49,41 @@ describe("política de divulgação do grupo", () => {
     expect(v.policy).toBe("unknown");
   });
 
+  it("aviso genérico de spam não proíbe um grupo que divulga na prática", () => {
+    const v = classifyGroupPolicy({
+      rules_text: "Não faça spam. Quem desrespeitar será removido.",
+      post_texts: [
+        "Links: s.shopee.com.br\nFone bluetooth por R$ 49",
+        "Links: amzn.to\nKindle com desconto",
+        "Links: meli.la\nTênis em oferta",
+        "bom dia grupo",
+      ],
+    });
+    expect(v.policy).toBe("allowed");
+  });
+
+  it("aviso genérico sozinho fica unknown com evidência", () => {
+    const v = classifyGroupPolicy({
+      rules_text: "Respeite todos. Não faça spam ou será banido.",
+      post_texts: [],
+    });
+    expect(v.policy).toBe("unknown");
+    expect(v.evidence.join(" ")).toMatch(/aviso genérico/);
+  });
+
+  it("'não são permitidas divulgações' é proibição", () => {
+    const v = classifyGroupPolicy({
+      rules_text: "Grupo de compra e venda. Não são permitidas divulgações de outros grupos.",
+      post_texts: [],
+    });
+    expect(v.policy).toBe("forbidden");
+  });
+
+  it("grupo de anúncios nas regras libera", () => {
+    const v = classifyGroupPolicy({ rules_text: "Grupo para anúncios da região.", post_texts: [] });
+    expect(v.policy).toBe("allowed");
+  });
+
   it("só allowed/approval/restricted liberam post", () => {
     expect(policyAllowsPosting("allowed")).toBe(true);
     expect(policyAllowsPosting("approval")).toBe(true);
