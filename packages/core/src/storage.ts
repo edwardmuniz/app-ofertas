@@ -8,6 +8,8 @@ export interface ObjectStorage {
   delete(key: string): Promise<void>;
   /** Link direto e temporário, acessível de fora da rede (S3). Sem ele, usa a rota /media da API. */
   signedUrl?(key: string, expiresSeconds: number): Promise<string>;
+  /** Chave do arquivo se a URL é um link deste armazenamento (para ler direto, sem baixar). */
+  keyFromUrl?(url: string): string | null;
 }
 
 export class LocalStorage implements ObjectStorage {

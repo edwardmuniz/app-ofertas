@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { presignS3Url, s3ConfigFromEnv } from "../src/storage-s3";
+import { presignS3Url, s3ConfigFromEnv, s3KeyFromUrl } from "../src/storage-s3";
 
 describe("S3", () => {
   it("assina a URL igual ao exemplo da documentação da AWS", () => {
@@ -41,5 +41,30 @@ describe("S3", () => {
     expect(
       s3ConfigFromEnv({ AWS_S3_BUCKET: "b", AWS_ACCESS_KEY_ID: "k", AWS_SECRET_ACCESS_KEY: "s" }),
     ).toMatchObject({ bucket: "b", region: undefined });
+  });
+
+  it("reconhece links do próprio bucket e devolve a chave", () => {
+    const signed = presignS3Url({
+      method: "GET",
+      bucket: "grupos-ofertas",
+      region: "us-east-2",
+      key: "ws/a b.png",
+      accessKeyId: "K",
+      secretAccessKey: "S",
+      expiresSeconds: 60,
+    });
+    expect(s3KeyFromUrl("grupos-ofertas", signed)).toBe("ws/a b.png");
+    expect(
+      s3KeyFromUrl("meu.bucket", "https://s3.us-east-2.amazonaws.com/meu.bucket/ws/x.png?X=1"),
+    ).toBe("ws/x.png");
+    expect(s3KeyFromUrl("grupos-ofertas", "https://grupos-ofertas.s3.amazonaws.com/k.png")).toBe(
+      "k.png",
+    );
+    expect(s3KeyFromUrl("grupos-ofertas", "https://outro.s3.amazonaws.com/k.png")).toBeNull();
+    expect(s3KeyFromUrl("grupos-ofertas", "https://grupos-ofertas.s3.evil.com/k.png")).toBeNull();
+    expect(
+      s3KeyFromUrl("grupos-ofertas", "http://grupos-ofertas.s3.amazonaws.com/k.png"),
+    ).toBeNull();
+    expect(s3KeyFromUrl("grupos-ofertas", "https://grupos-ofertas.s3.amazonaws.com/")).toBeNull();
   });
 });

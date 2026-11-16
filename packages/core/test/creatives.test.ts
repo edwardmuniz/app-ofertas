@@ -160,6 +160,33 @@ describe("upload e importação", () => {
     });
   });
 
+  it("imagem do próprio bucket é lida pelo armazenamento, sem download pela rede", async () => {
+    const png = (await fakeFetchMedia("x")).data;
+    const files = new Map([["ws/convite.png", png]]);
+    const reader = withOwnMedia({
+      ...deps,
+      storage: {
+        put: async () => {},
+        get: async (key: string) => files.get(key) ?? null,
+        delete: async () => {},
+        keyFromUrl: (url: string) =>
+          url.startsWith("https://bucket.s3.amazonaws.com/")
+            ? decodeURIComponent(new URL(url).pathname.slice(1))
+            : null,
+      },
+      fetchMedia: async () => {
+        throw new Error("sem rede");
+      },
+    });
+    const own = await reader("https://bucket.s3.amazonaws.com/ws/convite.png?X-Amz-Signature=a");
+    expect(own.data.equals(png)).toBe(true);
+    expect(own.contentType).toBe("image/png");
+    await expect(reader("https://bucket.s3.amazonaws.com/ws/sumiu.png")).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    await expect(reader("https://loja.com/foto.png")).rejects.toThrow("sem rede");
+  });
+
   it("upload em duas etapas: link assinado, envio e conclusão com validação", async () => {
     const { ctx, offer } = await setup();
     const png = (await fakeFetchMedia("x")).data;

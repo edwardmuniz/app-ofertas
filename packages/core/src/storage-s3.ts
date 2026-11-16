@@ -86,6 +86,38 @@ export function presignS3Url(input: {
 }
 
 /**
+ * Chave de um objeto do bucket a partir de um link dele (assinado ou não), nos estilos
+ * virtual-host (`bucket.s3[.região].amazonaws.com/chave`) e de caminho (`s3…/bucket/chave`).
+ */
+export function s3KeyFromUrl(bucket: string, raw: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:") return null;
+  const host = url.hostname.toLowerCase();
+  const s3Host = /^s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com$/;
+  let path: string | null = null;
+  const b = bucket.toLowerCase();
+  if (host.startsWith(`${b}.`) && s3Host.test(host.slice(b.length + 1))) path = url.pathname;
+  else if (s3Host.test(host) && url.pathname.startsWith(`/${bucket}/`))
+    path = url.pathname.slice(bucket.length + 1);
+  if (!path || path === "/") return null;
+  try {
+    const key = path
+      .slice(1)
+      .split("/")
+      .map((part) => decodeURIComponent(part))
+      .join("/");
+    return key && !key.split("/").includes("..") ? key : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Arquivos no S3. Lê também de um armazenamento antigo (disco local) para os arquivos
  * gravados antes do S3; ao gerar link público, sobe o arquivo antigo para o S3.
  */
@@ -141,6 +173,10 @@ export class S3Storage implements ObjectStorage {
   async delete(key: string) {
     await fetch(await this.url("DELETE", key), { method: "DELETE" });
     await this.legacy?.delete(key);
+  }
+
+  keyFromUrl(url: string) {
+    return s3KeyFromUrl(this.cfg.bucket, url);
   }
 
   /** Link direto e temporário (máx. 7 dias), acessível de fora (ex.: Evolution Go). */

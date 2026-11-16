@@ -106,6 +106,14 @@ export async function serveMedia(
  * Baixa imagens, lendo direto do armazenamento as que são nossas (/media assinado):
  * imagens enviadas pelo painel funcionam mesmo com a API em endereço interno (localhost).
  */
+const MIME_BY_EXT: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+};
+const mimeFromKey = (key: string) => MIME_BY_EXT[key.split(".").pop()?.toLowerCase() ?? ""] ?? null;
+
 export function withOwnMedia(
   deps: Pick<Deps, "fetchMedia" | "publicApiUrl" | "db" | "storage" | "secrets">,
 ): MediaFetcher {
@@ -123,6 +131,18 @@ export function withOwnMedia(
       );
       if (file && "data" in file) return { data: file.data, contentType: file.mime };
       throw new AppError("NOT_FOUND", "Imagem não encontrada ou link expirado.");
+    }
+    // Link do nosso bucket (S3): lê pelo armazenamento, sem o limite de tempo do download
+    // genérico (imagem grande com conexão lenta passava dos 10 s e falhava).
+    const key = deps.storage.keyFromUrl?.(url);
+    if (key) {
+      const data = await deps.storage.get(key);
+      if (!data) throw new AppError("NOT_FOUND", "Imagem não encontrada no armazenamento.");
+      const [asset] = await deps.db
+        .select({ mime: assets.mime })
+        .from(assets)
+        .where(eq(assets.storageKey, key));
+      return { data, contentType: asset?.mime ?? mimeFromKey(key) };
     }
     return deps.fetchMedia(url);
   };
