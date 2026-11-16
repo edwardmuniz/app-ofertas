@@ -14,3 +14,6 @@ data/
 
 # Produção (infra/prod)
 infra/prod/backups/
+
+# Configuração local do Claude Code
+.claude/
