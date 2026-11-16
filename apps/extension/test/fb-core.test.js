@@ -10,11 +10,16 @@ const {
   fbzGroupIdFromUrl,
   fbzIsGroupPage,
   fbzGroupCandidateFromLink,
+  fbzVisibleMetrics,
   fbzJobMatchesPage,
   fbzComposerText,
   fbzPickVariation,
   fbzNormalizePostUrl,
   fbzFirstUrl,
+  fbzOutboundHost,
+  fbzCleanPostText,
+  fbzGroupName,
+  fbzMergeCollected,
 } = ctx.module.exports;
 
 describe("grupo da aba", () => {
@@ -34,6 +39,12 @@ describe("grupo da aba", () => {
 });
 
 describe("candidatos visíveis na busca", () => {
+  it("lê membros e atividade mostrados no resultado", () => {
+    expect(fbzVisibleMetrics("4,5 mil membros · 90+ posts por dia")).toEqual({
+      member_count: 4500,
+      posts_per_day: 90,
+    });
+  });
   it("aceita só a página principal de um grupo e limpa o link", () => {
     expect(
       fbzGroupCandidateFromLink(
@@ -119,5 +130,45 @@ describe("link do post publicado", () => {
       "other_group",
     );
     expect(fbzNormalizePostUrl("", gid).reason).toBe("empty");
+  });
+});
+
+describe("coleta para análise do grupo", () => {
+  it("desembrulha links do Facebook e ignora links internos", () => {
+    expect(
+      fbzOutboundHost("https://l.facebook.com/l.php?u=https%3A%2F%2Fs.shopee.com.br%2Fx&h=a"),
+    ).toBe("s.shopee.com.br");
+    expect(fbzOutboundHost("https://www.amazon.com.br/dp/B0")).toBe("amazon.com.br");
+    expect(fbzOutboundHost("https://www.facebook.com/groups/123")).toBeNull();
+    expect(fbzOutboundHost("lixo")).toBeNull();
+  });
+
+  it("limpa a interface do post e põe os links no começo", () => {
+    const text =
+      "Maria Souza\n·\n1h\n·\nSeguir\nFone por R$ 49 🔥\nCurtir\nComentar\n12 comentários";
+    expect(fbzCleanPostText(text, ["amzn.to", "amzn.to"])).toBe(
+      "Links: amzn.to\nMaria Souza\nFone por R$ 49 🔥",
+    );
+  });
+
+  it("descarta o cabeçalho de ordenação e linhas 'Facebook' soltas", () => {
+    expect(fbzCleanPostText("classificar feed do grupo por\nAtividade recente")).toBe("");
+    expect(fbzCleanPostText("Facebook\nFacebook\nPromoção top", ["s.shopee.com.br"])).toBe(
+      "Links: s.shopee.com.br\nPromoção top",
+    );
+  });
+
+  it("tira contador de notificações e sufixo do título", () => {
+    expect(fbzGroupName("(3) promoções e ofertas | Facebook")).toBe("promoções e ofertas");
+    expect(fbzGroupName("(99+) Achadinhos · Facebook")).toBe("Achadinhos");
+  });
+
+  it("junta feed e aba Sobre sem repetir", () => {
+    const feed = { rules_text: "", post_texts: ["a oferta 1", "b oferta 2"] };
+    const about = { rules_text: "Regra 1\n\nRegra 2", post_texts: ["b oferta 2"] };
+    const merged = fbzMergeCollected(fbzMergeCollected(undefined, feed), about);
+    expect(merged.rules_text).toBe("Regra 1\n\nRegra 2");
+    expect(merged.post_texts).toEqual(["b oferta 2", "a oferta 1"]);
+    expect(fbzMergeCollected(merged, about).rules_text).toBe("Regra 1\n\nRegra 2");
   });
 });

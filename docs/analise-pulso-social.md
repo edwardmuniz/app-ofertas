@@ -7,7 +7,8 @@ claro, mas alguns detalhes finos são **inferência** e estão marcados como tal
 
 > Serve de referência para o OfZap. Parte das funções depende de chamadas internas do Facebook
 > (ver [Riscos](#riscos-e-por-que-o-ofzap-não-copia-tudo)). O OfZap adotou a calibração local do
-> formato de publicação apenas para convites pontuais com imagem e texto escolhidos na extensão.
+> formato de busca e publicação apenas para encontrar grupos e enviar convites pontuais com imagem
+> e texto escolhidos na extensão.
 > Ofertas não são enviadas a grupos do Facebook.
 
 ---
@@ -170,17 +171,18 @@ Facebook:
 | Aspecto                   | Pulso Social                                         | OfZap (spec 19)                                                              |
 | ------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------- |
 | Quem publica              | A extensão, sozinha (reproduz a chamada do Facebook) | A extensão tenta publicar convites pontuais; ofertas não vão para o Facebook |
-| Tokens/chamadas internas  | Captura e repete (`fb_dtsg`, `doc_id`)               | **Não** usa; só a interface visível                                          |
+| Tokens/chamadas internas  | Captura e repete (`fb_dtsg`, `doc_id`)               | Captura e repete consultas de busca e convites calibrados na sessão ativa    |
 | Cookies de sessão         | Lê                                                   | **Não** lê                                                                   |
 | "Parecer humano" / evasão | Sim (lotes + horário aleatório)                      | Não; há limites e intervalos na fila                                         |
 | Grupos onde posta         | Em massa, inclusive onde não é permitido             | Só grupos que **aceitam divulgação** (política detectada)                    |
 | Coleta de membros         | Sim                                                  | Não                                                                          |
 | Risco para a conta        | Alto                                                 | Existe risco nos convites automáticos; validar em grupo de teste             |
 
-**Conclusão atualizada:** o OfZap pode buscar grupos visíveis, tentar entrar nos escolhidos e
-publicar um convite pontual com imagem e texto definidos na extensão. A execução usa os controles
-visíveis da página e depende de validação no Facebook real; o código não lê cookies nem reproduz
-as chamadas internas usadas pela Pulso Social.
+**Conclusão atualizada (15/11/2026):** o OfZap consulta grupos pela sessão ativa do Facebook e
+mostra os resultados no Studio. Também tenta entrar
+nos escolhidos pela interface visível e publicar convites pontuais com a chamada calibrada. O código
+não pede a permissão `cookies` nem persiste tokens de sessão. Busca e publicação ainda dependem de
+validação no Facebook real.
 
 ---
 

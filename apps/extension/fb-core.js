@@ -1,8 +1,5 @@
-// Regras puras do modo Facebook (spec 19), sem DOM nem rede: casar a aba do grupo com o
-// trabalho da fila, escolher uma variação de texto livre e validar/normalizar o link do post
-// que o usuário cola depois de publicar. Script comum (sem import/export): roda na página e é
-// carregado pelos testes. A extensão NÃO publica sozinha: ela prepara o post e a pessoa confirma
-// no próprio Facebook. Nada aqui lê tokens de sessão nem chama endpoints internos do Facebook.
+// Regras puras do modo Facebook (spec 19), sem DOM nem rede: URLs de grupos, métricas visíveis,
+// texto do trabalho e links de posts. Script comum para a página e para os testes.
 
 /** Id (ou vanity) do grupo a partir da URL da aba. `/groups/123/...` → "123". */
 function fbzGroupIdFromUrl(url) {
@@ -35,6 +32,26 @@ function fbzGroupCandidateFromLink(url, name) {
   }
   if (!/^\/(?:groups)\/[^/]+\/?$/i.test(parsed.pathname)) return null;
   return { id, name: label, url: `https://www.facebook.com/groups/${encodeURIComponent(id)}/` };
+}
+
+/** Números apresentados junto ao resultado de busca; são pistas, não dados confirmados. */
+function fbzVisibleMetrics(raw) {
+  const text = String(raw || "").toLowerCase();
+  const count = (value, scale) => {
+    const normalized =
+      scale > 1 ? value.replace(",", ".") : value.replace(/\./g, "").replace(",", ".");
+    const number = Number(normalized);
+    return Number.isFinite(number) ? Math.round(number * scale) : null;
+  };
+  const members = /([\d.,]+)\s*(mil|mi|million|milh[ãõ]o)?\s*(?:membros|members)/i.exec(text);
+  const posts = /([\d.,]+)\+?\s*(?:posts?|publica[çc][õo]es)\s*(?:por|per)\s*(?:dia|day)/i.exec(
+    text,
+  );
+  const scale = members?.[2] ? (/^(mi$|million|milh)/i.test(members[2]) ? 1_000_000 : 1_000) : 1;
+  return {
+    member_count: members ? count(members[1], scale) : null,
+    posts_per_day: posts ? count(posts[1], 1) : null,
+  };
 }
 
 /**
@@ -115,16 +132,89 @@ function fbzNormalizePostUrl(raw, groupId) {
   return { ok: true, url: `https://www.facebook.com${u.pathname.replace(/\/+$/, "")}/` };
 }
 
+// ── Análise do grupo: limpeza do texto visível (o servidor classifica) ──
+
+/** Domínio de destino de um link do post (desembrulha l.facebook.com/l.php?u=…). */
+function fbzOutboundHost(href) {
+  let url;
+  try {
+    url = new URL(String(href || ""));
+  } catch {
+    return null;
+  }
+  if (/(^|\.)facebook\.com$/i.test(url.hostname) && url.pathname === "/l.php") {
+    try {
+      url = new URL(url.searchParams.get("u") || "");
+    } catch {
+      return null;
+    }
+  }
+  const host = url.hostname.replace(/^www\./i, "").toLowerCase();
+  if (!host || /(^|\.)(facebook\.com|fbcdn\.net|fb\.com|fb\.me)$/.test(host)) return null;
+  return host;
+}
+
+// Linhas de interface do Facebook que não dizem nada sobre o grupo.
+const FBZ_UI_LINE =
+  /^(facebook|classificar feed do grupo por|mais relevantes|novos posts|atividade recente|curtir|comentar|compartilhar|responder|seguir|enviar|ver mais|ver menos|ver tradução|traduzir|editado|autor|fã destaque|todas as reações:?|like|comment|share|reply|follow|see more|see translation|·|\d+|\d+\s*(min|h|d|sem|s|m|a)|\d+\s*(comentários?|compartilhamentos?|comments?|shares?))$/i;
+
+/** Texto de um post sem a interface, com os domínios dos links no começo. Até 1000 caracteres. */
+function fbzCleanPostText(text, hosts = []) {
+  const lines = String(text || "")
+    .split(/\n+/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter((line) => line && !FBZ_UI_LINE.test(line));
+  const unique = [...new Set(hosts.filter(Boolean))];
+  const head = unique.length ? `Links: ${unique.join(", ")}\n` : "";
+  return (head + lines.join("\n")).slice(0, 1000);
+}
+
+/** Nome do grupo a partir do título da aba ("(3) Nome | Facebook" → "Nome"). */
+function fbzGroupName(title) {
+  return String(title || "")
+    .replace(/^\(\d+\+?\)\s*/, "")
+    .replace(/\s*[|·].*$/, "")
+    .trim()
+    .slice(0, 200);
+}
+
+/**
+ * Junta o que foi lido em páginas diferentes do mesmo grupo (feed e aba Sobre),
+ * sem repetir trechos. Respeita os limites da API (regras 8000, 40 posts).
+ */
+function fbzMergeCollected(prev, next) {
+  const rules = [
+    ...new Set(
+      [prev?.rules_text, next?.rules_text]
+        .flatMap((t) => String(t || "").split(/\n{2,}/))
+        .map((t) => t.trim())
+        .filter(Boolean),
+    ),
+  ]
+    .join("\n\n")
+    .slice(0, 8000);
+  const posts = [...new Set([...(next?.post_texts || []), ...(prev?.post_texts || [])])].slice(
+    0,
+    40,
+  );
+  return { rules_text: rules, post_texts: posts };
+}
+
 // Carregável tanto na página (globais) quanto nos testes (module.exports).
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     fbzGroupIdFromUrl,
     fbzIsGroupPage,
     fbzGroupCandidateFromLink,
+    fbzVisibleMetrics,
     fbzJobMatchesPage,
     fbzComposerText,
     fbzPickVariation,
     fbzNormalizePostUrl,
     fbzFirstUrl,
+    fbzOutboundHost,
+    fbzCleanPostText,
+    fbzGroupName,
+    fbzMergeCollected,
   };
 }

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OfZap · Studio</title>
+    <link rel="stylesheet" href="studio.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark"></span><div><strong>OfZap</strong><small>Studio de grupos</small></div></div>
+      <nav aria-label="Áreas do Studio">
+        <button type="button" data-view="groups">Encontrar grupos</button>
+        <button type="button" data-view="library">Biblioteca</button>
+        <button type="button" data-view="publisher">Postador</button>
+        <button type="button" data-view="settings">Configuração</button>
+      </nav>
+      <div id="connection" class="connection">Verificando configuração…</div>
+    </aside>
+    <main>
+      <section id="view-groups" class="view" hidden>
+        <header class="page-head"><div><span class="eyebrow">AQUECEDOR DE GRUPOS</span><h1>Encontre grupos do nicho</h1><p>Compare relevância, membros e atividade visível antes de participar.</p></div></header>
+        <div class="card search-card">
+          <div class="fields two"><label>Nicho ou assunto<input id="niche" placeholder="Ex.: achadinhos de tecnologia" /></label><label>Cidade ou região <small>(opcional)</small><input id="region" placeholder="Ex.: São Paulo" /></label></div>
+          <div class="actions"><button type="button" id="build-searches" class="primary">Buscar grupos</button><button type="button" id="clear-search" class="text-button" hidden>Limpar busca</button></div>
+          <p class="help">Use uma aba do Facebook já aberta. Na primeira vez, faça uma busca normal de grupos no Facebook para calibrar; depois, as buscas aparecem aqui sem abrir outras abas.</p>
+        </div>
+        <div class="section-head"><div><h2>Grupos encontrados</h2><p>O índice usa apenas sinais visíveis na busca; confira regras e participação antes de entrar.</p></div><span id="result-count" class="count">0 grupos</span></div>
+        <div id="group-results" class="result-list"><div class="empty">Busque um nicho para comparar grupos.</div></div>
+        <div class="action-bar"><span id="selected-count">0 selecionados · máximo 10 por rodada</span><button type="button" id="join-groups" class="primary" disabled>Participar dos selecionados</button></div>
+        <div class="card"><div class="section-head"><h2>Entradas</h2><button type="button" id="refresh-joins" class="text-button">Atualizar</button></div><div id="join-status" class="help">Nenhuma entrada em andamento.</div></div>
+        <div class="card my-groups-card"><div class="section-head"><div><h2>Meus grupos</h2><p>Veja os grupos dos quais seu perfil já participa e cadastre os escolhidos no OfZap.</p></div><button type="button" id="load-my-groups" class="secondary">Carregar meus grupos</button></div><div id="my-groups-list" class="result-list"><div class="empty">Carregue seus grupos para escolher os destinos.</div></div><div id="left-groups" class="group-status-list" hidden></div><div class="actions"><span id="my-groups-count" class="help">0 selecionados</span><button type="button" id="import-my-groups" class="primary" disabled>Adicionar selecionados ao OfZap</button></div><p id="my-groups-message" class="message" role="status" hidden></p></div>
+        <p id="groups-message" class="message" role="status" hidden></p>
+      </section>
+
+      <section id="view-library" class="view" hidden>
+        <header class="page-head"><div><span class="eyebrow">BIBLIOTECA</span><h1>Textos e imagens para convites</h1><p>Cadastre uma vez e use em qualquer publicação.</p></div></header>
+        <div class="library-grid">
+          <div class="card"><div class="section-head"><h2>Textos</h2><span id="text-count" class="count">0</span></div><div id="text-list" class="item-list"></div><form id="text-form" class="form"><input id="text-id" type="hidden" /><label>Nome do texto<input id="text-name" maxlength="56" placeholder="Ex.: Convite direto" required /></label><label>Mensagem<textarea id="text-body" rows="5" maxlength="3000" placeholder="Entre no nosso grupo de achadinhos!" required></textarea></label><p class="help">O link do grupo de WhatsApp é acrescentado pelo postador.</p><div class="actions"><button type="submit" class="secondary">Salvar texto</button><button type="button" id="clear-text" class="text-button">Novo texto</button></div></form></div>
+          <div class="card"><div class="section-head"><h2>Imagens</h2><span id="image-count" class="count">0</span></div><div id="image-list" class="image-list"></div><label class="upload-zone">Adicionar imagens<input id="library-images" type="file" accept="image/png,image/jpeg,image/webp" multiple /><span>PNG, JPG ou WebP · até 10 MB cada</span></label></div>
+        </div>
+        <p id="library-message" class="message" role="status" hidden></p>
+      </section>
+
+      <section id="view-publisher" class="view" hidden>
+        <header class="page-head"><div><span class="eyebrow">POSTADOR</span><h1>Publique um convite nos grupos</h1><p>Escolha uma publicação única ou combine os itens da biblioteca.</p></div></header>
+        <div class="publisher-grid"><div class="stack">
+          <div class="card"><h2>1. Conteúdo</h2><div class="segmented"><label><input type="radio" name="post-mode" value="single" checked /><span>Publicação única</span></label><label><input type="radio" name="post-mode" value="library" /><span>Usar biblioteca</span></label></div><label>Link do seu grupo de WhatsApp<input id="invite-link" type="url" placeholder="https://chat.whatsapp.com/... ou https://go.ofzap.com.br/entrar/..." /></label>
+            <div id="single-fields" class="form"><label>Texto<textarea id="single-text" rows="4" placeholder="Entre no nosso grupo de achadinhos!"></textarea></label><label>Imagem<input id="single-image" type="file" accept="image/png,image/jpeg,image/webp" /></label></div>
+            <div id="library-fields" class="form" hidden><p class="help">Selecione textos e imagens. O OfZap cria todas as combinações na ordem mostrada na prévia.</p><h3>Textos</h3><div id="publisher-texts" class="select-list"></div><h3>Imagens</h3><div id="publisher-images" class="select-list"></div><button id="go-library" type="button" class="text-button">Gerenciar biblioteca</button></div>
+          </div>
+          <div class="card"><h2>2. Destino e horário</h2><p class="help">Cada grupo recebe um post nesta campanha. As combinações se alternam entre os grupos selecionados.</p><div id="publisher-groups-status" class="help"></div><div id="publisher-groups" class="select-list"></div><div id="publisher-pending" class="group-status-list"></div><div id="publisher-blocked" class="group-status-list"></div><p id="publisher-groups-message" class="message" role="status" hidden></p><button id="refresh-groups" type="button" class="text-button">Atualizar grupos</button><div class="fields two"><label>Início<input id="post-start" type="datetime-local" /></label><label>Minutos entre grupos<input id="post-gap" type="number" min="3" max="240" value="10" /></label></div></div>
+        </div><div class="stack"><div class="card preview-card"><h2>3. Prévia</h2><div id="calibration" class="notice">Verificando calibração…</div><div id="combination-summary" class="summary">Preencha o conteúdo e selecione grupos.</div><div id="combinations" class="combination-list"></div><button id="schedule" type="button" class="primary full" disabled>Agendar publicações</button><p class="help">As ofertas e os cupons do OfZap não entram nestes grupos.</p></div><p id="publisher-message" class="message" role="status" hidden></p></div></div>
+      </section>
+
+      <section id="view-settings" class="view" hidden>
+        <header class="page-head"><div><span class="eyebrow">CONFIGURAÇÃO</span><h1>Conectar o Studio</h1><p>Use o token da extensão do OfZap e seu perfil ativo do Facebook.</p></div></header>
+        <form id="settings-form" class="card settings-card"><label>Endereço da API<input id="api-url" type="url" placeholder="http://localhost:3001" required /></label><label>Token da extensão<input id="api-token" type="password" placeholder="ofz_…" required /></label><label>ID do perfil do Facebook<input id="fb-user-id" inputmode="numeric" placeholder="Ex.: 100001234567890" required /></label><p class="help">No Facebook, abra facebook.com/me para ver o ID no endereço. Um token criado antes desta versão pode precisar ser renovado para ler a biblioteca.</p><button type="submit" class="primary">Salvar e testar</button><p id="settings-message" class="message" role="status" hidden></p></form>
+      </section>
+    </main>
+    <script src="fb-core.js"></script>
+    <script src="studio-core.js"></script>
+    <script type="module" src="studio.js"></script>
+  </body>
+</html>

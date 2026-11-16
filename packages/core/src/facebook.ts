@@ -300,7 +300,7 @@ export async function addFacebookGroup(
       const account = await accountByFbId(c.db, wsId, i.fb_user_id);
       if (i.segment_ids) await assertSegmentsExist(c.db, wsId, i.segment_ids);
       const [existing] = await c.db
-        .select({ id: channels.id, type: channels.type, status: channels.status })
+        .select({ id: channels.id, type: channels.type, postingPolicy: channels.postingPolicy })
         .from(channels)
         .where(and(eq(channels.workspaceId, wsId), eq(channels.externalId, i.group_id)));
       if (existing && existing.type !== "fb_group") {
@@ -310,6 +310,7 @@ export async function addFacebookGroup(
         account_id: account.id,
         action: existing ? ("update" as const) : ("create" as const),
         channel_id: existing?.id ?? null,
+        posting_policy: existing?.postingPolicy ?? null,
         name: i.name,
       };
     },
@@ -318,6 +319,7 @@ export async function addFacebookGroup(
         name: i.name,
         inviteUrl: i.url ?? `https://www.facebook.com/groups/${i.group_id}`,
         facebookAccountId: p.account_id,
+        postingPolicy: p.posting_policy ?? "unknown",
         lastSyncedAt: now(ctx),
         ...(i.member_count !== undefined ? { memberCount: i.member_count } : {}),
       };
@@ -418,6 +420,58 @@ export async function analyzeFacebookGroup(
         policy: row.postingPolicy,
         evidence: row.policyEvidence ?? [],
         kept_human: p.keep_human,
+      };
+    },
+  });
+}
+
+/**
+ * Tira um grupo do Facebook da operação (a pessoa saiu dele ou não quer mais divulgar ali):
+ * arquiva o canal e cancela os posts agendados para ele. Cadastrar o grupo de novo
+ * (`addFacebookGroup`) o traz de volta, com a política que já tinha.
+ */
+export async function removeFacebookGroup(ctx: Ctx, channelId: string, opts: MutationOptions = {}) {
+  const wsId = ctx.actor.workspaceId;
+  const scheduledFor = (id: string) =>
+    and(eq(posts.channelId, id), eq(posts.status, "scheduled"), eq(posts.workspaceId, wsId));
+  return runMutation(ctx, {
+    action: "facebook.remove_group",
+    scope: "facebook:execute",
+    input: { channel_id: channelId },
+    opts,
+    target: (i) => ({ type: "channel", id: i.channel_id }),
+    preview: async (c, i) => {
+      const row = await getChannelRow(c.db, wsId, i.channel_id);
+      if (row.type !== "fb_group") throw new AppError("NOT_FOUND", "Não é um grupo do Facebook.");
+      const scheduled = await c.db.select({ id: posts.id }).from(posts).where(scheduledFor(row.id));
+      return {
+        name: row.name,
+        already_removed: row.status === "archived",
+        scheduled_posts_canceled: scheduled.length,
+      };
+    },
+    execute: async (tx, i) => {
+      const [row] = await tx.db
+        .update(channels)
+        .set({ status: "archived" })
+        .where(
+          and(
+            eq(channels.id, i.channel_id),
+            eq(channels.workspaceId, wsId),
+            eq(channels.type, "fb_group"),
+          ),
+        )
+        .returning();
+      if (!row) throw new AppError("NOT_FOUND", "Grupo não encontrado.");
+      const canceled = await tx.db
+        .update(posts)
+        .set({ status: "canceled" })
+        .where(scheduledFor(row.id))
+        .returning({ id: posts.id });
+      const segs = await segmentIdsFor(tx.db, [row.id]);
+      return {
+        channel: toChannel(row, segs.get(row.id) ?? []),
+        scheduled_posts_canceled: canceled.length,
       };
     },
   });

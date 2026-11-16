@@ -48,6 +48,36 @@ export const DiscoverFacebookGroupsResult = z.object({
   searches: z.array(FacebookGroupSearch),
 });
 
+export const FacebookGroupCandidate = z.object({
+  id: fbGroupId,
+  name: z.string().min(1).max(200),
+  url: z.url(),
+  member_count: z.number().int().min(0).nullable().optional(),
+  posts_per_day: z.number().int().min(0).nullable().optional(),
+});
+export const RankFacebookGroupsInput = z.object({
+  niche: z.string().trim().min(2).max(80),
+  groups: z.array(FacebookGroupCandidate).max(100),
+});
+export const RankedFacebookGroup = FacebookGroupCandidate.extend({
+  score: z.number().int().min(0).max(100),
+  reasons: z.array(z.string()),
+});
+export type RankedFacebookGroup = z.infer<typeof RankedFacebookGroup>;
+export const RankFacebookGroupsResult = z.object({ groups: z.array(RankedFacebookGroup) });
+
+export const PlanFacebookPostsInput = z.object({
+  channel_ids: z.array(z.uuid()).min(1).max(100),
+  texts: z.array(z.string().trim().min(1).max(4000)).min(1).max(20),
+  creative_ids: z.array(z.uuid()).min(1).max(20),
+});
+export const PlanFacebookPostsResult = z.object({
+  combinations: z.array(z.object({ text: z.string(), creative_id: z.string() })),
+  assignments: z.array(
+    z.object({ channel_id: z.string(), text: z.string(), creative_id: z.string() }),
+  ),
+});
+
 /** Enviado pela extensão a cada minuto. */
 export const FacebookHeartbeatInput = z.object({
   fb_user_id: fbId,

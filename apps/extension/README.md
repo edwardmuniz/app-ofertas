@@ -3,6 +3,37 @@
 **Cadastra ofertas** a partir da página de um produto e ajuda a **descobrir grupos do Facebook,
 participar dos selecionados e publicar convites pontuais** com imagem e texto.
 
+## Studio de grupos
+
+Clique em **Abrir Studio** no popup. O Studio abre em uma aba, com três áreas:
+
+1. **Encontrar grupos:** deixe uma aba do Facebook aberta, informe o nicho e clique em **Buscar grupos**.
+   A extensão consulta pela sessão dessa aba e mostra os resultados no Studio, sem criar outra aba.
+   Na primeira vez, faça uma busca normal de grupos no Facebook para calibrar o formato da consulta.
+   Os grupos são classificados por
+   termos do nicho no nome, membros e atividade informados pelo Facebook. Avalie regras e
+   participação, selecione até 10 e clique
+   em **Participar dos selecionados**.
+   Se você já participa de grupos, clique em **Carregar meus grupos** e escolha quais adicionar ao
+   OfZap. Abra cada grupo cadastrado e use **Analisar este grupo** antes de publicar. A lista do
+   Postador mostra os grupos aptos, os que aguardam análise e os indisponíveis. Apenas grupos com
+   política de postagem analisada e permitida podem ser selecionados. Depois da análise, clique em
+   **Atualizar grupos** no Postador. Ao cadastrar os
+   escolhidos, o Studio registra primeiro o perfil do Facebook na API do OfZap. Se a consulta
+   demorar mais de um minuto, atualize a aba do Facebook e tente novamente; os grupos já retornados
+   podem ser cadastrados mesmo quando a paginação é interrompida.
+2. **Biblioteca:** cadastre textos de convite e envie imagens. Eles ficam na API do OfZap, para uso
+   posterior. Os textos são modelos marcados com `FB: `; as imagens são criativos marcados para convites.
+3. **Postador:** em **Publicação única**, escreva um texto e escolha uma imagem. Em **Usar biblioteca**,
+   selecione vários textos e imagens. A prévia mostra todas as combinações em ordem: texto 1 com
+   imagem 1, texto 1 com imagem 2, depois texto 2 com imagem 1 etc. Cada grupo selecionado recebe
+   um post da sequência. Use o convite direto do WhatsApp ou um link rastreado
+   `https://go.ofzap.com.br/entrar/...`; ele é incluído automaticamente.
+
+O token do preset **Extensão do Chrome** agora inclui `posts:read` e `creatives:read`. Gere um novo
+token no painel se o Studio informar falta de escopo. A publicação automática continua exigindo a
+calibração manual de um post com imagem no perfil do Facebook.
+
 ## Cadastrar oferta
 
 Na página de um produto (Mercado Livre, Amazon ou Shopee), clique no botão da extensão. Ela lê
@@ -70,9 +101,12 @@ O modelo fica no armazenamento local da extensão; tokens de sessão não são g
 ### Publicar
 
 Para ativar a publicação automática de convites, abra um grupo onde você pode fazer um teste,
-clique em **Calibrar publicação** no painel do OfZap e publique manualmente um post com texto e
-imagem. A extensão confirma quando capturar o formato. Faça isso uma vez por perfil e repita se o
-Facebook mudar o fluxo. Use uma publicação de teste real e confira o resultado no grupo.
+clique em **Calibrar publicação** no painel do OfZap e, em até 10 minutos, publique manualmente um
+post com uma foto e um texto de teste com pelo menos 12 caracteres (ex.: "Teste OfZap 4821"). O
+painel avisa quando vê a imagem e quando a calibração foi salva, ou explica por que recusou (texto
+curto, publicação sem foto, formato não reconhecido, perfil logado diferente do configurado ou prazo
+expirado). Recarregar a aba durante a calibração não a cancela. Faça isso uma vez por perfil e
+repita se o Facebook mudar o fluxo. Use uma publicação de teste real e confira o resultado no grupo.
 
 Quando há um post para um grupo, abra esse grupo no Facebook. Um painel do OfZap aparece no canto:
 
@@ -89,39 +123,32 @@ se o Facebook sinalizar bloqueio.
 
 ### Este grupo aceita divulgação?
 
-Na página de um grupo, o painel tem **Analisar este grupo**. Deixe as regras e alguns posts à
-vista (role um pouco) e clique: a extensão lê o texto visível (regras, descrição e últimos posts) e
-o OfZap diz se o grupo **aceita divulgação**, aceita com aprovação/condição, ou **não aceita**.
+Na página de um grupo, o painel tem **Analisar este grupo**. Role o feed para carregar alguns
+posts e clique: a extensão lê o texto visível dos posts (com os domínios dos links) e os cartões de
+regras/Sobre, e o OfZap diz se o grupo **aceita divulgação**, aceita com aprovação/condição, ou
+**não aceita**. A resposta mostra quantos posts foram lidos e se as regras apareceram. Se faltar
+regra, abra a aba **Sobre** do grupo e analise de novo: a extensão junta o que leu nas duas páginas.
 Grupos que não aceitam (ou ainda não analisados) **não recebem post**. É só um palpite — você pode
 corrigir no painel, e a sua correção manual não é desfeita por uma análise depois.
 
 ### Descobrir grupos do nicho
 
-Clique em **Descobrir grupos** na extensão, informe o nicho e, se quiser, uma cidade ou região. Abra uma das buscas
-geradas no Facebook. Role a página para carregar os resultados e, com essa aba ativa, clique na
-extensão → **Descobrir grupos** → **Ler grupos desta aba**. A lista mostra grupos para você abrir, conferir as regras
-e decidir se participa. No grupo aberto, use **Analisar este grupo** antes de agendar divulgação.
-O popup guarda os resultados e os grupos marcados quando você abre outra aba para avaliar. Se a
-API estiver desligada, ainda é possível montar e abrir buscas; ligue a API para participar dos grupos.
-Selecione até 10 candidatos e clique em **Participar dos selecionados**. A extensão tenta entrar
-em um grupo a cada 5 minutos; se houver perguntas ou aceite de regras, deixe a aba aberta e
-responda no Facebook. Use **Ver andamento das entradas** para conferir o resultado. Grupos em que
-a entrada foi confirmada são cadastrados no OfZap. Analise a política antes de divulgar.
+No Studio, use **Encontrar grupos**. A busca consulta até 100 resultados pela sessão do Facebook
+e destaca os mais relacionados ao nicho. Selecione até 10 por rodada. A extensão
+tenta entrar em um grupo a cada 5 minutos; perguntas, aceite de regras e política de divulgação
+precisam ser conferidos no Facebook. Grupos com entrada confirmada são cadastrados no OfZap.
 
 ### Convite pontual com imagem
 
-Clique em **Convite** na extensão. Informe o link do seu grupo de WhatsApp, um ou mais textos
-(separe versões com uma linha `---`), uma ou mais imagens e selecione os grupos do Facebook aptos.
-Clique em **Agendar convite**. O OfZap alterna textos e imagens entre os grupos, com 10 minutos
-entre os agendamentos. Para esses convites, a extensão abre o grupo, envia a imagem e o texto
-com o modelo calibrado e só registra a conclusão quando o Facebook devolve um identificador de
-post. Se houver erro ou resposta ambígua, confira o grupo antes de agir manualmente; o OfZap não
-repete o trabalho automaticamente. Ofertas não são enviadas a grupos do Facebook.
-O popup guarda link, textos e grupos selecionados como rascunho e mostra uma prévia antes de
-agendar. As imagens precisam ser escolhidas novamente após fechar o popup.
+No Studio, use **Postador**. Uma publicação única usa um texto e uma imagem. O modo biblioteca
+combina todos os textos e imagens selecionados e distribui uma combinação por grupo apto. O
+intervalo entre grupos pode ser ajustado. A extensão só registra a conclusão quando o Facebook
+devolve um identificador do post; erro ou resposta ambígua exigem conferência humana. Ofertas não
+são enviadas a grupos do Facebook.
 
 O token precisa do preset **Extensão do Chrome** atualizado (escopos `facebook:execute`,
-`posts:write` e `creatives:write`). Se você criou um token antes desta versão, gere outro no painel.
+`posts:read`, `posts:write`, `creatives:read` e `creatives:write`). Se você criou um token antes
+desta versão, gere outro no painel.
 
 ### Desenvolvimento (Facebook)
 
@@ -132,3 +159,4 @@ O token precisa do preset **Extensão do Chrome** atualizado (escopos `facebook:
 - `fb-group.js`: painel no grupo, calibração, fluxo assistido e acompanhamento do convite.
 - `fb-replay-core.js` e `fb-main.js`: captura do formato de um post manual e publicação do convite
   na sessão ativa do mesmo perfil. Testes em `test/fb-replay.test.js`.
+- `studio.*`: interface em aba para encontrar grupos, manter a biblioteca e agendar publicações.

@@ -1,5 +1,5 @@
 import { fakeAffiliateControls } from "@ofertas/connectors";
-import { facebookAccounts, limits, posts } from "@ofertas/db";
+import { channels, facebookAccounts, limits, posts } from "@ofertas/db";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -22,6 +22,7 @@ import {
   prepareFacebookJoin,
   receiveUpload,
   recoverBrowserJobs,
+  removeFacebookGroup,
   requestUpload,
   resolveSession,
   resumeFacebookAccount,
@@ -88,6 +89,64 @@ async function postStatus(id: string) {
 }
 
 describe("grupos do Facebook pela extensão", () => {
+  it("marca novos grupos como pendentes e preserva a política ao importar novamente", async () => {
+    const { ctx, ext, fbUserId, groups } = await setup();
+    const created = done(
+      await addFacebookGroup(ext, { fb_user_id: fbUserId, group_id: "987654", name: "Novo grupo" }),
+    );
+    expect(created.posting_policy).toBe("unknown");
+    const allowed = groups[0];
+    if (!allowed) throw new Error("grupo");
+    const same = done(
+      await addFacebookGroup(ext, {
+        fb_user_id: fbUserId,
+        group_id: allowed.external_id ?? "",
+        name: allowed.name,
+      }),
+    );
+    expect(same.posting_policy).toBe("allowed");
+    await deps.db.update(channels).set({ postingPolicy: null }).where(eq(channels.id, created.id));
+    const repaired = done(
+      await addFacebookGroup(ext, { fb_user_id: fbUserId, group_id: "987654", name: "Novo grupo" }),
+    );
+    expect(repaired.posting_policy).toBe("unknown");
+    expect(
+      (await listChannels(ctx, {})).find((item) => item.id === created.id)?.posting_policy,
+    ).toBe("unknown");
+  });
+  it("remove grupo do qual o perfil saiu: arquiva, cancela agendados e volta ao cadastrar", async () => {
+    const { ctx, ext, fbUserId, groups } = await setup();
+    const group = groups[0];
+    if (!group) throw new Error("grupo");
+    const scheduled = done(
+      await schedulePosts(ctx, {
+        text: "Convite",
+        channel_ids: [group.id],
+        at: new Date(Date.now() + 3_600_000).toISOString(),
+      }),
+    );
+    const postId = scheduled.scheduled[0]?.id;
+    if (!postId) throw new Error("post");
+    const preview = await removeFacebookGroup(ext, group.id, { dryRun: true });
+    expect(preview.status).toBe("dry_run");
+    expect(preview).toMatchObject({ preview: { scheduled_posts_canceled: 1 } });
+    const removed = done(await removeFacebookGroup(ext, group.id));
+    expect(removed.channel.status).toBe("archived");
+    expect(removed.scheduled_posts_canceled).toBe(1);
+    expect((await postStatus(postId))?.status).toBe("canceled");
+    expect((await listChannels(ctx, {})).some((c) => c.id === group.id)).toBe(false);
+    // Entrou de novo no grupo: cadastrar traz de volta com a política que tinha.
+    const back = done(
+      await addFacebookGroup(ext, {
+        fb_user_id: fbUserId,
+        group_id: group.external_id ?? "",
+        name: group.name,
+      }),
+    );
+    expect(back.status).toBe("active");
+    expect(back.posting_policy).toBe("allowed");
+  });
+
   it("audita a tentativa de entrada, aceita dry_run e limita a dez por dia", async () => {
     const { ext, fbUserId } = await setup();
     const input = { fb_user_id: fbUserId, group_id: "333333", name: "Grupo" };

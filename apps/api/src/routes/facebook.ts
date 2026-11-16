@@ -10,7 +10,11 @@ import {
   FacebookAccount,
   FacebookHeartbeatInput,
   FacebookHeartbeatResult,
+  PlanFacebookPostsInput,
+  PlanFacebookPostsResult,
   PrepareFacebookJoinInput,
+  RankFacebookGroupsInput,
+  RankFacebookGroupsResult,
   SetGroupPostingPolicyInput,
 } from "@ofertas/contracts";
 import {
@@ -24,7 +28,10 @@ import {
   discoverFacebookGroups,
   facebookHeartbeat,
   listFacebookAccounts,
+  planFacebookPosts,
   prepareFacebookJoin,
+  rankFacebookGroups,
+  removeFacebookGroup,
   resumeFacebookAccount,
   setGroupPostingPolicy,
 } from "@ofertas/core";
@@ -54,6 +61,28 @@ export const facebookRoutes: FastifyPluginAsyncZod<{ deps: Deps }> = async (app,
       },
     },
     async (req) => discoverFacebookGroups(ctx(req), req.query),
+  );
+  app.post(
+    "/facebook/discover/rank",
+    {
+      schema: {
+        tags,
+        body: RankFacebookGroupsInput,
+        response: { 200: RankFacebookGroupsResult, ...errors },
+      },
+    },
+    async (req) => rankFacebookGroups(ctx(req), req.body),
+  );
+  app.post(
+    "/facebook/posts/plan",
+    {
+      schema: {
+        tags,
+        body: PlanFacebookPostsInput,
+        response: { 200: PlanFacebookPostsResult, ...errors },
+      },
+    },
+    async (req) => planFacebookPosts(ctx(req), req.body),
   );
   app.get(
     "/facebook/accounts",
@@ -146,6 +175,24 @@ export const facebookRoutes: FastifyPluginAsyncZod<{ deps: Deps }> = async (app,
       },
     },
     async (req) => setGroupPostingPolicy(ctx(req), req.params.id, req.body, mutationOpts(req)),
+  );
+  app.delete(
+    "/facebook/groups/:id",
+    {
+      schema: {
+        tags,
+        summary: "Remover grupo do Facebook da operação (arquiva e cancela agendados)",
+        params: IdParams,
+        ...mutationSchema,
+        response: {
+          200: MutationResult(
+            z.object({ channel: Channel, scheduled_posts_canceled: z.number().int() }),
+          ),
+          ...errors,
+        },
+      },
+    },
+    async (req) => removeFacebookGroup(ctx(req), req.params.id, mutationOpts(req)),
   );
   app.post(
     "/facebook/jobs/claim",

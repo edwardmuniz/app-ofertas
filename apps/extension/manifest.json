@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "OfZap",
-  "version": "0.3.0",
+  "version": "0.5.14",
   "description": "Cadastra ofertas, descobre grupos do Facebook e publica convites pontuais com imagem e texto escolhidos por você.",
   "action": {
     "default_title": "OfZap",
@@ -11,6 +11,17 @@
     "service_worker": "fb-bridge.js"
   },
   "content_scripts": [
+    {
+      "matches": ["https://*.facebook.com/*"],
+      "js": ["fb-search-core.js", "fb-search-main.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://*.facebook.com/*"],
+      "js": ["fb-search.js"],
+      "run_at": "document_start"
+    },
     {
       "matches": ["https://*.facebook.com/groups/*"],
       "js": ["fb-replay-core.js", "fb-main.js"],

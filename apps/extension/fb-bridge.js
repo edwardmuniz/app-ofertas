@@ -221,9 +221,24 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (msg?.type === "ofz-fb-get-job") return sendResponse({ job: await getActiveJob() });
       if (msg?.type === "ofz-fb-save-calibration") {
         const { fbUserId } = await cfg();
-        const calibration = msg.calibration;
+        const { fbUserId: pageUserId, ...calibration } = msg.calibration || {};
+        if (!fbUserId)
+          return sendResponse({
+            ok: false,
+            reason: "Configure o id do seu perfil do Facebook na extensão antes de calibrar.",
+          });
+        if (!pageUserId)
+          return sendResponse({
+            ok: false,
+            reason:
+              "Não consegui identificar o perfil logado no Facebook. Recarregue a aba e tente de novo.",
+          });
+        if (String(pageUserId) !== String(fbUserId))
+          return sendResponse({
+            ok: false,
+            reason: `Você está logado no perfil ${pageUserId}, mas a extensão está configurada para o perfil ${fbUserId}. Troque de perfil no Facebook ou ajuste o id na configuração e calibre de novo.`,
+          });
         if (
-          !fbUserId ||
           !calibration?.composer?.docId ||
           !calibration?.upload?.fileField ||
           JSON.stringify(calibration).length > 150000

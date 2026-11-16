@@ -418,10 +418,6 @@ button {
 .discovery-item button {
   cursor: pointer;
 }
-#discover-join-status {
-  white-space: pre-line;
-  margin-top: 10px;
-}
 
 /* Rodapé fixo com a ação principal */
 .bottom {
@@ -635,23 +631,6 @@ summary:focus-visible {
   padding: 0 9px;
   font-size: 12px;
 }
-.selection-bar {
-  display: grid;
-  gap: 7px;
-  padding-top: 6px;
-  border-top: 1px solid var(--border);
-  font-size: 12px;
-  font-weight: 700;
-}
-.selection-bar[hidden],
-#discover-progress[hidden] {
-  display: none;
-}
-.progress-text {
-  color: var(--muted);
-  font-size: 12px;
-  white-space: pre-line;
-}
 .preview-box {
   padding: 12px;
   border: 1px solid var(--border);
@@ -694,4 +673,20 @@ summary:focus-visible {
 #unsupported .card.empty {
   align-items: stretch;
   text-align: left;
+}
+.studio-link {
+  margin-left: auto;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+.studio-link:hover {
+  background: var(--bg);
+}
+.studio-link + .icon-btn {
+  margin-left: 0;
 }

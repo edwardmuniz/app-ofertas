@@ -5,6 +5,8 @@
   let job = null;
   let autoRunning = false;
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const CALIBRATION_ARM_KEY = "fbCalibrationArmedUntil";
+  const CALIBRATION_WINDOW_MS = 10 * 60 * 1000;
 
   const send = (msg) =>
     new Promise((resolve) => chrome.runtime.sendMessage(msg, (r) => resolve(r || {})));
@@ -120,11 +122,13 @@
     });
     $("analyze-btn").addEventListener("click", analyzeGroup);
     $("calibrate-btn").addEventListener("click", () => {
-      window.postMessage({ channel: "ofz-facebook-main", type: "arm" }, location.origin);
-      const msg = $("calibrate-msg");
-      msg.className = "msg show warn";
-      msg.textContent =
-        "Agora publique manualmente um post com texto e imagem em um grupo onde você possa testar. O OfZap vai reconhecer a calibração.";
+      const until = Date.now() + CALIBRATION_WINDOW_MS;
+      void chrome.storage.local.set({ [CALIBRATION_ARM_KEY]: until });
+      window.postMessage({ channel: "ofz-facebook-main", type: "arm", until }, location.origin);
+      calibrationMessage(
+        "warn",
+        'Agora publique manualmente, em um grupo onde você possa testar, um post com uma foto e um texto de teste com pelo menos 12 caracteres (ex.: "Teste OfZap 4821"). Você tem 10 minutos.',
+      );
     });
     $("fill").addEventListener("click", fillComposer);
     $("copy-text").addEventListener("click", copyText);
@@ -138,6 +142,13 @@
     $("fail-other").addEventListener("click", () => failWith("other", "Não deu certo."));
   }
 
+  function calibrationMessage(kind, text) {
+    mount();
+    const msg = ui.$("calibrate-msg");
+    msg.className = `msg show ${kind}`;
+    msg.textContent = text;
+  }
+
   function message(kind, text) {
     const m = ui.$("msg");
     m.className = `msg show ${kind}`;
@@ -145,23 +156,82 @@
   }
 
   // ── Analisar a política do grupo (só texto visível da página; o servidor classifica) ──
+  // O que já foi lido de cada grupo nesta aba (feed + aba Sobre), para juntar na análise.
+  const collectedByGroup = new Map();
+  const RULE_HEADING =
+    /^(regras( do grupo)?( dos administradores)?|group rules( from the admins)?|rules|sobre( este grupo)?|about( this group)?|descrição|description)$/i;
+
+  /** Posts do feed. O Facebook usa role="article" só nos comentários, então lê o feed em si. */
+  function feedUnits() {
+    const feed = document.querySelector('[role="feed"]');
+    let units = feed ? [...feed.children] : [];
+    if (units.length < 2) units = [...document.querySelectorAll("[aria-posinset]")];
+    if (!units.length)
+      units = [...document.querySelectorAll('[role="article"]')].filter(
+        (el) => !el.parentElement?.closest('[role="article"]'),
+      );
+    return units;
+  }
+
+  function postText(unit) {
+    const comments = [...unit.querySelectorAll('[role="article"]')];
+    let text = unit.innerText || "";
+    for (const c of comments) {
+      const t = c.innerText || "";
+      if (t) text = text.split(t).join("\n");
+    }
+    const hosts = [...unit.querySelectorAll("a[href]")]
+      .filter((a) => !comments.some((c) => c.contains(a)))
+      .map((a) => fbzOutboundHost(a.href));
+    return fbzCleanPostText(text, hosts);
+  }
+
+  /** Regras e descrição: na aba Sobre, o conteúdo principal; no feed, os cartões com esses títulos. */
+  function rulesText() {
+    const main = document.querySelector('[role="main"]');
+    if (/^\/groups\/[^/]+\/(about|rules)/i.test(location.pathname) && main)
+      return (main.innerText || "").trim().slice(0, 8000);
+    const feed = document.querySelector('[role="feed"]');
+    const boxes = [];
+    for (const el of document.querySelectorAll('h2, h3, h4, [role="heading"], span[dir="auto"]')) {
+      const label = (el.innerText || "").trim();
+      if (!label || label.length > 60 || !RULE_HEADING.test(label)) continue;
+      // Sobe até o maior bloco em volta do título que ainda não engloba o feed.
+      let box = el;
+      while (
+        box.parentElement &&
+        box.parentElement !== document.body &&
+        (box.parentElement.innerText || "").length <= 4000 &&
+        !(feed && box.parentElement.contains(feed))
+      )
+        box = box.parentElement;
+      if (box !== el && !boxes.some((b) => b.contains(box))) {
+        for (let i = boxes.length - 1; i >= 0; i--) if (box.contains(boxes[i])) boxes.splice(i, 1);
+        boxes.push(box);
+      }
+    }
+    return boxes
+      .map((b) => (b.innerText || "").trim())
+      .filter(Boolean)
+      .join("\n\n")
+      .slice(0, 8000);
+  }
+
   /** Melhor esforço: lê o nome, as regras/descrição e os últimos posts que estão na tela. */
   function collectGroup() {
-    const title = (document.title || "").replace(/\s*[|·].*$/, "").trim();
-    const name = title || fbzGroupIdFromUrl(location.href) || "Grupo";
-    const posts = [...document.querySelectorAll('[role="article"]')]
-      .map((el) => (el.innerText || "").trim())
-      .filter((t) => t.length > 20)
-      .slice(0, 30)
-      .map((t) => t.slice(0, 1000));
-    // Regras/descrição: a barra lateral (complementary) e qualquer bloco que fale em "regras".
-    const parts = [];
-    for (const el of document.querySelectorAll('[role="complementary"], [aria-label*="regra" i]')) {
-      const t = (el.innerText || "").trim();
-      if (t) parts.push(t);
-    }
-    const rules_text = parts.join("\n").slice(0, 8000);
-    return { name, collected: { rules_text, post_texts: posts } };
+    const groupId = fbzGroupIdFromUrl(location.href);
+    const name = fbzGroupName(document.title) || groupId || "Grupo";
+    const posts = [
+      ...new Set(
+        feedUnits()
+          .map(postText)
+          .filter((t) => t.length > 20),
+      ),
+    ].slice(0, 30);
+    const current = { rules_text: rulesText(), post_texts: posts };
+    const collected = fbzMergeCollected(collectedByGroup.get(groupId), current);
+    if (groupId) collectedByGroup.set(groupId, collected);
+    return { name, collected };
   }
 
   async function analyzeGroup() {
@@ -175,8 +245,12 @@
     if (!groupId) return show("bad", "Abra a página principal do grupo para analisar.");
     const { name, collected } = collectGroup();
     if (!collected.post_texts.length && !collected.rules_text) {
-      return show("warn", "Role a página para carregar as regras e alguns posts, e tente de novo.");
+      return show(
+        "warn",
+        "Não encontrei posts nem regras na tela. Role o feed para carregar alguns posts ou abra a aba Sobre do grupo, e tente de novo.",
+      );
     }
+    const read = `Li ${collected.post_texts.length} post(s) e ${collected.rules_text ? "as regras" : "nenhuma regra"}.`;
     btn.disabled = true;
     show("warn", "Analisando…");
     const res = await send({
@@ -198,7 +272,14 @@
     };
     const [kind, text] = labels[policy] || ["warn", "Analisado."];
     const ev = Array.isArray(r?.evidence) && r.evidence.length ? ` (${r.evidence.join("; ")})` : "";
-    show(kind, text + ev);
+    let hint = "";
+    if (policy === "unknown" && !collected.rules_text)
+      hint =
+        " Abra a aba Sobre do grupo (onde ficam as regras) e clique em Analisar de novo: o OfZap junta com o que já leu.";
+    else if (policy === "unknown" && collected.post_texts.length < 4)
+      hint = " Role o feed para carregar mais posts e analise de novo.";
+    if (r?.kept_human) hint += " A política definida por uma pessoa no painel foi mantida.";
+    show(kind, `${text}${ev} ${read}${hint}`);
   }
 
   function render() {
@@ -218,13 +299,35 @@
     if (hasImg) $("img").src = job.image;
     $("post-url").value = "";
     ui.$("msg").className = "msg";
-    if (job.auto_publish && !autoRunning && new Date(job.lease_until).getTime() > Date.now()) {
+    if (
+      job.auto_publish &&
+      !autoRunning &&
+      !job.failureReported &&
+      new Date(job.lease_until).getTime() > Date.now()
+    ) {
       void publishWithCalibration(job);
     }
   }
 
+  /**
+   * Devolve a falha ao OfZap para o post sair de "Enviando" com o motivo. A aba costuma abrir
+   * em segundo plano, então a mensagem no painel sozinha ninguém vê. Não há nova tentativa
+   * automática: a pessoa confere o grupo e agenda de novo.
+   */
+  async function reportFailure(current, kind, reason) {
+    if (current.failureReported) return;
+    current.failureReported = true;
+    const res = await send({
+      type: "ofz-fb-result",
+      jobId: current.id,
+      result: { ok: false, error_kind: kind, error: String(reason).slice(0, 1000) },
+    });
+    if (res.ok && job?.id === current.id) job = null;
+  }
+
   async function publishWithCalibration(current) {
     autoRunning = true;
+    let confirmed = false;
     try {
       if (!current.image)
         throw new Error("A imagem do convite não foi baixada. Confira a conexão.");
@@ -236,7 +339,11 @@
       const result = await new Promise((resolve) => {
         const timeout = setTimeout(() => {
           window.removeEventListener("message", onMessage);
-          resolve({ ok: false, reason: "O Facebook não respondeu em 90 segundos." });
+          resolve({
+            ok: false,
+            reason:
+              "O Facebook não respondeu em 90 segundos. Confira no grupo se o post saiu antes de agendar de novo.",
+          });
         }, 90000);
         function onMessage(event) {
           if (
@@ -269,18 +376,13 @@
         );
       });
       if (!result.ok) {
-        if (result.blocked) {
-          await send({
-            type: "ofz-fb-result",
-            jobId: current.id,
-            result: { ok: false, error_kind: "blocked", error: result.reason },
-          });
-        }
-        throw new Error(
+        const reason =
           result.reason ||
-            "O Facebook recusou o convite. Confira a publicação antes de tentar de novo.",
-        );
+          "O Facebook recusou o convite. Confira a publicação antes de tentar de novo.";
+        await reportFailure(current, result.blocked ? "blocked" : "other", reason);
+        throw new Error(reason);
       }
+      confirmed = true;
       const reported = await send({
         type: "ofz-fb-result",
         jobId: current.id,
@@ -294,6 +396,8 @@
       message("ok", "Convite publicado e registrado no OfZap.");
       setTimeout(refresh, 1200);
     } catch (err) {
+      // Depois da confirmação do Facebook não marca falha: o post saiu.
+      if (!confirmed) await reportFailure(current, "other", err.message);
       message("bad", err.message);
     } finally {
       autoRunning = false;
@@ -474,15 +578,33 @@
       event.data?.channel !== "ofz-facebook-main"
     )
       return;
-    if (event.data.type !== "calibration") return;
-    const result = await send({ type: "ofz-fb-save-calibration", calibration: event.data.data });
-    const msg = ui.$?.("calibrate-msg");
-    if (msg) {
-      msg.className = `msg show ${result.ok ? "ok" : "bad"}`;
-      msg.textContent = result.ok
-        ? "Publicação com imagem calibrada neste perfil. Os próximos convites podem usar esse formato."
-        : "Não consegui salvar a calibração. Tente novamente.";
+    const { type, data } = event.data;
+    if (type === "upload_seen") {
+      calibrationMessage("warn", "Imagem detectada. Agora clique em Publicar no Facebook.");
+      return;
     }
+    if (type === "calibration_timeout") {
+      void chrome.storage.local.remove(CALIBRATION_ARM_KEY);
+      calibrationMessage(
+        "bad",
+        "A calibração expirou sem ver uma publicação com foto. Clique em Calibrar publicação para tentar de novo.",
+      );
+      return;
+    }
+    if (type === "calibration_rejected") {
+      void chrome.storage.local.remove(CALIBRATION_ARM_KEY);
+      calibrationMessage("bad", data?.reason || "Não consegui usar essa publicação para calibrar.");
+      return;
+    }
+    if (type !== "calibration") return;
+    void chrome.storage.local.remove(CALIBRATION_ARM_KEY);
+    const result = await send({ type: "ofz-fb-save-calibration", calibration: data });
+    calibrationMessage(
+      result.ok ? "ok" : "bad",
+      result.ok
+        ? "Publicação com imagem calibrada neste perfil. Os próximos convites podem usar esse formato."
+        : result.reason || "Não consegui salvar a calibração. Tente novamente.",
+    );
     if (result.ok) refresh();
   });
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -498,8 +620,24 @@
     }
   });
 
+  /** Recarregar a aba no meio da calibração não deve perdê-la: rearma até o prazo original. */
+  async function resumeCalibration() {
+    const state = await chrome.storage.local.get(CALIBRATION_ARM_KEY).catch(() => ({}));
+    const until = Number(state[CALIBRATION_ARM_KEY] || 0);
+    if (until <= Date.now()) {
+      if (until) void chrome.storage.local.remove(CALIBRATION_ARM_KEY);
+      return;
+    }
+    window.postMessage({ channel: "ofz-facebook-main", type: "arm", until }, location.origin);
+    calibrationMessage(
+      "warn",
+      "Calibração em andamento: publique um post com foto e texto de teste para concluir.",
+    );
+  }
+
   if (fbzIsGroupPage(location.href)) {
     refresh();
+    void resumeCalibration();
     // O Facebook troca de página sem recarregar: reavalia quando a URL muda.
     let last = location.href;
     setInterval(() => {

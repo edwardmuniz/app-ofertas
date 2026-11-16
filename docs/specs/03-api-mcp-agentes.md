@@ -94,21 +94,21 @@ Nomes em inglês snake_case (melhor compatibilidade entre clientes); descriçõe
 
 ### Canais
 
-| Tool                                       | Descrição                         |
-| ------------------------------------------ | --------------------------------- |
-| `list_channels` / `get_channel`            | Canais com membros, limite, saúde |
-| `list_segments` / `upsert_segment`         | Nichos                            |
-| `create_invite_link` / `list_invite_links` / `update_invite_link` / `delete_invite_link` | Convite rotativo |
+| Tool                                                                                     | Descrição                         |
+| ---------------------------------------------------------------------------------------- | --------------------------------- |
+| `list_channels` / `get_channel`                                                          | Canais com membros, limite, saúde |
+| `list_segments` / `upsert_segment`                                                       | Nichos                            |
+| `create_invite_link` / `list_invite_links` / `update_invite_link` / `delete_invite_link` | Convite rotativo                  |
 
 ### Publicação
 
-| Tool                                                                          | Descrição                                                  |
-| ----------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `preview_post`                                                                | Renderiza mensagem para um canal (sempre sem efeito)       |
-| `schedule_posts`                                                              | Agenda 1..N ofertas × canais/segmentos (suporta `dry_run`) |
-| `list_posts` / `cancel_post` / `delete_sent_post`                             | Fila e histórico                                           |
-| `list_automation_rules` / `upsert_automation_rule` / `delete_automation_rule` | Regras                                                     |
-| `list_message_templates` / `upsert_message_template` / `delete_message_template` | Modelos de mensagem |
+| Tool                                                                             | Descrição                                                  |
+| -------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `preview_post`                                                                   | Renderiza mensagem para um canal (sempre sem efeito)       |
+| `schedule_posts`                                                                 | Agenda 1..N ofertas × canais/segmentos (suporta `dry_run`) |
+| `list_posts` / `cancel_post` / `delete_sent_post`                                | Fila e histórico                                           |
+| `list_automation_rules` / `upsert_automation_rule` / `delete_automation_rule`    | Regras                                                     |
+| `list_message_templates` / `upsert_message_template` / `delete_message_template` | Modelos de mensagem                                        |
 
 ### Links
 

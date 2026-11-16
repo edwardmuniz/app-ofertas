@@ -28,10 +28,12 @@ import {
   MetricsPeriodQuery,
   MutationOptions,
   OfferFromLinkInput,
+  PlanFacebookPostsInput,
   Preferences,
   PrepareFacebookJoinInput,
   PreviewPostInput,
   PublishImageInput,
+  RankFacebookGroupsInput,
   RequestUploadInput,
   ReviewContentInput,
   SaveOfferInput,
@@ -69,12 +71,12 @@ import {
   createInviteLink,
   createOfferLink,
   createTrackedLink,
+  deleteAutomationRule,
   deleteContent,
   deleteCreative,
-  deleteSavedSearch,
-  deleteAutomationRule,
   deleteInviteLink,
   deleteMessageTemplate,
+  deleteSavedSearch,
   deleteSegment,
   deleteSentPost,
   deleteStoreCoupon,
@@ -123,10 +125,13 @@ import {
   listTeamContacts,
   listTrackedLinks,
   markContentPosted,
+  planFacebookPosts,
   prepareFacebookJoin,
   previewOfferFromLink,
   previewPost,
   publishImage,
+  rankFacebookGroups,
+  removeFacebookGroup,
   requestAutoCuratorRun,
   requestFeedSync,
   requestUpload,
@@ -316,6 +321,29 @@ export function createMcpServer(ctx: Ctx): McpServer {
   );
 
   server.registerTool(
+    "rank_facebook_groups",
+    {
+      title: "Classificar grupos do Facebook",
+      description:
+        "Ordena grupos lidos na busca por termos do nicho, atividade e membros visíveis.",
+      inputSchema: RankFacebookGroupsInput.shape,
+      annotations: READ,
+    },
+    safe(async (args) => rankFacebookGroups(ctx, args)),
+  );
+
+  server.registerTool(
+    "plan_facebook_posts",
+    {
+      title: "Planejar combinações de convites",
+      description: "Combina cada texto com cada imagem e distribui uma combinação por grupo.",
+      inputSchema: PlanFacebookPostsInput.shape,
+      annotations: READ,
+    },
+    safe(async (args) => planFacebookPosts(ctx, args)),
+  );
+
+  server.registerTool(
     "prepare_facebook_join",
     {
       title: "Autorizar entrada em grupo do Facebook",
@@ -343,6 +371,21 @@ export function createMcpServer(ctx: Ctx): McpServer {
     safe(async (args) => {
       const [{ channel_id, ...rest }, opts] = splitOpts(args);
       return setGroupPostingPolicy(ctx, channel_id, rest, opts);
+    }),
+  );
+
+  server.registerTool(
+    "remove_facebook_group",
+    {
+      title: "Remover grupo do Facebook",
+      description:
+        "Tira um grupo do Facebook (canal fb_group) da operação, por exemplo quando o perfil saiu dele: arquiva o canal e cancela os posts agendados para ele. Cadastrar o grupo de novo pela extensão o traz de volta. A prévia (dry_run) mostra quantos agendamentos serão cancelados.",
+      inputSchema: { channel_id: z.uuid(), ...MutationOptions.shape },
+      annotations: { ...WRITE, destructiveHint: true },
+    },
+    safe(async (args) => {
+      const [rest, opts] = splitOpts(args);
+      return removeFacebookGroup(ctx, rest.channel_id, opts);
     }),
   );
 

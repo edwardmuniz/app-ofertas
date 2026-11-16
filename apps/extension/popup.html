@@ -8,14 +8,15 @@
   <body>
     <header class="top">
       <span class="brand"><span class="brand-dot"></span>OfZap</span>
+      <button type="button" id="open-studio" class="studio-link" title="Abrir Studio em uma aba">Abrir Studio ↗</button>
       <button type="button" id="open-settings" class="icon-btn" title="Configurar" aria-label="Configurar">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
       </button>
     </header>
     <nav class="nav" aria-label="Áreas da extensão">
       <button type="button" id="open-offer" class="nav-item" data-pane="offer">Oferta</button>
-      <button type="button" id="open-discover" class="nav-item" data-pane="discover">Descobrir grupos</button>
-      <button type="button" id="open-invite" class="nav-item" data-pane="invite">Convite</button>
+      <button type="button" id="open-discover" class="nav-item" data-pane="discover">Aquecedor</button>
+      <button type="button" id="open-invite" class="nav-item" data-pane="invite">Postador</button>
     </nav>
     <div id="connection-status" class="connection" role="status" hidden></div>
 
@@ -43,39 +44,6 @@
         </div>
         <p id="settings-msg" class="msg" hidden></p>
         <button type="button" id="save-settings" class="btn">Salvar e testar</button>
-      </div>
-    </section>
-
-    <section id="discover" class="pane" hidden>
-      <div class="pane-title"><span class="eyebrow">GRUPOS DO FACEBOOK</span><h1>Encontre grupos do seu nicho</h1><p>Busque, confira os resultados e escolha onde participar.</p></div>
-      <div class="card step">
-        <div class="step-head"><span class="step-number">1</span><h2>Monte sua busca</h2></div>
-        <div class="field">
-          <label for="discover-niche">Nicho</label>
-          <input id="discover-niche" placeholder="ex.: achadinhos para casa" />
-        </div>
-        <div class="field">
-          <label for="discover-location">Cidade ou região (opcional)</label>
-          <input id="discover-location" placeholder="ex.: São Paulo" />
-        </div>
-        <button type="button" id="discover-search" class="btn btn-accent">Montar buscas</button>
-        <p id="discover-msg" class="msg" hidden></p>
-        <div id="discover-searches" class="discovery-list"></div>
-      </div>
-      <div class="card step">
-        <div class="step-head"><span class="step-number">2</span><h2>Leia a aba de busca</h2></div>
-        <p id="discover-context" class="muted small">Abra uma busca do Facebook para continuar.</p>
-        <button type="button" id="discover-read" class="btn btn-secondary">Ler grupos desta aba</button>
-        <div id="discover-groups" class="discovery-list"></div>
-        <div id="discover-selection" class="selection-bar" hidden>
-          <span id="discover-selected-count">0 selecionados</span>
-          <button type="button" id="discover-join" class="btn btn-secondary" disabled>Participar dos selecionados</button>
-        </div>
-      </div>
-      <div id="discover-progress" class="card" hidden>
-        <h2>Entradas em andamento</h2>
-        <p id="discover-join-status" class="progress-text"></p>
-        <button type="button" id="discover-join-refresh" class="btn-ghost">Atualizar andamento</button>
       </div>
     </section>
 
