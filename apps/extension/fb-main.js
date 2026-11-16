@@ -9,14 +9,50 @@
   const emit = (type, data) =>
     window.postMessage({ channel: CHANNEL, type, data }, location.origin);
 
+  const DEFAULT_ARM_MS = 10 * 60 * 1000;
+  let armTimer = null;
+  // Último arquivo enviado que não pareceu foto (só para explicar uma calibração recusada).
+  let lastFileSeen = null;
+
+  function disarm() {
+    armed = false;
+    upload = null;
+    lastFileSeen = null;
+    clearTimeout(armTimer);
+    armTimer = null;
+  }
+
+  function arm(until) {
+    const deadline = Number(until) > Date.now() ? Number(until) : Date.now() + DEFAULT_ARM_MS;
+    armed = true;
+    upload = null;
+    clearTimeout(armTimer);
+    armTimer = setTimeout(() => {
+      disarm();
+      emit("calibration_timeout", {});
+    }, deadline - Date.now());
+    emit("armed", { until: deadline });
+  }
+
   function inspect(url, method, body) {
     if (!armed || replaying || !body) return;
     try {
-      const target = new URL(url, location.href);
-      if (target.origin !== location.origin) return;
+      if (body instanceof FormData) {
+        const file = [...body.values()].find((v) => v instanceof Blob);
+        if (file) {
+          let host = "?";
+          try {
+            host = new URL(url, location.href).hostname;
+          } catch {}
+          lastFileSeen = `${file.type || "sem tipo"} para ${host}`;
+        }
+      }
+      const target = fbzFacebookUrl(url);
+      if (!target) return;
       const photo = fbzCapturePhotoUpload(target.href, method, body);
       if (photo) {
         upload = photo;
+        lastFileSeen = null;
         emit("upload_seen", {});
         return;
       }
@@ -24,11 +60,42 @@
       let encoded = body;
       if (body instanceof FormData)
         encoded = new URLSearchParams([...body.entries()].filter(([, v]) => typeof v === "string"));
-      const composer = fbzCaptureComposer(String(encoded));
-      if (composer && upload) {
-        armed = false;
-        emit("calibration", { composer, upload, capturedAt: Date.now() });
+      encoded = String(encoded);
+      const composer = fbzCaptureComposer(encoded);
+      if (!composer) {
+        const diagnosis = fbzComposerDiagnosis(encoded);
+        if (diagnosis) {
+          disarm();
+          const missing = diagnosis.missing.length ? diagnosis.missing.join(", ") : "formato";
+          emit("calibration_rejected", {
+            reason: `Vi a publicação (${diagnosis.friendlyName}), mas não encontrei: ${missing}. Confira se o post tinha texto e foto; se tinha, o Facebook mudou o fluxo.`,
+          });
+        }
+        return;
       }
+      if (!upload) {
+        const seen = lastFileSeen;
+        disarm();
+        emit("calibration_rejected", {
+          reason: seen
+            ? `Vi a publicação, mas o arquivo enviado não foi reconhecido como foto (${seen}). Me envie esta mensagem para ajustar.`
+            : "Vi a publicação, mas não o envio da imagem. Clique em Calibrar e só depois anexe a foto.",
+        });
+        return;
+      }
+      const issue = fbzCalibrationIssue(composer);
+      const captured = upload;
+      disarm();
+      if (issue) {
+        emit("calibration_rejected", { reason: issue });
+        return;
+      }
+      emit("calibration", {
+        composer,
+        upload: captured,
+        fbUserId: session().userId,
+        capturedAt: Date.now(),
+      });
     } catch {
       /* outras requisições do Facebook não pertencem à calibração */
     }
@@ -98,6 +165,15 @@
     };
   }
 
+  /** Erro de rede com o nome da etapa, para a mensagem dizer onde parou. */
+  async function step(label, run) {
+    try {
+      return await run();
+    } catch (error) {
+      throw new Error(`Falha de rede no ${label}: ${error?.message || error}`);
+    }
+  }
+
   async function publish(data) {
     const { calibration, groupId, text, image, fbUserId } = data;
     if (location.pathname.split("/")[2] !== String(groupId))
@@ -111,44 +187,40 @@
       return { ok: false, reason: "Sessão do Facebook indisponível. Recarregue a aba." };
     if (fbUserId && fbUserId !== current.userId)
       return { ok: false, reason: "O perfil ativo não é o perfil do trabalho." };
-    const blob = await (await nativeFetch(image)).blob();
-    if (!blob.type.startsWith("image/"))
+    const blob = fbzDataUrlToBlob(image);
+    if (!blob?.type.startsWith("image/"))
       return { ok: false, reason: "Arquivo do convite não é uma imagem." };
     const form = new FormData();
     for (const [key, value] of Object.entries(calibration.upload.fields)) {
-      const replaced = String(value).split(calibration.composer.sampleText).join(text);
-      form.append(key, replaced);
+      // Só troca o campo que é exatamente o texto de teste; os demais seguem como capturados.
+      form.append(key, String(value) === calibration.composer.sampleText ? text : value);
     }
-    const uploadParams = fbzSessionParams({}, current.params);
-    for (const [key, value] of uploadParams)
-      if (
-        [
-          "fb_dtsg",
-          "jazoest",
-          "lsd",
-          "__spin_r",
-          "__spin_b",
-          "__spin_t",
-          "__rev",
-          "__hsi",
-        ].includes(key)
-      )
-        form.set(key, value);
+    // Campos e parâmetros de sessão: os mesmos nomes vistos na calibração, com os valores de agora.
+    const sessionValues = fbzSessionValues(current.params, current.userId);
+    const keys = calibration.upload.sessionKeys || {
+      url: [],
+      fields: ["fb_dtsg", "jazoest", "lsd", "__spin_r", "__spin_b", "__spin_t", "__rev", "__hsi"],
+    };
+    for (const key of keys.fields)
+      if (sessionValues.has(key)) form.set(key, sessionValues.get(key));
     form.append(
       calibration.upload.fileField,
       blob,
       blob.type === "image/png" ? "convite.png" : "convite.jpg",
     );
-    const uploadUrl = new URL(calibration.upload.url);
-    for (const [key, value] of uploadParams)
-      if (uploadUrl.searchParams.has(key)) uploadUrl.searchParams.set(key, value);
+    const uploadUrl = fbzFacebookUrl(calibration.upload.url);
+    if (!uploadUrl) return { ok: false, reason: "Calibração inválida. Calibre de novo." };
+    for (const key of keys.url)
+      if (sessionValues.has(key)) uploadUrl.searchParams.set(key, sessionValues.get(key));
     replaying = true;
     try {
-      const uploaded = await nativeFetch(uploadUrl.href, {
-        method: calibration.upload.method,
-        credentials: "include",
-        body: form,
-      });
+      const uploaded = await step("envio da imagem", () =>
+        nativeFetch(uploadUrl.href, {
+          method: calibration.upload.method,
+          credentials: "include",
+          body: form,
+        }),
+      );
       const uploadedText = await uploaded.text();
       const photoId = fbzPhotoId(uploadedText);
       if (!uploaded.ok || !photoId)
@@ -161,12 +233,14 @@
         current.userId,
         current.params,
       );
-      const response = await nativeFetch(`${location.origin}/api/graphql/`, {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "content-type": "application/x-www-form-urlencoded" },
-        body: body.toString(),
-      });
+      const response = await step("publicação", () =>
+        nativeFetch(`${location.origin}/api/graphql/`, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: body.toString(),
+        }),
+      );
       const result = fbzGraphResult(await response.text());
       if (!response.ok || !result.ok)
         return {
@@ -187,11 +261,8 @@
       event.data?.channel !== CHANNEL
     )
       return;
-    if (event.data.type === "arm") {
-      armed = true;
-      upload = null;
-      emit("armed", {});
-    }
+    if (event.data.type === "arm") arm(event.data.until);
+    if (event.data.type === "disarm") disarm();
     if (event.data.type === "publish") {
       const requestId = event.data.requestId;
       if (publishing) {

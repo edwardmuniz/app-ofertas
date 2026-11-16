@@ -8,11 +8,24 @@ const context = {
   URLSearchParams,
   FormData,
   Blob,
+  File,
+  atob,
+  TextEncoder,
   location: { href: "https://www.facebook.com/groups/654321/", origin: "https://www.facebook.com" },
 };
 runInNewContext(readFileSync(new URL("../fb-replay-core.js", import.meta.url), "utf8"), context);
-const { fbzCaptureComposer, fbzCapturePhotoUpload, fbzComposerBody, fbzPhotoId, fbzGraphResult } =
-  context.module.exports;
+const {
+  fbzCaptureComposer,
+  fbzCalibrationIssue,
+  fbzComposerDiagnosis,
+  fbzCapturePhotoUpload,
+  fbzFacebookUrl,
+  fbzSessionValues,
+  fbzDataUrlToBlob,
+  fbzComposerBody,
+  fbzPhotoId,
+  fbzGraphResult,
+} = context.module.exports;
 
 const variables = {
   input: {
@@ -86,5 +99,104 @@ describe("calibração local do post com imagem", () => {
       postId: "777777",
     });
     expect(fbzGraphResult('{"errors":[{"message":"bloqueado"}]}').ok).toBe(false);
+  });
+
+  it("troca o texto de teste só onde ele é o valor inteiro", () => {
+    const vars = {
+      input: {
+        audience: { to_id: "654321" },
+        message: { text: "Texto de teste" },
+        attachments: [{ photo: { id: "999999" } }],
+        tracking: ["Texto de teste extra", "prefixo Texto de teste"],
+      },
+    };
+    const captured = fbzCaptureComposer(
+      new URLSearchParams({
+        doc_id: "123456789",
+        fb_api_req_friendly_name: "ComposerCreateStoryMutation",
+        variables: JSON.stringify(vars),
+      }).toString(),
+    );
+    const body = fbzComposerBody(captured, "777777", "Convite novo", "888888", "123456", {});
+    const updated = JSON.parse(body.get("variables"));
+    expect(updated.input.message.text).toBe("Convite novo");
+    expect(updated.input.tracking).toEqual(["Texto de teste extra", "prefixo Texto de teste"]);
+  });
+
+  it("recusa texto de teste curto demais", () => {
+    expect(fbzCalibrationIssue({ sampleText: "teste" })).toMatch(/12 caracteres/);
+    expect(fbzCalibrationIssue({ sampleText: "Teste OfZap 4821" })).toBeNull();
+  });
+
+  it("só a mutação do composer conta como publicação", () => {
+    const query = new URLSearchParams({
+      doc_id: "1",
+      fb_api_req_friendly_name: "ComposerStoryCreatePrefetchQuery",
+      variables: JSON.stringify(variables),
+    }).toString();
+    expect(fbzCaptureComposer(query)).toBeNull();
+    expect(fbzComposerDiagnosis(query)).toBeNull();
+    expect(fbzComposerDiagnosis("fb_api_req_friendly_name=CometFeedQuery&doc_id=1")).toBeNull();
+  });
+
+  it("diz o que faltou na mutação não reconhecida", () => {
+    const body = new URLSearchParams({
+      doc_id: "1",
+      fb_api_req_friendly_name: "ComposerStoryCreateMutation",
+      variables: JSON.stringify({
+        input: { audience: { to_id: "654321" }, message: { text: "" } },
+      }),
+    }).toString();
+    expect(fbzCaptureComposer(body)).toBeNull();
+    expect(fbzComposerDiagnosis(body)).toEqual({
+      friendlyName: "ComposerStoryCreateMutation",
+      missing: ["texto", "foto"],
+    });
+  });
+
+  it("captura upload feito em upload.facebook.com e guarda só os nomes da sessão", () => {
+    const form = new FormData();
+    form.set("fb_dtsg", "segredo");
+    form.set("__user", "123456");
+    form.set("source", "8");
+    form.set("farr", new File(["img"], "foto.jpg"));
+    const upload = fbzCapturePhotoUpload(
+      "https://upload.facebook.com/ajax/react_composer/attachments/photo/upload?av=123456&__user=123456&fb_dtsg=segredo&profile_id=123456",
+      "POST",
+      form,
+    );
+    expect(upload.fileField).toBe("farr");
+    expect(upload.url).toBe(
+      "https://upload.facebook.com/ajax/react_composer/attachments/photo/upload?profile_id=123456",
+    );
+    expect(upload.fields).toEqual({ source: "8" });
+    expect([...upload.sessionKeys.url]).toEqual(["av", "__user", "fb_dtsg"]);
+    expect([...upload.sessionKeys.fields]).toEqual(["fb_dtsg", "__user"]);
+    const values = fbzSessionValues({ fb_dtsg: "atual" }, "777");
+    expect(values.get("__user")).toBe("777");
+    expect(values.get("av")).toBe("777");
+    expect(values.get("jazoest")).toMatch(/^2\d+$/);
+  });
+
+  it("converte a imagem data: em Blob sem fetch", async () => {
+    const blob = fbzDataUrlToBlob("data:image/png;base64,iVBORw0K");
+    expect(blob.type).toBe("image/png");
+    expect([...new Uint8Array(await blob.arrayBuffer())]).toEqual([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a,
+    ]);
+    expect(fbzDataUrlToBlob("https://x/y.png")).toBeNull();
+  });
+
+  it("aceita só URLs https do Facebook", () => {
+    expect(fbzFacebookUrl("https://upload.facebook.com/x")).not.toBeNull();
+    expect(fbzFacebookUrl("/api/graphql/")).not.toBeNull();
+    expect(fbzFacebookUrl("https://evilfacebook.com/x")).toBeNull();
+    expect(fbzFacebookUrl("http://upload.facebook.com/x")).toBeNull();
+  });
+
+  it("prefere photoID ao id genérico na resposta do upload", () => {
+    expect(fbzPhotoId('for (;;);{"id":"111111111","payload":{"photoID":"888888"}}')).toBe("888888");
+    expect(fbzPhotoId('{"payload":{"fbid":"555555","id":"111111"}}')).toBe("555555");
+    expect(fbzPhotoId('{"payload":{"id":"222222"}}')).toBe("222222");
   });
 });
